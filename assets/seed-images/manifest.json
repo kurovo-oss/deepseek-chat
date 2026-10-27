@@ -1,0 +1,57 @@
+{
+  "note": "内置占位图库，首次启动导入 data/images/ 并写入 images 表。正式使用请替换为自己的表情包。",
+  "width": 320,
+  "items": [
+    {
+      "file": "cat.png",
+      "tags": [
+        "cat",
+        "animal",
+        "cute"
+      ],
+      "sha256": "54c4ea319c4425f12894bb01af6fb79e9710e88bf6728575430c5c3987079a8f"
+    },
+    {
+      "file": "happy.png",
+      "tags": [
+        "happy",
+        "smile",
+        "ok"
+      ],
+      "sha256": "b1f8133568eae1a51d6b89b67f4ccc1afdc2e7e2d2cdbdc0f2330198fde2b074"
+    },
+    {
+      "file": "sleepy.png",
+      "tags": [
+        "sleepy",
+        "tired",
+        "night"
+      ],
+      "sha256": "8e81e91bcf876487270b6dd25e35c551490fa2d966406a3841e3af1f090c01c6"
+    },
+    {
+      "file": "sad.png",
+      "tags": [
+        "sad",
+        "down"
+      ],
+      "sha256": "d42c2d22b17606a64a5ae9c07963adeb9ce0dfc43a7bfac8c5ea70d15f003ebc"
+    },
+    {
+      "file": "thanks.png",
+      "tags": [
+        "thanks",
+        "ok"
+      ],
+      "sha256": "9ca8d3d45d08f2d450c128cf902e4d2bf62274a37fa0c896642ccd60d4b9729b"
+    },
+    {
+      "file": "thinking.png",
+      "tags": [
+        "thinking",
+        "hmm"
+      ],
+      "sha256": "656bd017545622b0b7d3f53010987d9b012692cf08e5de569b1f620a29477fc5"
+    }
+  ]
+}

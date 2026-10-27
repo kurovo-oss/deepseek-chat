@@ -270,6 +270,16 @@ CREATE VIRTUAL TABLE messages_fts USING fts5(
 
 优先级：人工标签 > 上下文推断标签；两者并存，发送时按任意 tag 命中。
 
+**图库来源**
+
+| 来源 | 位置 | 是否入库 |
+|---|---|---|
+| 内置占位图库 | `assets/seed-images/`（6 张 320×320 PNG + `manifest.json`） | ✅ 入库，体积约 30KB |
+| 你发的表情包 | `data/images/<sha256[:2]>/<sha256>.<ext>` | ❌ 不入库 |
+| 手动放入 | 同上，`/img add` 或直接拷贝后重建索引 | ❌ 不入库 |
+
+首次启动（M3）把 `assets/seed-images/` 导入 `data/images/` 并写入 `images` 表（`source='builtin'`），之后占位图可以随时 `/img rm` 掉。占位图仅用于打通链路，正式使用应换成真实表情包。
+
 **容量与淘汰**：总量 ≤ `IMAGE_MAX_COUNT`（默认 500）。超出时按"无人工标签 → `last_used_at` 最旧"顺序置 `archived`（文件保留，不再发送）。
 
 **指令**
