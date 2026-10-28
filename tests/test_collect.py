@@ -340,10 +340,28 @@ def test_img_list_and_rm(tmp_path):
     env_ctx.engine.handle_message(
         IncomingMessage(user_id=100, message_id="m1", text="/img list", raw={})
     )
-    assert "cute" in env_ctx.sender.sent[-1][1]
+    listed = env_ctx.sender.sent[-1][1]
+    assert "cute" in listed
+    # 编号必须在——/img rm、/img tag 都要靠它
+    assert f"{image_id}." in listed
 
     env_ctx.engine.handle_message(
         IncomingMessage(user_id=100, message_id="m2", text=f"/img rm {image_id}", raw={})
     )
     assert env_ctx.store.get_image(image_id) is None
+    env_ctx.store.close()
+
+
+def test_img_list_keeps_numbering_for_many_images(tmp_path):
+    env_ctx = build_engine(tmp_path)
+    ids = [
+        env_ctx.store.add_image(f"sha{i}", f"aa/{i}.png", "image/png", 10, tags=["cute"], source="user")
+        for i in range(3)
+    ]
+    env_ctx.engine.handle_message(
+        IncomingMessage(user_id=100, message_id="m1", text="/img list", raw={})
+    )
+    listed = "".join(text for _, text in env_ctx.sender.sent)
+    for image_id in ids:
+        assert f"{image_id}." in listed
     env_ctx.store.close()

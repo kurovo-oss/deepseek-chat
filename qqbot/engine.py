@@ -124,7 +124,11 @@ class Engine:
 
         command_reply = self._handle_command(text, session)
         if command_reply is not None:
-            self._send_reply(message.user_id, session, command_reply)
+            # 指令回复是我们自己写的，不能当模型输出做 Markdown 清洗：
+            # 否则 "/img list" 的编号（"7. ..."）会被当成有序列表剥掉
+            self._send_reply(
+                message.user_id, session, command_reply, sanitize=False
+            )
             # /reset 的游标要在"回复本身"落库之后再定，否则重置后的
             # 第一条消息会把 /reset 的应答也带进上下文
             if text.lower().startswith("/reset"):
@@ -357,8 +361,14 @@ class Engine:
             return f"这张我存下啦嘿嘿，记成「{'、'.join(tags)}」了。"
         return "这张我存下啦嘿嘿，回头再给它起个名字。"
 
-    def _send_reply(self, user_id: int, session: str, raw_text: str) -> None:
-        cleaned = strip_markdown(raw_text or "")
+    def _send_reply(
+        self, user_id: int, session: str, raw_text: str, sanitize: bool = True
+    ) -> None:
+        if sanitize:
+            cleaned = strip_markdown(raw_text or "")
+        else:
+            # 指令回复：只去首尾空白，编号和格式原样保留
+            cleaned = (raw_text or "").strip()
         cleaned, tags = extract_image_tags(cleaned)
 
         image_path = self._pick_image(session, tags)
