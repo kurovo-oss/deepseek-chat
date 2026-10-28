@@ -1,4 +1,4 @@
-from qqbot.onebot import extract_text, parse_event
+from qqbot.onebot import HttpSender, extract_text, parse_event
 
 
 def _event(message_type="private", message=None, user_id=100, message_id=1):
@@ -91,3 +91,23 @@ def test_extract_text_joins_segments():
 def test_extract_text_accepts_raw_string():
     assert extract_text("直接字符串") == "直接字符串"
     assert extract_text(None) == ""
+
+
+# ---------------------------------------------------------------- 好友列表探测
+def test_friend_list_returns_items():
+    sender = HttpSender("http://127.0.0.1:1")
+    sender._request = lambda action, payload: (True, {"data": [{"user_id": 1}]})
+    assert sender.friend_list() == [{"user_id": 1}]
+
+
+def test_friend_list_none_when_request_fails():
+    sender = HttpSender("http://127.0.0.1:1")
+    sender._request = lambda action, payload: (False, {})
+    assert sender.friend_list() is None
+
+
+def test_friend_list_none_when_data_is_not_a_list():
+    """QQ 内核断网时 NapCat 可能回 data: null，这也算探测不到。"""
+    sender = HttpSender("http://127.0.0.1:1")
+    sender._request = lambda action, payload: (True, {"data": None})
+    assert sender.friend_list() is None

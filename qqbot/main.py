@@ -8,6 +8,7 @@ import json
 import logging
 import socket
 import sys
+import threading
 import time
 import urllib.parse
 import zlib
@@ -28,6 +29,7 @@ from .logsetup import setup_logging
 from .memory import Memory
 from .onebot import HttpSender
 from .store import Store
+from .watchdog import start_watchdog
 
 log = logging.getLogger("qqbot")
 
@@ -292,6 +294,10 @@ def main(argv: list[str] | None = None) -> int:
         elif waited >= 1:
             log.info("等了 %.0f 秒才等到网络", waited)
 
+    stop_event = threading.Event()
+    if settings.adapter_watchdog_seconds > 0:
+        start_watchdog(engine.sender, settings.adapter_watchdog_seconds, stop_event)
+
     log.info(
         "已启动：监听 http://%s:%s/event ，模型 %s（日志 %s）",
         settings.listen_host,
@@ -304,6 +310,7 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         log.info("收到中断，正在退出")
     finally:
+        stop_event.set()
         server.server_close()
         engine.store.close()
     return 0

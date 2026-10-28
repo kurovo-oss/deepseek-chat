@@ -146,6 +146,18 @@ class HttpSender:
         info = data.get("data")
         return info if isinstance(info, dict) else {}
 
+    def friend_list(self) -> list[dict[str, Any]] | None:
+        """好友列表——真正打到 QQ 内核的接口，用来看会话是否还活着。
+
+        注意不能用 get_status：QQ 内核断网时它照样返回 online=true，
+        只有走内核的接口才会露出马脚。
+        """
+        ok, data = self._request("get_friend_list", {})
+        if not ok:
+            return None
+        items = data.get("data")
+        return items if isinstance(items, list) else None
+
     def _request(self, action: str, payload: dict) -> tuple[bool, dict[str, Any]]:
         url = f"{self.api_url}/{action}"
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")

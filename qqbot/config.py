@@ -121,6 +121,7 @@ class Settings:
     segment_delay_ms: int = 1500
     request_timeout: float = 60.0
     network_wait_seconds: float = 30.0
+    adapter_watchdog_seconds: float = 300.0
     history_max_turns: int = 20
     window_token_budget: int = 4000
     image_enabled: bool = True
@@ -209,6 +210,7 @@ class Settings:
             segment_delay_ms=_int(env, "SEGMENT_DELAY_MS", 1500, minimum=0),
             request_timeout=_float(env, "REQUEST_TIMEOUT", 60.0),
             network_wait_seconds=_float(env, "NETWORK_WAIT_SECONDS", 30.0),
+            adapter_watchdog_seconds=_float(env, "ADAPTER_WATCHDOG_SECONDS", 300.0),
             history_max_turns=_int(env, "HISTORY_MAX_TURNS", 20),
             window_token_budget=_int(env, "WINDOW_TOKEN_BUDGET", 4000),
             image_enabled=_bool(env, "IMAGE_ENABLED", True),
