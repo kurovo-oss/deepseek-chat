@@ -33,7 +33,7 @@ def build_engine(settings) -> Engine:
     if settings.image_enabled:
         if settings.image_lib_dir.is_dir():
             images = ImageLibrary(settings.image_lib_dir)
-            log.info("图库已加载：%d 张，tags=%s", len(images), images.tags)
+            log.info("图库已加载：%d 张图 / %d 个 tag", len(images), len(images.tags))
         else:
             log.warning("图库目录不存在，配图功能关闭：%s", settings.image_lib_dir)
 

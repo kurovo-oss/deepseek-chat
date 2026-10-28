@@ -72,6 +72,16 @@ def test_missing_directory_is_empty(tmp_path):
     assert lib.resolve("cat") is None
 
 
+def test_len_counts_files_not_tags(tmp_path):
+    lib = make_library(
+        tmp_path,
+        ["cat.png"],
+        [{"file": "cat.png", "tags": ["cat", "animal", "cute"]}],
+    )
+    assert len(lib) == 1
+    assert len(lib.tags) == 3
+
+
 def test_tags_listed(tmp_path):
     lib = make_library(
         tmp_path,

@@ -26,7 +26,8 @@ class ImageLibrary:
         self._load()
 
     def __len__(self) -> int:
-        return sum(len(paths) for paths in self._index.values())
+        """图片文件数（同一文件挂多个 tag 只算一张）。"""
+        return len({path for paths in self._index.values() for path in paths})
 
     @property
     def tags(self) -> list[str]:
