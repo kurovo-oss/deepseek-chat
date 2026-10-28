@@ -50,3 +50,22 @@ def test_install_autostart_is_ascii_only():
     for path in SCRIPTS.glob("*.ps1"):
         data = path.read_bytes()
         assert all(byte < 128 for byte in data), f"{path.name} 含非 ASCII 字符"
+
+
+def test_restart_napcat_scripts_exist():
+    assert (SCRIPTS / "restart-napcat.ps1").is_file()
+    assert (SCRIPTS / "restart-napcat.bat").is_file()
+
+
+def test_restart_napcat_self_elevates():
+    text = (SCRIPTS / "restart-napcat.ps1").read_text(encoding="ascii")
+    assert "RunAs" in text, "需要管理员权限，必须能自提升"
+
+
+def test_restart_napcat_kills_only_napcat_tree():
+    """只按 NapCatWinBootMain 的父子链杀，绝不按名字杀所有 QQ：
+    这台机器上还有用户自己的 QQ 在跑。"""
+    text = (SCRIPTS / "restart-napcat.ps1").read_text(encoding="ascii")
+    assert "NapCatWinBootMain" in text
+    assert "Get-ChildProcessId" in text
+    assert "Name='QQ.exe'" not in text

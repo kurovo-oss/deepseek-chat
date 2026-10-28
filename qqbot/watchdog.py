@@ -22,29 +22,25 @@ class AdapterWatchdog:
         self.interval = interval
         self.max_failures = max(1, max_failures)
         self._failures = 0
-        self._known_nonempty = False
         self._warned = False
 
     def tick(self) -> str:
         """探一次。返回 ok / retry / down。"""
         friends = self.sender.friend_list()
 
-        if friends is None:
-            self._failures += 1
-            if self._failures >= self.max_failures:
-                return self._warn("连续 %d 次探测不到协议端" % self._failures)
-            return "retry"
-
-        self._failures = 0
         if friends:
-            self._known_nonempty = True
+            self._failures = 0
             self._warned = False
             return "ok"
 
-        # 空列表：以前明明有好友，现在空了 —— 只能是内核会话断了
-        if self._known_nonempty:
-            return self._warn("好友列表变空了")
-        return "ok"
+        # 探测失败，或拿到了空列表。空列表同样算失败：
+        # 一个正常在线的账号不可能一个好友都没有（这个号至少有你），
+        # 2026-10-28 的真实故障就是内核断网后 get_friend_list 回 []。
+        self._failures += 1
+        if self._failures >= self.max_failures:
+            reason = "好友列表为空" if friends is not None else "探测不到协议端"
+            return self._warn("%s（连续 %d 次）" % (reason, self._failures))
+        return "retry"
 
     def _warn(self, reason: str) -> str:
         if not self._warned:
