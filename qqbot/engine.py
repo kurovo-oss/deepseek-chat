@@ -49,10 +49,19 @@ class Engine:
     def handle_payload(self, payload: Any) -> bool:
         message = parse_event(payload)
         if message is None:
-            log.debug(
-                "忽略非私聊文本事件：post_type=%s message_type=%s",
-                payload.get("post_type") if isinstance(payload, dict) else type(payload),
-                payload.get("message_type") if isinstance(payload, dict) else None,
+            info = payload if isinstance(payload, dict) else {}
+            # 消息类事件被跳过要看得见（多为群消息或纯图片），其余噪声只记 debug
+            level = (
+                logging.INFO
+                if info.get("post_type") == "message"
+                else logging.DEBUG
+            )
+            log.log(
+                level,
+                "跳过的上报：post_type=%s message_type=%s user_id=%s",
+                info.get("post_type"),
+                info.get("message_type"),
+                info.get("user_id"),
             )
             return False
         self.handle_message(message)
