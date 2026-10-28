@@ -45,7 +45,7 @@ class FakeImages:
         self.cat_path = cat_path
         self.resolved = []
 
-    def resolve(self, tag):
+    def resolve(self, tag, max_bytes=None):
         self.resolved.append(tag)
         return self.cat_path if tag == "cat" else None
 
@@ -224,7 +224,9 @@ def test_forget_without_keyword_asks_back(env):
 
 def test_unknown_command_hints(env):
     env.engine.handle_message(make_message("/nope", mid="u1"))
-    assert "不认识" in env.sender.sent[-1][1]
+    # 帮助文本可能被分段发送，断言要看全部片段
+    joined = "".join(text for _, text in env.sender.sent)
+    assert "不认识" in joined
     assert env.llm.calls == []
 
 

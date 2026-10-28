@@ -20,6 +20,16 @@ from typing import Any, Protocol
 
 
 @dataclass(frozen=True)
+class IncomingImage:
+    """OneBot image 段。sub_type=1 表示表情包。"""
+
+    url: str = ""
+    file: str = ""
+    sub_type: int = 0
+    summary: str = ""
+
+
+@dataclass(frozen=True)
 class IncomingMessage:
     """适配层之上的统一消息形态，引擎不感知 QQ 细节。"""
 
@@ -27,6 +37,7 @@ class IncomingMessage:
     message_id: str
     text: str
     raw: dict[str, Any]
+    images: tuple[IncomingImage, ...] = ()
 
 
 class Sender(Protocol):
@@ -36,10 +47,7 @@ class Sender(Protocol):
 
 
 def extract_text(message: Any) -> str:
-    """从 OneBot 消息段中取出文本。
-
-    M1 只关心 text 段；image / face / mface 等在 M3 处理。
-    """
+    """从 OneBot 消息段中取出文本。"""
     if isinstance(message, str):
         return message
     if not isinstance(message, list):
@@ -53,6 +61,30 @@ def extract_text(message: Any) -> str:
         data = segment.get("data") or {}
         parts.append(str(data.get("text", "")))
     return "".join(parts)
+
+
+def extract_images(message: Any) -> tuple[IncomingImage, ...]:
+    """取出消息里的图片段；非数组消息（CQ 字符串）不解析图片。"""
+    if not isinstance(message, list):
+        return ()
+    found: list[IncomingImage] = []
+    for segment in message:
+        if not isinstance(segment, dict) or segment.get("type") != "image":
+            continue
+        data = segment.get("data") or {}
+        try:
+            sub_type = int(data.get("sub_type") or 0)
+        except (TypeError, ValueError):
+            sub_type = 0
+        found.append(
+            IncomingImage(
+                url=str(data.get("url") or ""),
+                file=str(data.get("file") or ""),
+                sub_type=sub_type,
+                summary=str(data.get("summary") or ""),
+            )
+        )
+    return tuple(found)
 
 
 def parse_event(payload: Any) -> IncomingMessage | None:
@@ -70,14 +102,16 @@ def parse_event(payload: Any) -> IncomingMessage | None:
         return None
 
     text = extract_text(payload.get("message")).strip()
-    if not text:
-        return None  # 纯图片/表情消息在 M1 不处理
+    images = extract_images(payload.get("message"))
+    if not text and not images:
+        return None
 
     return IncomingMessage(
         user_id=user_id,
         message_id=str(payload.get("message_id") or ""),
         text=text,
         raw=payload,
+        images=images,
     )
 
 

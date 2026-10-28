@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS images (
   mime          TEXT NOT NULL,
   byte_size     INTEGER NOT NULL,
   tags          TEXT NOT NULL DEFAULT '[]',
+  manual        INTEGER NOT NULL DEFAULT 0,
   source        TEXT NOT NULL,
   source_msg_id TEXT,
   status        TEXT NOT NULL DEFAULT 'active',
@@ -167,6 +168,14 @@ class Store:
         if "image_tags" not in columns:
             self._conn.execute(
                 "ALTER TABLE messages ADD COLUMN image_tags TEXT NOT NULL DEFAULT '[]'"
+            )
+        image_columns = {
+            row["name"]
+            for row in self._conn.execute("PRAGMA table_info(images)").fetchall()
+        }
+        if "manual" not in image_columns:
+            self._conn.execute(
+                "ALTER TABLE images ADD COLUMN manual INTEGER NOT NULL DEFAULT 0"
             )
         self._migrate_memories_to_cards()
 
@@ -498,6 +507,144 @@ class Store:
                 (int(after_id), int(limit)),
             ).fetchall()
         return [self._card_row(row) for row in rows]
+
+    # ---------------- images ----------------
+    @staticmethod
+    def _image_row(row) -> dict:
+        item = dict(row)
+        try:
+            item["tags"] = json.loads(item.get("tags") or "[]")
+        except json.JSONDecodeError:
+            item["tags"] = []
+        item["manual"] = bool(item.get("manual"))
+        return item
+
+    def add_image(
+        self,
+        sha256: str,
+        rel_path: str,
+        mime: str,
+        byte_size: int,
+        tags: list[str] | None = None,
+        source: str = "user",
+        source_msg_id: str | None = None,
+        manual: bool = False,
+        created_at: int | None = None,
+    ) -> int | None:
+        """插入图片记录；sha256 已存在时返回 None（去重）。"""
+        now = int(created_at if created_at is not None else time.time())
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT OR IGNORE INTO images"
+                "(sha256, rel_path, mime, byte_size, tags, manual, source, source_msg_id,"
+                " created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+                (
+                    sha256,
+                    rel_path,
+                    mime,
+                    int(byte_size),
+                    json.dumps(sorted({t for t in (tags or []) if t}), ensure_ascii=False),
+                    1 if manual else 0,
+                    source,
+                    source_msg_id,
+                    now,
+                ),
+            )
+            self._conn.commit()
+            return int(cur.lastrowid) if cur.rowcount > 0 else None
+
+    def find_image_by_sha(self, sha256: str) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM images WHERE sha256 = ?", (sha256,)
+            ).fetchone()
+        return self._image_row(row) if row else None
+
+    def get_image(self, image_id: int) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM images WHERE id = ?", (int(image_id),)
+            ).fetchone()
+        return self._image_row(row) if row else None
+
+    def list_images(self, status: str = "active", tag: str | None = None, limit: int = 500) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM images WHERE status = ? ORDER BY id DESC LIMIT ?",
+                (status, int(limit)),
+            ).fetchall()
+        items = [self._image_row(row) for row in rows]
+        if tag:
+            wanted = tag.strip().lower()
+            items = [item for item in items if wanted in {t.lower() for t in item["tags"]}]
+        return items
+
+    def count_images(self, status: str = "active") -> int:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COUNT(*) AS n FROM images WHERE status = ?", (status,)
+            ).fetchone()
+        return int(row["n"])
+
+    def latest_image(self, source: str | None = None) -> dict | None:
+        sql = "SELECT * FROM images WHERE status = 'active'"
+        params: list = []
+        if source:
+            sql += " AND source = ?"
+            params.append(source)
+        sql += " ORDER BY id DESC LIMIT 1"
+        with self._lock:
+            row = self._conn.execute(sql, params).fetchone()
+        return self._image_row(row) if row else None
+
+    def tag_image(self, image_id: int, tags: list[str], manual: bool = True) -> bool:
+        """合并标签；manual=True 表示人工打的，淘汰时优先保留。"""
+        image = self.get_image(image_id)
+        if image is None:
+            return False
+        merged = sorted({*(t for t in image["tags"]), *(t for t in tags if t)})
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE images SET tags = ?, manual = ? WHERE id = ?",
+                (json.dumps(merged, ensure_ascii=False), 1 if manual else 0, int(image_id)),
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    def delete_image(self, image_id: int) -> bool:
+        with self._lock:
+            cur = self._conn.execute("DELETE FROM images WHERE id = ?", (int(image_id),))
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    def record_image_use(self, image_id: int, now: int | None = None) -> None:
+        stamp = int(now if now is not None else time.time())
+        with self._lock:
+            self._conn.execute(
+                "UPDATE images SET use_count = use_count + 1, last_used_at = ? WHERE id = ?",
+                (stamp, int(image_id)),
+            )
+            self._conn.commit()
+
+    def evict_images(self, max_count: int) -> int:
+        """超出容量时，从「无人工标签 + 最久未用」开始归档（文件保留）。"""
+        total = self.count_images()
+        if total <= max_count:
+            return 0
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id FROM images WHERE status = 'active' AND manual = 0"
+                " ORDER BY COALESCE(last_used_at, created_at) ASC, id ASC LIMIT ?",
+                (total - max_count,),
+            ).fetchall()
+            ids = [int(row["id"]) for row in rows]
+            if ids:
+                self._conn.executemany(
+                    "UPDATE images SET status = 'archived' WHERE id = ?",
+                    [(image_id,) for image_id in ids],
+                )
+                self._conn.commit()
+        return len(ids)
 
     # ---------------- usage ----------------
     def log_usage(

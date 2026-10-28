@@ -124,9 +124,14 @@ class Settings:
     window_token_budget: int = 4000
     image_enabled: bool = True
     image_lib_dir: Path = Path("assets/seed-images")
+    image_dir: Path = Path("data/images")
+    image_collect_enabled: bool = True
+    image_auto_tag: bool = True
+    image_max_count: int = 500
     image_cooldown_messages: int = 10
     image_send_mode: str = "path"
     image_max_bytes: int = 5 * 1024 * 1024
+    tag_prompt_file: Path = Path("prompts/tag.md")
     # ---- 长期记忆（M2）----
     memory_enabled: bool = True
     extract_enabled: bool = True
@@ -207,6 +212,12 @@ class Settings:
             image_enabled=_bool(env, "IMAGE_ENABLED", True),
             image_lib_dir=base_dir
             / env.get("IMAGE_LIB_DIR", "assets/seed-images").strip(),
+            image_dir=base_dir / env.get("IMAGE_DIR", "data/images").strip(),
+            image_collect_enabled=_bool(env, "IMAGE_COLLECT_ENABLED", True),
+            image_auto_tag=_bool(env, "IMAGE_AUTO_TAG", True),
+            image_max_count=_int(env, "IMAGE_MAX_COUNT", 500),
+            tag_prompt_file=base_dir
+            / env.get("TAG_PROMPT_FILE", "prompts/tag.md").strip(),
             image_cooldown_messages=_int(env, "IMAGE_COOLDOWN_MESSAGES", 10, minimum=0),
             image_send_mode=_choice(env, "IMAGE_SEND_MODE", "path", {"path", "base64"}),
             image_max_bytes=_int(env, "IMAGE_MAX_BYTES", 5 * 1024 * 1024),

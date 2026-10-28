@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,8 @@ HELP_TEXT = (
     "/memory 看看我记得什么\n"
     "/forget 编号 忘掉某件事\n"
     "/pin 编号 把某件事记牢一点\n"
+    "/tag 名字 给刚存的表情包打标\n"
+    "/img list 看看图库\n"
     "/status 运行状态"
 )
 
@@ -43,6 +46,7 @@ class Engine:
         sleep=time.sleep,
         images: Any = None,
         memory: Any = None,
+        collector: Any = None,
     ) -> None:
         self.settings = settings
         self.store = store
@@ -51,6 +55,7 @@ class Engine:
         self.system_prompt = system_prompt
         self.images = images
         self.memory = memory
+        self.collector = collector
         self._sleep = sleep
 
     # ---------------- 入口 ----------------
@@ -86,7 +91,7 @@ class Engine:
             return
 
         text = message.text.strip()
-        if not text:
+        if not text and not message.images:
             return
 
         # 幂等：同一 qq_msg_id 只处理一次
@@ -94,12 +99,28 @@ class Engine:
             log.info("重复消息，跳过：qq_msg_id=%s", message.message_id)
             return
 
-        log.info("收到来自 %s 的消息：%s", message.user_id, text[:60])
-
         session = str(message.user_id)
+
+        collected: list[dict] = []
+        if message.images and self.collector is not None:
+            try:
+                collected = self.collector.collect(
+                    message, self.store.recent_messages(session, 4)
+                )
+            except Exception:  # noqa: BLE001 - 收藏失败不能影响对话
+                log.exception("收藏表情包失败")
+            if collected:
+                log.info("收藏了 %d 张表情包", len(collected))
+
+        log.info("收到来自 %s 的消息：%s", message.user_id, text[:60] or "[表情]")
+
         self.store.save_message(
-            session, "user", text, qq_msg_id=message.message_id or None
+            session, "user", text or "[表情]", qq_msg_id=message.message_id or None
         )
+
+        if not text:
+            self._send_reply(message.user_id, session, self._sticker_ack(collected))
+            return
 
         command_reply = self._handle_command(text, session)
         if command_reply is not None:
@@ -146,6 +167,12 @@ class Engine:
 
         if head in ("/pin", "/unpin"):
             return self._set_pin(rest, pinned=head == "/pin")
+
+        if head == "/tag":
+            return self._tag_latest(rest)
+
+        if head == "/img":
+            return self._img_command(rest)
 
         if head in ("/help", "/?"):
             return HELP_TEXT
@@ -208,6 +235,62 @@ class Engine:
             return f"记住了，「{card['summary']}」我会一直记着。"
         return f"「{card['summary']}」不用一直记着了。"
 
+    # ---------------- 图库指令 ----------------
+    @staticmethod
+    def _split_tags(raw: str) -> list[str]:
+        return [tag.lower() for tag in re.split(r"[\s,，、]+", raw or "") if tag.strip()][:5]
+
+    def _tag_latest(self, rest: str) -> str:
+        latest = self.store.latest_image(source="user")
+        if latest is None:
+            return "我还没存过表情包呀，先发一张给我？"
+        tags = self._split_tags(rest)
+        if not tags:
+            current = "、".join(latest["tags"]) or "无标签"
+            return (
+                f"最近存的是第 {latest['id']} 张，现在是：{current}。\n"
+                f"要打标就发 /tag 名字，可以给多个。"
+            )
+        self.store.tag_image(latest["id"], tags)
+        return f"好，第 {latest['id']} 张标成「{'、'.join(tags)}」了。"
+
+    def _img_command(self, rest: str) -> str:
+        parts = (rest or "").split()
+        sub = parts[0].lower() if parts else "list"
+
+        if sub in ("list", "ls"):
+            tag = parts[1].lower() if len(parts) > 1 else None
+            rows = self.store.list_images(tag=tag, limit=10)
+            if not rows:
+                return "图库里没有这张呀。" if tag else "图库还是空的呢。"
+            lines = [
+                f"{row['id']}. {'、'.join(row['tags']) or '无标签'}"
+                f"（用 {row['use_count']} 次{'，内置' if row['source'] == 'builtin' else ''}）"
+                for row in rows
+            ]
+            return "图库里这些：\n" + "\n".join(lines)
+
+        if sub == "rm":
+            if len(parts) < 2 or not parts[1].isdigit():
+                return "要删哪一张？发 /img rm 编号。"
+            image_id = int(parts[1])
+            if self.store.get_image(image_id) is None:
+                return f"图库里没有第 {image_id} 张呀。"
+            self.store.delete_image(image_id)
+            return f"第 {image_id} 张删掉了。"
+
+        if sub == "tag":
+            if len(parts) < 3 or not parts[1].isdigit():
+                return "格式：/img tag 编号 名字，可以给多个名字。"
+            image_id = int(parts[1])
+            if self.store.get_image(image_id) is None:
+                return f"图库里没有第 {image_id} 张呀。"
+            tags = self._split_tags(" ".join(parts[2:]))
+            self.store.tag_image(image_id, tags)
+            return f"好，第 {image_id} 张标成「{'、'.join(tags)}」了。"
+
+        return "图库指令：/img list [tag]、/img tag 编号 名字、/img rm 编号"
+
     # ---------------- 对话 ----------------
     def _chat(self, session: str) -> str:
         messages = self._build_messages(session)
@@ -257,16 +340,18 @@ class Engine:
         if self.store.has_recent_image(session, self.settings.image_cooldown_messages):
             return None
         for tag in tags:
-            path = self.images.resolve(tag)
-            if path is None:
-                continue
-            try:
-                if path.stat().st_size > self.settings.image_max_bytes:
-                    continue
-            except OSError:
-                continue
-            return path
+            path = self.images.resolve(tag, max_bytes=self.settings.image_max_bytes)
+            if path is not None:
+                return path
         return None
+
+    def _sticker_ack(self, collected: list[dict]) -> str:
+        if not collected:
+            return "嗯，我看到啦。"
+        tags = collected[0].get("tags") or []
+        if tags:
+            return f"这张我存下啦嘿嘿，记成「{'、'.join(tags)}」了。"
+        return "这张我存下啦嘿嘿，回头再给它起个名字。"
 
     def _send_reply(self, user_id: int, session: str, raw_text: str) -> None:
         cleaned = strip_markdown(raw_text or "")

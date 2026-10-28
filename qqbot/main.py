@@ -17,8 +17,9 @@ from .config import (
     load_settings,
     load_system_prompt,
 )
+from .collect import StickerCollector
 from .engine import Engine
-from .images import ImageLibrary
+from .images import ImageLibrary, import_seed_library
 from .llm import LLMClient
 from .logsetup import setup_logging
 from .memory import Memory
@@ -39,12 +40,21 @@ def build_engine(settings) -> Engine:
     sender = HttpSender(settings.adapter_api_url, settings.adapter_token)
 
     images = None
+    collector = None
     if settings.image_enabled:
-        if settings.image_lib_dir.is_dir():
-            images = ImageLibrary(settings.image_lib_dir)
-            log.info("图库已加载：%d 张图 / %d 个 tag", len(images), len(images.tags))
-        else:
-            log.warning("图库目录不存在，配图功能关闭：%s", settings.image_lib_dir)
+        imported = import_seed_library(store, settings.image_lib_dir, settings.image_dir)
+        if imported:
+            log.info("已导入内置图 %d 张", imported)
+        images = ImageLibrary(store, settings.image_dir)
+        log.info("图库：%d 张图 / %d 个 tag", len(images), len(images.tags))
+        if settings.image_collect_enabled:
+            collector = StickerCollector(
+                settings,
+                store,
+                settings.image_dir,
+                llm=llm,
+                tag_prompt=load_optional_prompt(settings.tag_prompt_file),
+            )
 
     memory = None
     if settings.memory_enabled:
@@ -70,6 +80,7 @@ def build_engine(settings) -> Engine:
         load_system_prompt(settings),
         images=images,
         memory=memory,
+        collector=collector,
     )
 
 
