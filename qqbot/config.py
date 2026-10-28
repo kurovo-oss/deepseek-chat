@@ -83,6 +83,26 @@ def _float(env: Mapping[str, str], key: str, default: float) -> float:
         raise ConfigError(f"{key} 必须是数字，当前为 {raw!r}") from exc
 
 
+def _bool(env: Mapping[str, str], key: str, default: bool) -> bool:
+    raw = env.get(key, "").strip().lower()
+    if not raw:
+        return default
+    if raw in ("1", "true", "yes", "on"):
+        return True
+    if raw in ("0", "false", "no", "off"):
+        return False
+    raise ConfigError(f"{key} 必须是 true/false，当前为 {raw!r}")
+
+
+def _choice(env: Mapping[str, str], key: str, default: str, allowed: set[str]) -> str:
+    raw = env.get(key, "").strip().lower()
+    if not raw:
+        return default
+    if raw not in allowed:
+        raise ConfigError(f"{key} 只能是 {'/'.join(sorted(allowed))}，当前为 {raw!r}")
+    return raw
+
+
 @dataclass(frozen=True)
 class Settings:
     allow_user_id: int
@@ -101,6 +121,11 @@ class Settings:
     request_timeout: float = 60.0
     history_max_turns: int = 20
     window_token_budget: int = 4000
+    image_enabled: bool = True
+    image_lib_dir: Path = Path("assets/seed-images")
+    image_cooldown_messages: int = 10
+    image_send_mode: str = "path"
+    image_max_bytes: int = 5 * 1024 * 1024
 
     @property
     def window_char_budget(self) -> int:
@@ -137,6 +162,12 @@ class Settings:
             request_timeout=_float(env, "REQUEST_TIMEOUT", 60.0),
             history_max_turns=_int(env, "HISTORY_MAX_TURNS", 20),
             window_token_budget=_int(env, "WINDOW_TOKEN_BUDGET", 4000),
+            image_enabled=_bool(env, "IMAGE_ENABLED", True),
+            image_lib_dir=base_dir
+            / env.get("IMAGE_LIB_DIR", "assets/seed-images").strip(),
+            image_cooldown_messages=_int(env, "IMAGE_COOLDOWN_MESSAGES", 10, minimum=0),
+            image_send_mode=_choice(env, "IMAGE_SEND_MODE", "path", {"path", "base64"}),
+            image_max_bytes=_int(env, "IMAGE_MAX_BYTES", 5 * 1024 * 1024),
         )
 
 

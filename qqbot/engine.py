@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 from typing import Any
 
 from .config import Settings
@@ -31,12 +32,14 @@ class Engine:
         sender: Sender,
         system_prompt: str,
         sleep=time.sleep,
+        images: Any = None,
     ) -> None:
         self.settings = settings
         self.store = store
         self.llm = llm
         self.sender = sender
         self.system_prompt = system_prompt
+        self.images = images
         self._sleep = sleep
 
     # ---------------- 入口 ----------------
@@ -158,16 +161,40 @@ class Engine:
         return messages
 
     # ---------------- 发送 ----------------
+    def _pick_image(self, session: str, tags: list[str]) -> Path | None:
+        """配图策略：冷却窗口内发过图就直接放弃，不找替代，也不提示。"""
+        if not tags or self.images is None or not self.settings.image_enabled:
+            return None
+        if self.store.has_recent_image(session, self.settings.image_cooldown_messages):
+            return None
+        for tag in tags:
+            path = self.images.resolve(tag)
+            if path is None:
+                continue
+            try:
+                if path.stat().st_size > self.settings.image_max_bytes:
+                    continue
+            except OSError:
+                continue
+            return path
+        return None
+
     def _send_reply(self, user_id: int, session: str, raw_text: str) -> None:
         cleaned = strip_markdown(raw_text or "")
-        cleaned, _tags = extract_image_tags(cleaned)  # 配图在 M3 接入
-        parts = split_message(cleaned, self.settings.reply_max_chars) or [FALLBACK_REPLY]
+        cleaned, tags = extract_image_tags(cleaned)
 
+        image_path = self._pick_image(session, tags)
+        parts = split_message(cleaned, self.settings.reply_max_chars)
+        if not parts and image_path is None:
+            parts = [FALLBACK_REPLY]
+
+        content = cleaned if cleaned else ("[图片]" if image_path else " ".join(parts))
         record_id = self.store.save_message(
             session,
             "assistant",
-            cleaned or " ".join(parts),
+            content,
             send_state="pending",
+            image_tags=[image_path.name] if image_path else [],
         )
 
         all_ok = True
@@ -175,6 +202,12 @@ class Engine:
             if index:
                 self._sleep(self.settings.segment_delay_ms / 1000)
             if not self.sender.send_private(user_id, part):
+                all_ok = False
+
+        if image_path is not None:
+            if not self.sender.send_private_image(
+                user_id, image_path, self.settings.image_send_mode
+            ):
                 all_ok = False
 
         if record_id is not None:

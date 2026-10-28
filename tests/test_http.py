@@ -3,6 +3,7 @@
 这一层容易被忽略：单元测试全绿，但协议端连不上往往就挂在这里。
 """
 
+import base64
 import json
 import threading
 import urllib.error
@@ -139,3 +140,25 @@ def test_sender_returns_false_when_unreachable():
     # 指向一个几乎不可能开放的端口
     sender = HttpSender("http://127.0.0.1:1", timeout=1)
     assert sender.send_private(100, "你好") is False
+
+
+def test_sender_posts_image_as_file_url(ok_server, tmp_path):
+    image = tmp_path / "cat.png"
+    image.write_bytes(b"fake")
+
+    assert HttpSender(ok_server).send_private_image(100, image, mode="path") is True
+
+    message = _OkHandler.received[-1]["message"]
+    assert message.startswith("[CQ:image,file=file:///")
+    assert "cat.png" in message
+
+
+def test_sender_posts_image_as_base64(ok_server, tmp_path):
+    image = tmp_path / "cat.png"
+    image.write_bytes(b"fake")
+
+    assert HttpSender(ok_server).send_private_image(100, image, mode="base64") is True
+
+    message = _OkHandler.received[-1]["message"]
+    assert message.startswith("[CQ:image,file=base64://")
+    assert base64.b64encode(b"fake").decode() in message

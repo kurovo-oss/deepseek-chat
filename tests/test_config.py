@@ -69,6 +69,38 @@ def test_parse_dotenv_inline_comment():
     assert parsed["D"] == "p#ss"  # 前面没有空格，# 属于值本身
 
 
+def test_image_defaults(tmp_path):
+    settings = Settings.from_env({"ALLOW_USER_ID": "1", "MODEL_API_KEY": "k"}, tmp_path)
+    assert settings.image_enabled is True
+    assert settings.image_cooldown_messages == 10
+    assert settings.image_send_mode == "path"
+    assert settings.image_lib_dir == tmp_path / "assets/seed-images"
+
+
+def test_invalid_image_send_mode(tmp_path):
+    with pytest.raises(ConfigError):
+        Settings.from_env(
+            {"ALLOW_USER_ID": "1", "MODEL_API_KEY": "k", "IMAGE_SEND_MODE": "ftp"},
+            tmp_path,
+        )
+
+
+def test_invalid_bool(tmp_path):
+    with pytest.raises(ConfigError):
+        Settings.from_env(
+            {"ALLOW_USER_ID": "1", "MODEL_API_KEY": "k", "IMAGE_ENABLED": "maybe"},
+            tmp_path,
+        )
+
+
+def test_image_cooldown_can_be_zero(tmp_path):
+    settings = Settings.from_env(
+        {"ALLOW_USER_ID": "1", "MODEL_API_KEY": "k", "IMAGE_COOLDOWN_MESSAGES": "0"},
+        tmp_path,
+    )
+    assert settings.image_cooldown_messages == 0
+
+
 def test_system_prompt_reads_file(tmp_path):
     prompt_file = tmp_path / "s.md"
     prompt_file.write_text("自定义人格", encoding="utf-8")

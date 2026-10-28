@@ -11,6 +11,7 @@ from pathlib import Path
 
 from .config import ConfigError, load_settings, load_system_prompt
 from .engine import Engine
+from .images import ImageLibrary
 from .llm import LLMClient
 from .onebot import HttpSender
 from .store import Store
@@ -27,7 +28,23 @@ def build_engine(settings) -> Engine:
         timeout=settings.request_timeout,
     )
     sender = HttpSender(settings.adapter_api_url, settings.adapter_token)
-    return Engine(settings, store, llm, sender, load_system_prompt(settings))
+
+    images = None
+    if settings.image_enabled:
+        if settings.image_lib_dir.is_dir():
+            images = ImageLibrary(settings.image_lib_dir)
+            log.info("图库已加载：%d 张，tags=%s", len(images), images.tags)
+        else:
+            log.warning("图库目录不存在，配图功能关闭：%s", settings.image_lib_dir)
+
+    return Engine(
+        settings,
+        store,
+        llm,
+        sender,
+        load_system_prompt(settings),
+        images=images,
+    )
 
 
 def make_handler(engine: Engine):

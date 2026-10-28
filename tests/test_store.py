@@ -90,3 +90,32 @@ def test_sanitize_fts_query():
     assert sanitize_fts_query("测试 - 内容") == '"测试" OR "内容"'
     assert sanitize_fts_query("a-") == ""
     assert sanitize_fts_query("") == ""
+
+
+def test_image_tags_persisted(store):
+    import json
+
+    store.save_message("1", "assistant", "喏", image_tags=["cat.png"])
+    assert store.has_recent_image("1") is True
+    assert json.loads(store.recent_messages("1", 1)[0]["image_tags"]) == ["cat.png"]
+
+
+def test_has_recent_image_respects_window(store):
+    for i in range(3):
+        store.save_message("1", "user", f"m{i}")
+    store.save_message("1", "assistant", "图", image_tags=["cat.png"])
+    for i in range(2):
+        store.save_message("1", "user", f"x{i}")
+
+    assert store.has_recent_image("1", last_n=5) is True
+    assert store.has_recent_image("1", last_n=2) is False
+
+
+def test_has_recent_image_zero_window(store):
+    store.save_message("1", "assistant", "图", image_tags=["cat.png"])
+    assert store.has_recent_image("1", last_n=0) is False
+
+
+def test_empty_image_tags_is_false(store):
+    store.save_message("1", "assistant", "纯文本")
+    assert store.has_recent_image("1") is False

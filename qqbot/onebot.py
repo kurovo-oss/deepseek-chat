@@ -10,10 +10,12 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol
 
 
@@ -29,6 +31,8 @@ class IncomingMessage:
 
 class Sender(Protocol):
     def send_private(self, user_id: int, text: str) -> bool: ...
+
+    def send_private_image(self, user_id: int, image: Path, mode: str = "path") -> bool: ...
 
 
 def extract_text(message: Any) -> str:
@@ -88,6 +92,17 @@ class HttpSender:
     def send_private(self, user_id: int, text: str) -> bool:
         payload = {"user_id": user_id, "message": text}
         return self._call("send_private_msg", payload)
+
+    def send_private_image(self, user_id: int, image: Path | bytes, mode: str = "path") -> bool:
+        """发图。mode=path 用 file:// URL（协议端与程序同机可用），
+        mode=base64 走 base64://（协议端在容器里、看不到宿主路径时用）。"""
+        if mode == "base64":
+            data = image if isinstance(image, bytes) else Path(image).read_bytes()
+            encoded = base64.b64encode(data).decode("ascii")
+            cq = f"[CQ:image,file=base64://{encoded}]"
+        else:
+            cq = f"[CQ:image,file={Path(image).as_uri()}]"
+        return self._call("send_private_msg", {"user_id": user_id, "message": cq})
 
     def _call(self, action: str, payload: dict) -> bool:
         url = f"{self.api_url}/{action}"

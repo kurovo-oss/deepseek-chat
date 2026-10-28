@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
 import threading
@@ -20,6 +21,7 @@ CREATE TABLE IF NOT EXISTS messages (
   role        TEXT NOT NULL,
   content     TEXT NOT NULL,
   send_state  TEXT NOT NULL DEFAULT 'sent',
+  image_tags  TEXT NOT NULL DEFAULT '[]',
   created_at  INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id);
@@ -127,8 +129,20 @@ class Store:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA synchronous=NORMAL")
             self._conn.executescript(_SCHEMA)
+            self._migrate()
             self.fts_enabled = self._try_enable_fts()
             self._conn.commit()
+
+    def _migrate(self) -> None:
+        """给老库补列，避免升级后直接报错。"""
+        columns = {
+            row["name"]
+            for row in self._conn.execute("PRAGMA table_info(messages)").fetchall()
+        }
+        if "image_tags" not in columns:
+            self._conn.execute(
+                "ALTER TABLE messages ADD COLUMN image_tags TEXT NOT NULL DEFAULT '[]'"
+            )
 
     def _try_enable_fts(self) -> bool:
         try:
@@ -146,15 +160,17 @@ class Store:
         qq_msg_id: str | None = None,
         send_state: str = "sent",
         created_at: int | None = None,
+        image_tags: list[str] | None = None,
     ) -> int | None:
         """写入消息；qq_msg_id 重复时返回 None（幂等保护）。"""
         ts = int(created_at if created_at is not None else time.time())
+        tags_json = json.dumps(image_tags or [], ensure_ascii=False)
         with self._lock:
             cur = self._conn.execute(
                 "INSERT OR IGNORE INTO messages"
-                "(session_id, qq_msg_id, role, content, send_state, created_at)"
-                " VALUES (?,?,?,?,?,?)",
-                (session_id, qq_msg_id, role, content, send_state, ts),
+                "(session_id, qq_msg_id, role, content, send_state, image_tags, created_at)"
+                " VALUES (?,?,?,?,?,?,?)",
+                (session_id, qq_msg_id, role, content, send_state, tags_json, ts),
             )
             self._conn.commit()
             return cur.lastrowid if cur.rowcount > 0 else None
@@ -198,6 +214,18 @@ class Store:
                 (session_id,),
             ).fetchone()
         return int(row["n"])
+
+    def has_recent_image(self, session_id: str, last_n: int = 10) -> bool:
+        """最近 N 条消息里是否发过图——配图冷却的依据。"""
+        if last_n <= 0:
+            return False
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT image_tags FROM messages WHERE session_id = ?"
+                " ORDER BY id DESC LIMIT ?",
+                (session_id, last_n),
+            ).fetchall()
+        return any((row["image_tags"] or "[]") not in ("[]", "") for row in rows)
 
     def update_send_state(self, message_id: int, state: str) -> None:
         with self._lock:
