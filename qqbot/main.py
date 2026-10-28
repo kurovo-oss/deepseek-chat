@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import logging
 import sys
+import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -51,18 +53,61 @@ def make_handler(engine: Engine):
     class OneBotHandler(BaseHTTPRequestHandler):
         server_version = "qqbot/0.1"
 
-        def do_POST(self) -> None:  # noqa: N802 (http.server 约定)
-            if self.path.split("?")[0].rstrip("/") != "/event":
-                self.send_error(404, "not found")
-                return
+        def _read_body(self) -> bytes:
+            """读请求体。协议端常用 chunked，不实现就会拿到空 body。"""
+            if "chunked" in (self.headers.get("Transfer-Encoding") or "").lower():
+                chunks: list[bytes] = []
+                while True:
+                    line = self.rfile.readline(65536).strip()
+                    if not line:
+                        break
+                    try:
+                        size = int(line.split(b";")[0], 16)
+                    except ValueError:
+                        break
+                    if size == 0:
+                        self.rfile.readline(65536)  # trailer
+                        break
+                    chunks.append(self.rfile.read(size))
+                    self.rfile.read(2)  # 每块后的 CRLF
+                return b"".join(chunks)
+
             try:
                 length = int(self.headers.get("Content-Length") or 0)
             except ValueError:
                 length = 0
-            body = self.rfile.read(length) if length > 0 else b""
+            return self.rfile.read(length) if length > 0 else b""
+
+        def _decode_body(self, raw: bytes) -> bytes:
+            encoding = (self.headers.get("Content-Encoding") or "").lower()
+            if "gzip" in encoding:
+                return gzip.decompress(raw)
+            if "deflate" in encoding:
+                return zlib.decompress(raw)
+            return raw
+
+        def do_POST(self) -> None:  # noqa: N802 (http.server 约定)
+            if self.path.split("?")[0].rstrip("/") != "/event":
+                self.send_error(404, "not found")
+                return
+
+            raw = self._read_body()
+            if not raw:
+                log.warning(
+                    "收到空事件体，headers=%s",
+                    {
+                        "Content-Length": self.headers.get("Content-Length"),
+                        "Transfer-Encoding": self.headers.get("Transfer-Encoding"),
+                        "Content-Type": self.headers.get("Content-Type"),
+                    },
+                )
+                self.send_error(400, "empty body")
+                return
+
             try:
-                payload = json.loads(body.decode("utf-8"))
-            except (UnicodeDecodeError, json.JSONDecodeError):
+                payload = json.loads(self._decode_body(raw).decode("utf-8-sig"))
+            except (UnicodeDecodeError, json.JSONDecodeError, OSError, zlib.error) as exc:
+                log.warning("事件体解析失败：%s；前 200 字节=%r", exc, raw[:200])
                 self.send_error(400, "bad json")
                 return
 

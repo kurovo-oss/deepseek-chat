@@ -4,7 +4,9 @@
 """
 
 import base64
+import gzip
 import json
+import socket
 import threading
 import urllib.error
 import urllib.request
@@ -69,6 +71,76 @@ def test_bad_json_returns_400(server):
     base, engine = server
     with pytest.raises(urllib.error.HTTPError) as exc:
         _post(f"{base}/event", None, raw=b"{not json")
+    assert exc.value.code == 400
+    assert engine.payloads == []
+
+
+# ---------------- 协议端实际发送方式 ----------------
+SAMPLE_EVENT = {
+    "post_type": "message",
+    "message_type": "private",
+    "user_id": 100,
+    "message_id": 42,
+    "message": [{"type": "text", "data": {"text": "你好"}}],
+}
+
+
+def test_chunked_body_accepted(server):
+    """NapCat 用 Transfer-Encoding: chunked 上报，不能当成空 body。"""
+    base, engine = server
+    host, port = "127.0.0.1", int(base.rsplit(":", 1)[1])
+    payload = json.dumps(SAMPLE_EVENT, ensure_ascii=False).encode("utf-8")
+
+    head = (
+        b"POST /event HTTP/1.1\r\n"
+        b"Host: 127.0.0.1\r\n"
+        b"Content-Type: application/json\r\n"
+        b"Transfer-Encoding: chunked\r\n"
+        b"Connection: close\r\n\r\n"
+    )
+    body = b""
+    for start in range(0, len(payload), 10):
+        chunk = payload[start : start + 10]
+        body += b"%x\r\n%s\r\n" % (len(chunk), chunk)
+    body += b"0\r\n\r\n"
+
+    with socket.create_connection((host, port), timeout=5) as sock:
+        sock.sendall(head + body)
+        response = b""
+        while True:
+            data = sock.recv(4096)
+            if not data:
+                break
+            response += data
+
+    assert b" 204 " in response
+    assert engine.payloads == [SAMPLE_EVENT]
+
+
+def test_gzip_body_accepted(server):
+    base, engine = server
+    raw = gzip.compress(json.dumps(SAMPLE_EVENT).encode("utf-8"))
+    request = urllib.request.Request(
+        f"{base}/event",
+        data=raw,
+        method="POST",
+        headers={"Content-Type": "application/json", "Content-Encoding": "gzip"},
+    )
+    with urllib.request.urlopen(request, timeout=5) as response:
+        assert response.status == 204
+    assert engine.payloads == [SAMPLE_EVENT]
+
+
+def test_empty_body_returns_400(server):
+    base, engine = server
+    request = urllib.request.Request(
+        f"{base}/event",
+        data=b"",
+        method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        urllib.request.urlopen(request, timeout=5)
     assert exc.value.code == 400
     assert engine.payloads == []
 
