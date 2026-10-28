@@ -28,6 +28,7 @@ from .llm import LLMClient
 from .logsetup import setup_logging
 from .memory import Memory
 from .onebot import HttpSender
+from .proactive import start_scheduler
 from .store import Store
 from .watchdog import start_watchdog
 
@@ -297,6 +298,24 @@ def main(argv: list[str] | None = None) -> int:
     stop_event = threading.Event()
     if settings.adapter_watchdog_seconds > 0:
         start_watchdog(engine.sender, settings.adapter_watchdog_seconds, stop_event)
+    if settings.proactive_enabled:
+        scheduler = start_scheduler(
+            engine,
+            engine.store,
+            settings,
+            stop_event,
+            prompt=load_optional_prompt(settings.proactive_prompt_file),
+        )
+        # /proactive 手动触发，方便立刻验证效果（不用等 72 小时）
+        engine.proactive_trigger = scheduler.force
+        log.info(
+            "主动消息已启用：每天最多 %d 条，%d–%d 点，间隔 ≥%.0f 小时，静默 %.0f 小时触发",
+            settings.proactive_max_per_day,
+            settings.proactive_start_hour,
+            settings.proactive_end_hour,
+            settings.proactive_min_gap_hours,
+            settings.proactive_idle_hours,
+        )
 
     log.info(
         "已启动：监听 http://%s:%s/event ，模型 %s（日志 %s）",

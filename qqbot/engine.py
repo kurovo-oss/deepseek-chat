@@ -31,6 +31,7 @@ HELP_TEXT = (
     "/pin 编号 把某件事记牢一点\n"
     "/tag 名字 给刚存的表情包打标\n"
     "/img list 看看图库\n"
+    "/proactive 让她主动说一句\n"
     "/status 运行状态"
 )
 
@@ -56,6 +57,8 @@ class Engine:
         self.images = images
         self.memory = memory
         self.collector = collector
+        # 主动消息调度器建好后由 main 注入：/proactive 用它手动试一句
+        self.proactive_trigger = None
         self._sleep = sleep
 
     # ---------------- 入口 ----------------
@@ -178,6 +181,9 @@ class Engine:
         if head == "/img":
             return self._img_command(rest)
 
+        if head == "/proactive":
+            return self._try_proactive()
+
         if head in ("/help", "/?"):
             return HELP_TEXT
 
@@ -295,6 +301,17 @@ class Engine:
 
         return "图库指令：/img list [tag]、/img tag 编号 名字、/img rm 编号"
 
+    def _try_proactive(self) -> str:
+        hook = self.proactive_trigger
+        if hook is None:
+            return "主动消息没开呀。"
+        status = hook()
+        return {
+            "sent": "好，那我自己先开口了。",
+            "skipped": "唔，我想了想，这次还是不说了。",
+            "failed": "想说话，但是没发出去。",
+        }.get(status, "试了一下。")
+
     # ---------------- 对话 ----------------
     def _chat(self, session: str) -> str:
         messages = self._build_messages(session)
@@ -363,7 +380,7 @@ class Engine:
 
     def _send_reply(
         self, user_id: int, session: str, raw_text: str, sanitize: bool = True
-    ) -> None:
+    ) -> bool:
         if sanitize:
             cleaned = strip_markdown(raw_text or "")
         else:
@@ -403,6 +420,13 @@ class Engine:
 
         if record_id is not None:
             self.store.update_send_state(record_id, "sent" if all_ok else "failed")
+        return all_ok
+
+    # ---------------- 主动消息 ----------------
+    def send_proactive(self, session: str, text: str) -> bool:
+        """她先开口。走和普通回复一样的清洗、分段、配图流程。"""
+        log.info("主动开口（%s）：%s", session, text[:60])
+        return self._send_reply(int(session), session, text)
 
     @staticmethod
     def _window_key(session: str) -> str:

@@ -303,6 +303,77 @@ class Store:
             )
             self._conn.commit()
 
+    # ---------------- 主动消息 ----------------
+    def last_message_time(self, session_id: str, role: str | None = None) -> int | None:
+        sql = "SELECT MAX(created_at) AS ts FROM messages WHERE session_id = ?"
+        params: list = [session_id]
+        if role:
+            sql += " AND role = ?"
+            params.append(role)
+        with self._lock:
+            row = self._conn.execute(sql, params).fetchone()
+        return int(row["ts"]) if row and row["ts"] else None
+
+    def add_proactive_event(
+        self,
+        kind: str,
+        content: str,
+        trigger_at: int | None = None,
+        status: str = "sent",
+        created_at: int | None = None,
+    ) -> int | None:
+        now = int(created_at if created_at is not None else time.time())
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO proactive_events(kind, content, trigger_at, status, created_at)"
+                " VALUES (?,?,?,?,?)",
+                (
+                    kind,
+                    content,
+                    int(trigger_at if trigger_at is not None else now),
+                    status,
+                    now,
+                ),
+            )
+            self._conn.commit()
+            return int(cur.lastrowid)
+
+    def count_proactive_since(
+        self, since: int, kind: str | None = None, status: str = "sent"
+    ) -> int:
+        sql = "SELECT COUNT(*) AS n FROM proactive_events WHERE created_at >= ? AND status = ?"
+        params: list = [int(since), status]
+        if kind:
+            sql += " AND kind = ?"
+            params.append(kind)
+        with self._lock:
+            row = self._conn.execute(sql, params).fetchone()
+        return int(row["n"])
+
+    def latest_proactive(
+        self, kind: str | None = None, status: str | None = None
+    ) -> dict | None:
+        sql = "SELECT * FROM proactive_events WHERE 1 = 1"
+        params: list = []
+        if kind:
+            sql += " AND kind = ?"
+            params.append(kind)
+        if status:
+            sql += " AND status = ?"
+            params.append(status)
+        sql += " ORDER BY created_at DESC, id DESC LIMIT 1"
+        with self._lock:
+            row = self._conn.execute(sql, params).fetchone()
+        return dict(row) if row else None
+
+    def list_proactive(self, limit: int = 10) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM proactive_events ORDER BY created_at DESC, id DESC LIMIT ?",
+                (int(limit),),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def search_messages(self, query: str, limit: int = 5) -> list[dict]:
         """按关键词召回历史消息；任何异常都退化为空结果，不影响主流程。"""
         with self._lock:

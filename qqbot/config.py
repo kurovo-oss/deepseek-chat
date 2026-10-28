@@ -122,6 +122,16 @@ class Settings:
     request_timeout: float = 60.0
     network_wait_seconds: float = 30.0
     adapter_watchdog_seconds: float = 300.0
+    proactive_enabled: bool = True
+    proactive_max_per_day: int = 3
+    proactive_start_hour: int = 9
+    proactive_end_hour: int = 23
+    proactive_min_gap_hours: float = 4.0
+    proactive_quiet_minutes: int = 30
+    proactive_idle_hours: float = 72.0
+    proactive_weekly_max: int = 1
+    proactive_check_seconds: float = 600.0
+    proactive_prompt_file: Path = Path("prompts/proactive.md")
     history_max_turns: int = 20
     window_token_budget: int = 4000
     image_enabled: bool = True
@@ -192,6 +202,13 @@ class Settings:
         if half_life <= 0:
             raise ConfigError(f"DECAY_HALF_LIFE_DAYS 必须大于 0，当前为 {half_life}")
 
+        start_hour = _int(env, "PROACTIVE_START_HOUR", 9, minimum=0)
+        end_hour = _int(env, "PROACTIVE_END_HOUR", 23, minimum=0)
+        if start_hour > 23 or end_hour > 23:
+            raise ConfigError("PROACTIVE_START_HOUR / PROACTIVE_END_HOUR 必须在 0~23 之间")
+        if start_hour >= end_hour:
+            raise ConfigError("PROACTIVE_START_HOUR 必须小于 PROACTIVE_END_HOUR")
+
         return cls(
             allow_user_id=allow_user_id,
             model_api_key=str(env["MODEL_API_KEY"]).strip(),
@@ -211,6 +228,19 @@ class Settings:
             request_timeout=_float(env, "REQUEST_TIMEOUT", 60.0),
             network_wait_seconds=_float(env, "NETWORK_WAIT_SECONDS", 30.0),
             adapter_watchdog_seconds=_float(env, "ADAPTER_WATCHDOG_SECONDS", 300.0),
+            proactive_enabled=_bool(env, "PROACTIVE_ENABLED", True),
+            proactive_max_per_day=_int(env, "PROACTIVE_MAX_PER_DAY", 3),
+            proactive_start_hour=start_hour,
+            proactive_end_hour=end_hour,
+            proactive_min_gap_hours=_float(env, "PROACTIVE_MIN_GAP_HOURS", 4.0),
+            proactive_quiet_minutes=_int(
+                env, "PROACTIVE_QUIET_MINUTES", 30, minimum=0
+            ),
+            proactive_idle_hours=_float(env, "PROACTIVE_IDLE_HOURS", 72.0),
+            proactive_weekly_max=_int(env, "PROACTIVE_WEEKLY_MAX", 1, minimum=0),
+            proactive_check_seconds=_float(env, "PROACTIVE_CHECK_SECONDS", 600.0),
+            proactive_prompt_file=base_dir
+            / env.get("PROACTIVE_PROMPT_FILE", "prompts/proactive.md").strip(),
             history_max_turns=_int(env, "HISTORY_MAX_TURNS", 20),
             window_token_budget=_int(env, "WINDOW_TOKEN_BUDGET", 4000),
             image_enabled=_bool(env, "IMAGE_ENABLED", True),
