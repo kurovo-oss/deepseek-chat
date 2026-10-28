@@ -11,11 +11,17 @@ import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from .config import ConfigError, load_settings, load_system_prompt
+from .config import (
+    ConfigError,
+    load_optional_prompt,
+    load_settings,
+    load_system_prompt,
+)
 from .engine import Engine
 from .images import ImageLibrary
 from .llm import LLMClient
 from .logsetup import setup_logging
+from .memory import Memory
 from .onebot import HttpSender
 from .store import Store
 
@@ -40,6 +46,22 @@ def build_engine(settings) -> Engine:
         else:
             log.warning("图库目录不存在，配图功能关闭：%s", settings.image_lib_dir)
 
+    memory = None
+    if settings.memory_enabled:
+        memory = Memory(
+            settings,
+            store,
+            llm,
+            extract_prompt=load_optional_prompt(settings.extract_prompt_file),
+            compact_prompt=load_optional_prompt(settings.compact_prompt_file),
+        )
+        log.info(
+            "记忆已启用：%d 张卡片，阈值 %.2f，半衰期 %.0f 天",
+            store.count_cards(),
+            settings.card_weight_threshold,
+            settings.decay_half_life_days,
+        )
+
     return Engine(
         settings,
         store,
@@ -47,6 +69,7 @@ def build_engine(settings) -> Engine:
         sender,
         load_system_prompt(settings),
         images=images,
+        memory=memory,
     )
 
 

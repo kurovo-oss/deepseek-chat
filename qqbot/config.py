@@ -127,11 +127,33 @@ class Settings:
     image_cooldown_messages: int = 10
     image_send_mode: str = "path"
     image_max_bytes: int = 5 * 1024 * 1024
+    # ---- 长期记忆（M2）----
+    memory_enabled: bool = True
+    extract_enabled: bool = True
+    decay_half_life_days: float = 30.0
+    card_weight_threshold: float = 0.15
+    card_inject_token_budget: int = 1500
+    context_soft_token_budget: int = 8000
+    context_hard_token_budget: int = 32000
+    extract_prompt_file: Path = Path("prompts/extract.md")
+    compact_prompt_file: Path = Path("prompts/compact.md")
 
     @property
     def window_char_budget(self) -> int:
         """把 token 预算折成字符预算（est: 1 字 ≈ 0.6 token）。"""
         return max(1, int(self.window_token_budget / 0.6))
+
+    @property
+    def card_inject_char_budget(self) -> int:
+        return max(1, int(self.card_inject_token_budget / 0.6))
+
+    @property
+    def context_soft_char_budget(self) -> int:
+        return max(1, int(self.context_soft_token_budget / 0.6))
+
+    @property
+    def context_hard_char_budget(self) -> int:
+        return max(1, int(self.context_hard_token_budget / 0.6))
 
     @classmethod
     def from_env(cls, env: Mapping[str, str], base_dir: Path) -> "Settings":
@@ -145,6 +167,24 @@ class Settings:
         except ValueError as exc:
             raise ConfigError(f"ALLOW_USER_ID 必须是 QQ 号（纯数字），当前为 {raw_allow!r}") from exc
 
+        # 旧的 WINDOW_TOKEN_BUDGET 作为软预算的兜底，保证老配置仍能跑
+        soft_default = _int(env, "WINDOW_TOKEN_BUDGET", 8000)
+        soft_budget = _int(env, "CONTEXT_SOFT_TOKEN_BUDGET", soft_default)
+        hard_budget = _int(env, "CONTEXT_HARD_TOKEN_BUDGET", 32000)
+        if hard_budget < soft_budget:
+            raise ConfigError(
+                f"CONTEXT_HARD_TOKEN_BUDGET({hard_budget}) 不能小于 "
+                f"CONTEXT_SOFT_TOKEN_BUDGET({soft_budget})"
+            )
+
+        threshold = _float(env, "CARD_WEIGHT_THRESHOLD", 0.15)
+        if not 0.0 <= threshold <= 1.0:
+            raise ConfigError(f"CARD_WEIGHT_THRESHOLD 必须在 0~1 之间，当前为 {threshold}")
+
+        half_life = _float(env, "DECAY_HALF_LIFE_DAYS", 30.0)
+        if half_life <= 0:
+            raise ConfigError(f"DECAY_HALF_LIFE_DAYS 必须大于 0，当前为 {half_life}")
+
         return cls(
             allow_user_id=allow_user_id,
             model_api_key=str(env["MODEL_API_KEY"]).strip(),
@@ -153,7 +193,7 @@ class Settings:
             system_prompt_file=base_dir
             / env.get("SYSTEM_PROMPT_FILE", "prompts/system.md").strip(),
             log_dir=base_dir / env.get("LOG_DIR", "logs").strip(),
-            model_id=env.get("MODEL_ID", "deepseek-v4.1-flash1017").strip(),
+            model_id=env.get("MODEL_ID", "deepseek-flash").strip(),
             model_base_url=env.get("MODEL_BASE_URL", "https://api.deepseek.com").strip(),
             adapter_api_url=env.get("ADAPTER_API", "http://127.0.0.1:3001").strip(),
             adapter_token=env.get("ADAPTER_TOKEN", "").strip(),
@@ -170,6 +210,17 @@ class Settings:
             image_cooldown_messages=_int(env, "IMAGE_COOLDOWN_MESSAGES", 10, minimum=0),
             image_send_mode=_choice(env, "IMAGE_SEND_MODE", "path", {"path", "base64"}),
             image_max_bytes=_int(env, "IMAGE_MAX_BYTES", 5 * 1024 * 1024),
+            memory_enabled=_bool(env, "MEMORY_ENABLED", True),
+            extract_enabled=_bool(env, "EXTRACT_ENABLED", True),
+            decay_half_life_days=half_life,
+            card_weight_threshold=threshold,
+            card_inject_token_budget=_int(env, "CARD_INJECT_TOKEN_BUDGET", 1500),
+            context_soft_token_budget=soft_budget,
+            context_hard_token_budget=hard_budget,
+            extract_prompt_file=base_dir
+            / env.get("EXTRACT_PROMPT_FILE", "prompts/extract.md").strip(),
+            compact_prompt_file=base_dir
+            / env.get("COMPACT_PROMPT_FILE", "prompts/compact.md").strip(),
         )
 
 
@@ -193,3 +244,13 @@ def load_system_prompt(settings: Settings) -> str:
         if text:
             return text
     return DEFAULT_SYSTEM_PROMPT
+
+
+def load_optional_prompt(path: Path) -> str:
+    """读可选的提示词文件；缺失或读不了都返回空串，由调用方决定是否启用。"""
+    try:
+        if path.is_file():
+            return path.read_text(encoding="utf-8").strip()
+    except OSError:
+        pass
+    return ""

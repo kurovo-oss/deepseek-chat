@@ -1,0 +1,477 @@
+"""长期记忆的纯逻辑层：权重、选卡、注入块、抽取结果解析。
+
+这一层不做 IO（不碰 SQLite、不调网络），所以单测不需要任何假实现。
+带 IO 的编排放在文件末尾的 Memory 类里。
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import math
+import time
+from datetime import datetime
+from difflib import SequenceMatcher
+
+log = logging.getLogger("qqbot")
+
+KIND_ORDER = ("identity", "preference", "fact", "event", "chat")
+KIND_LABEL = {
+    "identity": "身份",
+    "preference": "偏好",
+    "fact": "事实",
+    "event": "事件",
+    "chat": "琐事",
+}
+VALID_KINDS = frozenset(KIND_ORDER)
+ALLOWED_OPS = frozenset({"add", "update"})
+
+DEFAULT_IMPORTANCE = 0.5
+MAX_OPS = 5
+DEDUPE_RATIO = 0.8
+MAX_SUMMARY_CHARS = 80
+MAX_DETAIL_CHARS = 400
+BLOCK_TITLE = "# 你记得的事（关于对方）"
+DAY_SECONDS = 86400
+
+
+# ---------------------------------------------------------------- 基础工具
+def _clamp(value, lo: float = 0.0, hi: float = 1.0, default: float = DEFAULT_IMPORTANCE) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    if number != number:  # NaN
+        return default
+    return max(lo, min(hi, number))
+
+
+def parse_timestamp(value) -> int | None:
+    """接受 epoch 秒、'YYYY-MM-DD'、'YYYY/MM/DD'；其余一律当未知。"""
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.isdigit():
+        return int(text)
+    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d"):
+        try:
+            return int(datetime.strptime(text[:10], fmt).timestamp())
+        except ValueError:
+            continue
+    return None
+
+
+# ---------------------------------------------------------------- 权重
+def card_weight(card: dict, now: float, half_life_days: float = 30.0) -> float:
+    """使用频率 × 重要程度 × 时间衰减。
+
+    钉住或 identity 类恒为 1.0——"她是 agent 创造的"这种事永远不该淡忘。
+    """
+    if card.get("pinned") or card.get("kind") == "identity":
+        return 1.0
+
+    importance = _clamp(card.get("importance"))
+    anchor = card.get("occurred_at") or card.get("created_at") or now
+    age_days = max(0.0, (float(now) - float(anchor)) / DAY_SECONDS)
+    recency = 0.5 ** (age_days / max(0.001, half_life_days))
+
+    hits = max(0, int(card.get("hit_count") or 0))
+    freq = min(1.0, math.log1p(hits) / math.log1p(10))
+
+    return importance * (0.6 + 0.4 * freq) * (0.2 + 0.8 * recency)
+
+
+def select_cards(
+    cards: list[dict],
+    now: float,
+    threshold: float = 0.15,
+    char_budget: int = 2500,
+    half_life_days: float = 30.0,
+) -> list[dict]:
+    """按权重降序取卡，直到字符预算用完。返回带 `_weight` 的副本。"""
+    scored = []
+    for card in cards:
+        weight = card_weight(card, now, half_life_days)
+        if weight < threshold:
+            continue
+        scored.append((weight, card))
+
+    scored.sort(
+        key=lambda pair: (
+            pair[0],
+            _clamp(pair[1].get("importance")),
+            pair[1].get("occurred_at") or pair[1].get("created_at") or 0,
+        ),
+        reverse=True,
+    )
+
+    selected: list[dict] = []
+    used = 0
+    for weight, card in scored:
+        cost = len(str(card.get("summary") or "")) + 6
+        if selected and used + cost > char_budget:
+            break
+        item = dict(card)
+        item["_weight"] = weight
+        selected.append(item)
+        used += cost
+    return selected
+
+
+def build_block(cards: list[dict]) -> str:
+    """生成注入用的记忆区块；没有卡片时返回空串（不占 token）。"""
+    lines = [BLOCK_TITLE]
+    for card in cards:
+        summary = str(card.get("summary") or "").strip()
+        if not summary:
+            continue
+        label = KIND_LABEL.get(str(card.get("kind")), "记忆")
+        lines.append(f"[{label}] {summary}")
+    if len(lines) == 1:
+        return ""
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------- 抽取结果
+def similarity(left: str, right: str) -> float:
+    return SequenceMatcher(None, left or "", right or "").ratio()
+
+
+def find_duplicate(kind: str, summary: str, cards: list[dict], ratio: float = DEDUPE_RATIO):
+    """同 kind 下找一条足够像的卡；找不到返回 None。"""
+    best = None
+    best_score = 0.0
+    for card in cards:
+        if str(card.get("kind")) != str(kind):
+            continue
+        score = similarity(summary, str(card.get("summary") or ""))
+        if score >= ratio and score > best_score:
+            best, best_score = card, score
+    return best
+
+
+def load_json_object(raw: str) -> dict | None:
+    """从模型输出里挖出第一个完整 JSON 对象，容忍 ```json 围栏与前后废话。"""
+    text = (raw or "").strip()
+    if not text:
+        return None
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end <= start:
+        return None
+    try:
+        data = json.loads(text[start : end + 1])
+    except json.JSONDecodeError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _normalize_entities(value) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    result = []
+    for item in value:
+        text = str(item).strip()
+        if text:
+            result.append(text[:20])
+        if len(result) >= 5:
+            break
+    return result
+
+
+def parse_ops(raw: str, existing_ids=(), max_ops: int = MAX_OPS) -> list[dict]:
+    """把模型输出解析成受控的操作列表。
+
+    删改权限不在模型手里：`delete` / `archive` 之类一律丢弃。
+    """
+    data = load_json_object(raw)
+    if not data:
+        return []
+    items = data.get("cards")
+    if not isinstance(items, list):
+        return []
+
+    existing = {int(i) for i in existing_ids}
+    ops: list[dict] = []
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+
+        op = str(item.get("op") or "add").strip().lower()
+        if op not in ALLOWED_OPS:
+            log.info("忽略不被允许的记忆操作：%s", op)
+            continue
+
+        kind = str(item.get("kind") or "").strip().lower()
+        summary = str(item.get("summary") or "").strip()
+        if not summary:
+            continue
+
+        if op == "add" and kind not in VALID_KINDS:
+            continue
+        if op == "update" and kind not in VALID_KINDS:
+            kind = ""  # 只改摘要时允许不带 kind
+
+        normalized = {
+            "op": op,
+            "kind": kind,
+            "summary": summary[:MAX_SUMMARY_CHARS],
+            "detail": str(item.get("detail") or "").strip()[:MAX_DETAIL_CHARS],
+            "entities": _normalize_entities(item.get("entities")),
+            "occurred_at": parse_timestamp(item.get("occurred_at")),
+            "importance": _clamp(item.get("importance")),
+        }
+
+        if op == "update":
+            try:
+                card_id = int(item.get("id"))
+            except (TypeError, ValueError):
+                continue
+            if card_id not in existing:
+                continue
+            normalized["id"] = card_id
+
+        ops.append(normalized)
+        if len(ops) >= max_ops:
+            break
+
+    return ops
+
+
+# ---------------------------------------------------------------- 编排（带 IO）
+class Memory:
+    """把纯逻辑接到 Store 与 LLM 上：注入、抽取、压缩。"""
+
+    def __init__(
+        self,
+        settings,
+        store,
+        llm,
+        extract_prompt: str = "",
+        compact_prompt: str = "",
+        clock=time.time,
+    ) -> None:
+        self.settings = settings
+        self.store = store
+        self.llm = llm
+        self.extract_prompt = extract_prompt
+        self.compact_prompt = compact_prompt
+        self._clock = clock
+
+    # ---------------- 注入 ----------------
+    def block(self) -> str:
+        if not self.settings.memory_enabled:
+            return ""
+        now = self._clock()
+        cards = self.store.list_cards(status="active", limit=300)
+        selected = select_cards(
+            cards,
+            now=now,
+            threshold=self.settings.card_weight_threshold,
+            char_budget=self.settings.card_inject_char_budget,
+            half_life_days=self.settings.decay_half_life_days,
+        )
+        if not selected:
+            return ""
+        self.store.touch_cards([card["id"] for card in selected], int(now))
+        return build_block(selected)
+
+    # ---------------- 抽取 ----------------
+    def note_reply(self, session: str, user_text: str = "") -> None:
+        """回复发出后的维护：先抽取，再按需压缩。任何异常都不该影响对话。"""
+        if not self.settings.memory_enabled:
+            return
+        try:
+            self.extract(session, user_text)
+        except Exception:  # noqa: BLE001 - 记忆是附加功能，绝不能拖垮主流程
+            log.exception("记忆抽取失败")
+        try:
+            self.compact(session)
+        except Exception:  # noqa: BLE001
+            log.exception("上下文压缩失败")
+
+    def _should_skip(self, user_text: str) -> bool:
+        text = (user_text or "").strip()
+        return text.startswith("/") or len(text) < 8
+
+    def extract(self, session: str, user_text: str = "") -> int:
+        if not self.settings.extract_enabled or not self.extract_prompt:
+            return 0
+        if self._should_skip(user_text):
+            return 0
+
+        cards = self.store.list_cards(status="active", limit=80)
+        recent = self.store.recent_messages(session, 6)
+        if not recent:
+            return 0
+
+        payload = _format_extract_input(cards, recent)
+        try:
+            result = self.llm.chat(
+                [
+                    {"role": "system", "content": self.extract_prompt},
+                    {"role": "user", "content": payload},
+                ],
+                temperature=0.0,
+                max_tokens=600,
+            )
+        except Exception as exc:  # noqa: BLE001 - LLMError 及其它都只记日志
+            log.warning("抽取调用失败：%s", exc)
+            self.store.log_usage(self.settings.model_id, 0, 0, "extract", ok=False)
+            return 0
+
+        self.store.log_usage(
+            result.model, result.tokens_in, result.tokens_out, "extract", True
+        )
+
+        ops = parse_ops(result.text, [card["id"] for card in cards])
+        applied = self._apply_ops(ops, cards)
+        if applied:
+            log.info("记忆抽取：应用 %d 条操作", applied)
+        return applied
+
+    def _apply_ops(self, ops: list[dict], cards: list[dict]) -> int:
+        applied = 0
+        now = int(self._clock())
+        for op in ops:
+            if op["op"] == "add":
+                duplicate = find_duplicate(op["kind"], op["summary"], cards)
+                if duplicate is not None:
+                    if duplicate.get("pinned"):
+                        continue
+                    self.store.update_card(
+                        duplicate["id"],
+                        summary=op["summary"],
+                        importance=op["importance"],
+                        updated_at=now,
+                    )
+                    applied += 1
+                    continue
+                self.store.add_card(
+                    kind=op["kind"],
+                    summary=op["summary"],
+                    detail=op["detail"],
+                    entities=op["entities"],
+                    occurred_at=op["occurred_at"],
+                    importance=op["importance"],
+                )
+                applied += 1
+                continue
+
+            target = self.store.get_card(op["id"])
+            if target is None or target.get("pinned"):
+                continue
+            fields = {
+                "summary": op["summary"],
+                "importance": op["importance"],
+                "updated_at": now,
+            }
+            if op["kind"]:
+                fields["kind"] = op["kind"]
+            if op["detail"]:
+                fields["detail"] = op["detail"]
+            if op["entities"]:
+                fields["entities"] = op["entities"]
+            if op["occurred_at"]:
+                fields["occurred_at"] = op["occurred_at"]
+            if self.store.update_card(op["id"], **fields):
+                applied += 1
+        return applied
+
+    # ---------------- 压缩 ----------------
+    def compact(self, session: str) -> bool:
+        if not self.compact_prompt:
+            return False
+
+        window_key = f"window_start:{session}"
+        window_start = int(self.store.get_cursor(window_key, "0") or 0)
+        history = self.store.recent_messages_after(session, window_start, limit=400)
+        total = sum(len(str(item.get("content") or "")) for item in history)
+        if total <= self.settings.context_soft_char_budget:
+            return False
+
+        target = total / 2
+        span: list[dict] = []
+        used = 0
+        for item in history:
+            span.append(item)
+            used += len(str(item.get("content") or ""))
+            if used >= target:
+                break
+        if not span:
+            return False
+
+        self._summarize(span, cards=self.store.list_cards(status="active", limit=60))
+        # 压缩失败也要前移游标：原文仍在库里，只是不再进上下文
+        self.store.set_cursor(window_key, str(span[-1]["id"]))
+        log.info(
+            "上下文压缩：折叠 %d 条消息（约 %d 字），游标 -> %s",
+            len(span),
+            used,
+            span[-1]["id"],
+        )
+        return True
+
+    def _summarize(self, span: list[dict], cards: list[dict]) -> int:
+        lines = ["【已有记忆】"]
+        lines.extend(f"{c['id']} [{c['kind']}] {c['summary']}" for c in cards)
+        lines.append("")
+        lines.append("【要压缩的对话】")
+        for item in span:
+            who = "用户" if item["role"] == "user" else "大肥鱼"
+            lines.append(f"{who}：{str(item['content'])[:300]}")
+
+        try:
+            result = self.llm.chat(
+                [
+                    {"role": "system", "content": self.compact_prompt},
+                    {"role": "user", "content": "\n".join(lines)},
+                ],
+                temperature=0.0,
+                max_tokens=600,
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("压缩调用失败，仅前移游标：%s", exc)
+            self.store.log_usage(self.settings.model_id, 0, 0, "compact", ok=False)
+            return 0
+
+        self.store.log_usage(
+            result.model, result.tokens_in, result.tokens_out, "compact", True
+        )
+        ops = parse_ops(result.text, [])
+        created = 0
+        for op in ops:
+            kind = op["kind"] if op["kind"] in VALID_KINDS else "chat"
+            self.store.add_card(
+                kind=kind,
+                summary=op["summary"],
+                detail=op["detail"],
+                entities=op["entities"],
+                occurred_at=op["occurred_at"],
+                importance=op["importance"],
+                source_from=span[0]["id"],
+                source_to=span[-1]["id"],
+            )
+            created += 1
+        return created
+
+
+def _format_extract_input(cards: list[dict], recent: list[dict]) -> str:
+    lines = ["【已有记忆】"]
+    if cards:
+        lines.extend(f"{c['id']} [{c['kind']}] {c['summary']}" for c in cards)
+    else:
+        lines.append("（空）")
+    lines.append("")
+    lines.append("【最近对话】")
+    for item in recent:
+        who = "用户" if item["role"] == "user" else "大肥鱼"
+        lines.append(f"{who}：{str(item['content'])[:300]}")
+    return "\n".join(lines)

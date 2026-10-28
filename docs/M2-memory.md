@@ -78,7 +78,7 @@ CREATE INDEX IF NOT EXISTS idx_cards_source ON cards(source_from, source_to);
 age_days = max(0, (now - (occurred_at or created_at)) / 86400)
 recency  = 0.5 ** (age_days / HALF_LIFE_DAYS)          # 默认 30 天减半
 freq     = min(1.0, log1p(hit_count) / log1p(10))      # 10 次命中封顶
-weight   = importance * (0.4 + 0.6 * freq) * (0.15 + 0.85 * recency)
+weight   = importance * (0.6 + 0.4 * freq) * (0.2 + 0.8 * recency)
 
 if pinned or kind == 'identity':
     weight = 1.0
@@ -86,13 +86,16 @@ if pinned or kind == 'identity':
 
 **注入阈值**：`weight >= 0.15` 才进上下文，否则沉底（不删）。
 
+**命中计数规则**：同一张卡**每天最多计一次**。否则一天聊 20 轮，`hit_count` 立刻冲顶，
+"使用频率"就失去区分度了。
+
 验算：
 
 | 场景 | importance | hit_count | 年龄 | weight | 是否注入 |
 |---|---|---|---|---|---|
-| 3 个月前的闲聊 | 0.5 | 0 | 90 天 | ≈ 0.05 | ❌ 沉底 |
-| 3 个月前但很重要 | 1.0 | 3 | 90 天 | ≈ 0.30 | ✅ 仍记得 |
-| 最近刚聊过的偏好 | 0.7 | 0 | 1 天 | ≈ 0.66 | ✅ |
+| 3 个月前的闲聊 | 0.5 | 0 | 90 天 | ≈ 0.09 | ❌ 沉底 |
+| 3 个月前但很重要 | 1.0 | 3 | 90 天 | ≈ 0.25 | ✅ 仍记得 |
+| 最近刚聊过的偏好 | 0.7 | 0 | 1 天 | ≈ 0.41 | ✅ |
 | "我是 agent 创造者" | 1.0 | 0 | 365 天 | 1.00（identity） | ✅ 永不忘 |
 | 被 `/pin` 钉住 | 0.2 | 0 | 365 天 | 1.00（pinned） | ✅ |
 

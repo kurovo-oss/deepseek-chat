@@ -184,17 +184,37 @@ def test_memory_command_empty(env):
 
 
 def test_memory_command_lists_entries(env):
-    env.store.add_memory("fact", "养了一只叫团子的猫")
+    env.store.add_card("fact", "养了一只叫团子的猫")
     env.engine.handle_message(make_message("/memory", mid="me2"))
-    assert "养了一只叫团子的猫" in env.sender.sent[-1][1]
-    assert "事实" in env.sender.sent[-1][1]
+    reply = env.sender.sent[-1][1]
+    assert "养了一只叫团子的猫" in reply
+    assert "事实" in reply
+
+
+def test_forget_requires_confirmation(env):
+    card_id = env.store.add_card("fact", "养了一只叫团子的猫")
+    env.engine.handle_message(make_message(f"/forget {card_id}", mid="f1"))
+    assert "confirm" in env.sender.sent[-1][1]
+    assert env.store.count_cards() == 1  # 还没删
+
+    env.engine.handle_message(make_message(f"/forget {card_id} confirm", mid="f2"))
+    assert env.store.count_cards() == 0
 
 
 def test_forget_command_removes_matching(env):
-    env.store.add_memory("fact", "养了一只叫团子的猫")
-    env.engine.handle_message(make_message("/forget 猫", mid="f1"))
-    assert env.store.count_memories() == 0
+    env.store.add_card("fact", "养了一只叫团子的猫")
+    env.engine.handle_message(make_message("/forget 猫 confirm", mid="f3"))
+    assert env.store.count_cards() == 0
     assert "删掉 1 条" in env.sender.sent[-1][1]
+
+
+def test_pin_command_marks_card(env):
+    card_id = env.store.add_card("fact", "很在意隐私")
+    env.engine.handle_message(make_message(f"/pin {card_id}", mid="p1"))
+    assert env.store.get_card(card_id)["pinned"] is True
+
+    env.engine.handle_message(make_message(f"/unpin {card_id}", mid="p2"))
+    assert env.store.get_card(card_id)["pinned"] is False
 
 
 def test_forget_without_keyword_asks_back(env):

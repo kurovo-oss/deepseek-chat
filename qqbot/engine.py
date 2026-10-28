@@ -14,6 +14,7 @@ from typing import Any
 from .config import Settings
 from .formatting import extract_image_tags, split_message, strip_markdown
 from .llm import LLMError
+from .memory import KIND_LABEL, card_weight
 from .onebot import IncomingMessage, Sender, parse_event
 from .store import Store
 
@@ -21,9 +22,14 @@ log = logging.getLogger("qqbot")
 
 FALLBACK_REPLY = "唔…我这会儿有点转不过来，等一下再跟我说好不好？"
 
-KIND_LABEL = {"fact": "事实", "preference": "偏好", "event": "事件"}
-
-HELP_TEXT = "我会这些呀：\n/reset 清空刚才的对话\n/memory 看看我记得什么\n/forget 关键词 忘掉某件事\n/status 运行状态"
+HELP_TEXT = (
+    "我会这些呀：\n"
+    "/reset 清空刚才的对话\n"
+    "/memory 看看我记得什么\n"
+    "/forget 编号 忘掉某件事\n"
+    "/pin 编号 把某件事记牢一点\n"
+    "/status 运行状态"
+)
 
 
 class Engine:
@@ -36,6 +42,7 @@ class Engine:
         system_prompt: str,
         sleep=time.sleep,
         images: Any = None,
+        memory: Any = None,
     ) -> None:
         self.settings = settings
         self.store = store
@@ -43,6 +50,7 @@ class Engine:
         self.sender = sender
         self.system_prompt = system_prompt
         self.images = images
+        self.memory = memory
         self._sleep = sleep
 
     # ---------------- 入口 ----------------
@@ -104,6 +112,9 @@ class Engine:
             return
 
         self._send_reply(message.user_id, session, self._chat(session))
+        if self.memory is not None:
+            # 抽取与压缩发生在回复发出之后，不拖慢响应
+            self.memory.note_reply(session, text)
 
     # ---------------- 指令 ----------------
     def _handle_command(self, text: str, session: str) -> str | None:
@@ -123,32 +134,79 @@ class Engine:
                 "运行状态\n"
                 f"模型：{self.settings.model_id}\n"
                 f"消息：{self.store.count_messages(session)} 条\n"
-                f"记忆：{self.store.count_memories()} 条\n"
+                f"卡片：{self.store.count_cards()} 张\n"
                 f"tokens：{tokens_in} in / {tokens_out} out"
             )
 
         if head == "/memory":
-            memories = self.store.list_memories(limit=20)
-            if not memories:
-                return "我还没记住什么呢，多聊聊就记住啦。"
-            lines = [
-                f"{i}. [{KIND_LABEL.get(m['kind'], m['kind'])}] {m['content']}"
-                for i, m in enumerate(memories, start=1)
-            ]
-            return "我记得这些事：\n" + "\n".join(lines)
+            return self._list_cards()
 
         if head == "/forget":
-            if not rest:
-                return "要忘掉哪件事呀？跟我说个关键词嘛。"
-            removed = self.store.delete_memories_matching(rest)
-            if removed:
-                return f"唔…删掉 {removed} 条关于「{rest}」的记忆了。"
-            return f"我好像没有关于「{rest}」的记忆呀。"
+            return self._forget(rest)
+
+        if head in ("/pin", "/unpin"):
+            return self._set_pin(rest, pinned=head == "/pin")
 
         if head in ("/help", "/?"):
             return HELP_TEXT
 
         return "唔…这个指令我不认识呀。\n" + HELP_TEXT
+
+    # ---------------- 记忆指令 ----------------
+    def _list_cards(self) -> str:
+        cards = self.store.list_cards(status="active", limit=300)
+        if not cards:
+            return "我还没记住什么呢，多聊聊就记住啦。"
+
+        now = time.time()
+        half_life = self.settings.decay_half_life_days
+        scored = sorted(
+            cards, key=lambda card: card_weight(card, now, half_life), reverse=True
+        )[:20]
+
+        lines = []
+        for card in scored:
+            weight = card_weight(card, now, half_life)
+            label = KIND_LABEL.get(str(card.get("kind")), "记忆")
+            pinned = "·钉" if card.get("pinned") else ""
+            lines.append(f"{card['id']}. [{label}] {card['summary']}（{weight:.2f}{pinned}）")
+        return "我记得这些事：\n" + "\n".join(lines)
+
+    def _forget(self, rest: str) -> str:
+        if not rest:
+            return "要忘掉哪件事呀？把编号或关键词告诉我。"
+
+        target, _, flag = rest.partition(" ")
+        confirmed = flag.strip().lower() == "confirm"
+
+        if target.isdigit():
+            card = self.store.get_card(int(target))
+            if card is None:
+                return f"我这儿没有第 {target} 条记忆呀。"
+            if not confirmed:
+                return f"要删掉「{card['summary']}」吗？\n确定就发 /forget {target} confirm"
+            self.store.delete_card(int(target))
+            return "删掉了，这件事我不记得了。"
+
+        # 关键词删除是批量操作，必须二次确认
+        if not confirmed:
+            return f"确认忘掉所有关于「{target}」的记忆，就发 /forget {target} confirm"
+        removed = self.store.delete_cards_matching(target)
+        if removed:
+            return f"删掉 {removed} 条关于「{target}」的记忆了。"
+        return f"我好像没有关于「{target}」的记忆呀。"
+
+    def _set_pin(self, rest: str, pinned: bool) -> str:
+        target = rest.strip()
+        if not target.isdigit():
+            return "要钉哪一条呀？先发 /memory 看看编号。"
+        card = self.store.get_card(int(target))
+        if card is None:
+            return f"我这儿没有第 {target} 条记忆呀。"
+        self.store.set_pinned(int(target), pinned)
+        if pinned:
+            return f"记住了，「{card['summary']}」我会一直记着。"
+        return f"「{card['summary']}」不用一直记着了。"
 
     # ---------------- 对话 ----------------
     def _chat(self, session: str) -> str:
@@ -166,7 +224,7 @@ class Engine:
         limit = self.settings.history_max_turns * 2
         history = self.store.recent_messages_after(session, window_start, limit)
 
-        budget = self.settings.window_char_budget
+        budget = self.settings.context_hard_char_budget
         selected: list[dict] = []
         used = 0
         for item in reversed(history):
@@ -181,7 +239,13 @@ class Engine:
         while selected and selected[0]["role"] != "user":
             selected.pop(0)
 
-        messages = [{"role": "system", "content": self.system_prompt}]
+        system = self.system_prompt
+        if self.memory is not None:
+            block = self.memory.block()
+            if block:
+                system = f"{system}\n\n{block}"
+
+        messages = [{"role": "system", "content": system}]
         messages.extend({"role": m["role"], "content": m["content"]} for m in selected)
         return messages
 

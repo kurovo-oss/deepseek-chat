@@ -46,3 +46,24 @@ def test_prompt_forbids_pretending_to_take_photos():
 
 def test_prompt_states_length_limit():
     assert "300 字" in read_prompt()
+
+
+def test_extract_prompt_exists_and_forbids_delete():
+    text = (ROOT / "prompts" / "extract.md").read_text(encoding="utf-8")
+    assert "identity" in text
+    assert "delete" in text  # 明确告知不要输出 delete
+    assert "省略主语" in text
+
+
+def test_compact_prompt_exists():
+    text = (ROOT / "prompts" / "compact.md").read_text(encoding="utf-8")
+    assert "chat" in text
+    assert "delete" in text
+
+
+def test_extract_prompt_documents_all_kinds():
+    text = (ROOT / "prompts" / "extract.md").read_text(encoding="utf-8")
+    from qqbot.memory import KIND_ORDER
+
+    for kind in KIND_ORDER:
+        assert kind in text, f"extract.md 没有提到 kind={kind}"
