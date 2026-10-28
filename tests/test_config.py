@@ -61,6 +61,14 @@ def test_system_prompt_falls_back_when_file_missing(tmp_path):
     assert "大肥鱼" in prompt
 
 
+def test_parse_dotenv_inline_comment():
+    parsed = parse_dotenv('A=1 # 说明\nB=abc #x\nC="ke#ep"\nD=p#ss\n')
+    assert parsed["A"] == "1"
+    assert parsed["B"] == "abc"
+    assert parsed["C"] == "ke#ep"
+    assert parsed["D"] == "p#ss"  # 前面没有空格，# 属于值本身
+
+
 def test_system_prompt_reads_file(tmp_path):
     prompt_file = tmp_path / "s.md"
     prompt_file.write_text("自定义人格", encoding="utf-8")

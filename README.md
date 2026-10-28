@@ -25,6 +25,12 @@
 - **HTTP 上报而非 WebSocket**：`http.server` 就能收事件，不必为长连接引库。
 - **同步实现**：单用户、低并发，`ThreadingHTTPServer` + 每会话串行足够；过早异步化只会增加调试成本。
 
+## 模型
+
+公网 API 只接受两个模型名：**`deepseek-flash`**、**`deepseek-v4-pro`**。
+`deepseek-v4.1-flash1017` 是 Harness 内部名，直接调用会返回 400（已实测）。
+默认用 `deepseek-flash`。
+
 ## 目录
 
 ```
@@ -36,7 +42,7 @@ qqbot/
   onebot.py       OneBot 11 适配层（解析事件、发送消息）
   engine.py       编排：白名单 → 幂等 → 指令 → 组 prompt → 发送
   main.py         HTTP 服务与命令行
-tests/            61+ 用例，fake LLM / fake sender / 真实 socket
+tests/            69 用例，fake LLM / fake sender / 真实 socket
 ```
 
 ## 快速开始

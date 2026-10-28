@@ -310,7 +310,7 @@ QQ_ADAPTER=llonebot
 ADAPTER_ENDPOINT=http://127.0.0.1:3001
 ADAPTER_TOKEN=
 ALLOW_USER_ID=
-MODEL_ID=deepseek-v4.1-flash1017
+MODEL_ID=deepseek-flash          # 实测可用；另有 deepseek-v4-pro
 MODEL_BASE_URL=https://api.deepseek.com
 MODEL_API_KEY=
 SYSTEM_PROMPT_FILE=prompts/system.md
@@ -394,7 +394,7 @@ __pycache__/
 
 | # | 风险 | 验证 | 退路 |
 |---|---|---|---|
-| R1 | `deepseek-v4.1-flash1017` 可能非公网可用 ID | 启动 1-token 探测 | 回落 `deepseek-chat`，`/status` 显示实际模型 |
+| R1 | ~~模型 ID 不可用~~ | **已证实**：公网只接受 `deepseek-flash` / `deepseek-v4-pro`，`deepseek-v4.1-flash1017` 返回 400 | 已改用 `deepseek-flash` |
 | R2 | ~~无法给自己发私聊~~ | 已解决：专用小号 | — |
 | R3 | 协议端封号风险 | 小号灰度一周 | 改用官方 Bot（仅封号后启用） |
 | R4 | 中文 FTS5 召回 | 20 条历史人工召回 | bge-m3 向量检索 |

@@ -43,6 +43,12 @@ def parse_dotenv(text: str) -> dict[str, str]:
         value = value.strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
             value = value[1:-1]
+        elif not value.startswith(("\"", "'")):
+            # 行内注释：`KEY=value  # 说明` —— 只认「空格 + #」，
+            # 避免把密码里合法的 # 误当注释
+            hash_pos = value.find(" #")
+            if hash_pos != -1:
+                value = value[:hash_pos].rstrip()
         if key:
             result[key] = value
     return result
