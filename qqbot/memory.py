@@ -28,6 +28,8 @@ ALLOWED_OPS = frozenset({"add", "update"})
 
 DEFAULT_IMPORTANCE = 0.5
 MAX_OPS = 5
+MAX_EVENTS = 2
+DEFAULT_DATE_HOUR = 19
 DEDUPE_RATIO = 0.8
 MAX_SUMMARY_CHARS = 80
 MAX_DETAIL_CHARS = 400
@@ -245,6 +247,65 @@ def parse_ops(raw: str, existing_ids=(), max_ops: int = MAX_OPS) -> list[dict]:
     return ops
 
 
+DUE_FORMATS = (
+    "%Y-%m-%d %H:%M",
+    "%Y-%m-%dT%H:%M",
+    "%Y-%m-%d %H:%M:%S",
+    "%Y-%m-%dT%H:%M:%S",
+    "%Y-%m-%d",
+)
+
+
+def parse_due_at(raw, now: int) -> int | None:
+    """把模型给的时间字符串解析成时间戳；解析不出来返回 None。
+
+    解析不了就丢掉——**猜时间比不提醒更糟**（会在错误的日子开口）。
+    """
+    text = str(raw or "").strip().replace("Z", "")
+    if not text:
+        return None
+    for fmt in DUE_FORMATS:
+        try:
+            moment = datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+        if fmt == "%Y-%m-%d":
+            moment = moment.replace(hour=DEFAULT_DATE_HOUR)
+        return int(moment.timestamp())
+    return None
+
+
+def parse_events(raw: str, now: int, max_events: int = MAX_EVENTS) -> list[dict]:
+    """解析模型给出的未来事件，只保留能落到具体时间的。
+
+    这是主动消息里唯一"会自己找上门"的部分，宁可漏，不可错。
+    """
+    data = load_json_object(raw)
+    if not data:
+        return []
+    items = data.get("events")
+    if not isinstance(items, list):
+        return []
+
+    events: list[dict] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        summary = str(item.get("summary") or "").strip()
+        if not summary:
+            continue
+        due_at = parse_due_at(item.get("due_at"), now)
+        if due_at is None:
+            log.info("丢弃解析不出时间的未来事件：%s", summary[:40])
+            continue
+        if due_at < now - 86400:
+            continue  # 已经过去的事，不提醒
+        events.append({"summary": summary[:MAX_SUMMARY_CHARS], "due_at": due_at})
+        if len(events) >= max_events:
+            break
+    return events
+
+
 # ---------------------------------------------------------------- 编排（带 IO）
 class Memory:
     """把纯逻辑接到 Store 与 LLM 上：注入、抽取、压缩。"""
@@ -312,7 +373,7 @@ class Memory:
         if not recent:
             return 0
 
-        payload = _format_extract_input(cards, recent)
+        payload = _format_extract_input(cards, recent, int(self._clock()))
         try:
             result = self.llm.chat(
                 [
@@ -331,11 +392,23 @@ class Memory:
             result.model, result.tokens_in, result.tokens_out, "extract", True
         )
 
+        now = int(self._clock())
         ops = parse_ops(result.text, [card["id"] for card in cards])
         applied = self._apply_ops(ops, cards)
         if applied:
             log.info("记忆抽取：应用 %d 条操作", applied)
+
+        registered = self._apply_events(parse_events(result.text, now))
+        if registered:
+            log.info("记忆抽取：登记 %d 个未来事件", registered)
         return applied
+
+    def _apply_events(self, events: list[dict]) -> int:
+        registered = 0
+        for event in events:
+            self.store.add_scheduled_event(event["summary"], event["due_at"])
+            registered += 1
+        return registered
 
     def _apply_ops(self, ops: list[dict], cards: list[dict]) -> int:
         applied = 0
@@ -463,8 +536,10 @@ class Memory:
         return created
 
 
-def _format_extract_input(cards: list[dict], recent: list[dict]) -> str:
-    lines = ["【已有记忆】"]
+def _format_extract_input(cards: list[dict], recent: list[dict], now: int) -> str:
+    stamp = datetime.fromtimestamp(now).strftime("%Y-%m-%d %H:%M")
+    lines = ["【当前时间】", stamp, ""]
+    lines.append("【已有记忆】")
     if cards:
         lines.extend(f"{c['id']} [{c['kind']}] {c['summary']}" for c in cards)
     else:

@@ -2,12 +2,14 @@
 
 import types
 from datetime import datetime
+import time
 
 import pytest
 
 from qqbot.config import Settings
 from qqbot.engine import Engine
 from qqbot.llm import ChatResult, LLMError
+from qqbot.memory import parse_events
 from qqbot.proactive import ProactiveScheduler
 from qqbot.store import Store
 
@@ -286,3 +288,164 @@ def test_prompt_file_is_loaded():
     assert "{hours}" in text
     assert "{time}" in text
     assert "编" in text  # 明确禁止编造话题
+
+
+# ---------------------------------------------------------------- 未来事件
+def test_parse_events_keeps_valid_due_time():
+    raw = '{"cards":[],"events":[{"summary":"面试","due_at":"2026-11-04 09:00"}]}'
+    assert parse_events(raw, ts(10, 28, 22)) == [
+        {"summary": "面试", "due_at": ts(11, 4, 9)}
+    ]
+
+
+def test_parse_events_drops_unparseable_time():
+    """解析不出具体时间就丢掉——猜错了会在错误的日子开口。"""
+    raw = '{"events":[{"summary":"面试","due_at":"下周三"}]}'
+    assert parse_events(raw, ts(10, 28, 22)) == []
+
+
+def test_parse_events_drops_past():
+    raw = '{"events":[{"summary":"面试","due_at":"2026-10-01 09:00"}]}'
+    assert parse_events(raw, ts(10, 28, 22)) == []
+
+
+def test_parse_events_caps_count():
+    raw = (
+        '{"events":[{"summary":"a","due_at":"2026-11-04"},'
+        '{"summary":"b","due_at":"2026-11-05"},'
+        '{"summary":"c","due_at":"2026-11-06"}]}'
+    )
+    assert len(parse_events(raw, ts(10, 28, 22))) == 2
+
+
+def test_date_only_defaults_to_evening():
+    raw = '{"events":[{"summary":"体检","due_at":"2026-11-04"}]}'
+    assert parse_events(raw, ts(10, 28, 22))[0]["due_at"] == ts(11, 4, 19)
+
+
+def test_event_prompt_documents_events():
+    from pathlib import Path
+
+    text = (
+        Path(__file__).resolve().parent.parent / "prompts" / "extract.md"
+    ).read_text(encoding="utf-8")
+    assert "events" in text
+    assert "due_at" in text
+
+
+def test_scheduled_prompt_has_placeholders():
+    from pathlib import Path
+
+    text = (
+        Path(__file__).resolve().parent.parent / "prompts" / "scheduled.md"
+    ).read_text(encoding="utf-8")
+    assert "{event}" in text
+    assert "{time}" in text
+
+
+def test_same_event_updates_instead_of_duplicating(tmp_path):
+    env = build(tmp_path)
+    env.store.add_scheduled_event("面试", ts(11, 4, 9))
+    env.store.add_scheduled_event("面试", ts(11, 5, 9))
+    events = env.store.list_events(status="pending")
+    assert len(events) == 1
+    assert events[0]["trigger_at"] == ts(11, 5, 9)
+    env.store.close()
+
+
+def test_due_event_beats_followup_wait(tmp_path):
+    """才聊完 3 小时，但事件到点了 → 发 scheduled，不等 72 小时。"""
+    env = build(tmp_path)
+    env.store.save_message("100", "user", "刚聊完", created_at=ts(10, 28, 14) - 3 * 3600)
+    env.store.add_scheduled_event("面试", ts(10, 28, 14))
+    assert env.scheduler.gate(ts(10, 28, 14)) == "scheduled"
+    env.store.close()
+
+
+def test_scheduled_respects_quiet_minutes(tmp_path):
+    env = build(tmp_path)
+    env.store.save_message("100", "user", "在", created_at=ts(10, 28, 14) - 60)
+    env.store.add_scheduled_event("面试", ts(10, 28, 14))
+    assert env.scheduler.gate(ts(10, 28, 14)) is None
+    env.store.close()
+
+
+def test_scheduled_fires_and_marks_event_sent(tmp_path):
+    env = build(tmp_path, reply="面试还顺利吗")
+    env.store.add_scheduled_event("面试", ts(10, 28, 14))
+    assert env.scheduler.tick(now=ts(10, 28, 14)) == "sent"
+
+    assert env.sender.texts == ["面试还顺利吗"]
+    events = env.store.list_events(status="sent")
+    assert events[0]["content"] == "面试还顺利吗"
+    assert env.store.list_events(status="pending") == []
+    env.store.close()
+
+
+def test_scheduled_skip_retires_event(tmp_path):
+    """模型判断现在不合适 → 标记跳过，不会十分钟后再问一遍。"""
+    env = build(tmp_path, reply="SKIP")
+    env.store.add_scheduled_event("面试", ts(10, 28, 14))
+    assert env.scheduler.tick(now=ts(10, 28, 14)) == "skipped"
+    assert env.store.list_events(status="pending") == []
+    assert env.store.list_events(status="skipped")
+    env.store.close()
+
+
+def test_expired_events_are_retired(tmp_path):
+    env = build(tmp_path)
+    env.store.add_scheduled_event("体检", ts(10, 20, 9))  # 8 天前
+    assert env.scheduler.expire_stale(ts(10, 28, 14)) == 1
+    assert env.store.list_events(status="expired")
+    env.store.close()
+
+
+def test_prompt_gets_event_name(tmp_path):
+    env = build(tmp_path)
+    env.scheduler.scheduled_prompt = "现在 {time}，他今天有 {event}"
+    content = env.scheduler.build_messages(
+        "scheduled", ts(10, 28, 14), event="面试"
+    )[-1]["content"]
+    assert content == "现在 14:00，他今天有 面试"
+    env.store.close()
+
+
+# ---------------------------------------------------------------- /event 指令
+def test_event_command_adds_and_lists(tmp_path):
+    env = build(tmp_path)
+    reply = env.engine._handle_command("/event 2026-11-04 09:00 面试", "100")
+    assert "记住了" in reply
+
+    listed = env.engine._handle_command("/events", "100")
+    assert "面试" in listed
+    assert "11-04 09:00" in listed
+    env.store.close()
+
+
+def test_event_command_removes(tmp_path):
+    env = build(tmp_path)
+    env.engine._handle_command("/event 2026-11-04 面试", "100")
+    reply = env.engine._handle_command("/event rm 1", "100")
+    assert "删掉" in reply
+    assert env.store.list_events(status="pending") == []
+    env.store.close()
+
+
+def test_event_command_rejects_bad_date(tmp_path):
+    env = build(tmp_path)
+    assert "日期" in env.engine._handle_command("/event 明天 面试", "100")
+    env.store.close()
+
+
+def test_event_now_makes_it_due_immediately(tmp_path):
+    env = build(tmp_path)
+    env.engine._handle_command("/event now 面试", "100")
+    event = env.store.list_events()[0]
+    assert event["trigger_at"] <= int(time.time()) + 1
+    env.store.close()
+
+
+def test_events_list_empty(tmp_path):
+    env = build(tmp_path)
+    assert "还没记下" in env.engine._handle_command("/events", "100")
+    env.store.close()

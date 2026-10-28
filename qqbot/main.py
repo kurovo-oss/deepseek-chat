@@ -305,6 +305,7 @@ def main(argv: list[str] | None = None) -> int:
             settings,
             stop_event,
             prompt=load_optional_prompt(settings.proactive_prompt_file),
+            scheduled_prompt=load_optional_prompt(settings.scheduled_prompt_file),
         )
         # /proactive 手动触发，方便立刻验证效果（不用等 72 小时）
         engine.proactive_trigger = scheduler.force

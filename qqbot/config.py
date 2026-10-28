@@ -132,6 +132,8 @@ class Settings:
     proactive_weekly_max: int = 1
     proactive_check_seconds: float = 600.0
     proactive_prompt_file: Path = Path("prompts/proactive.md")
+    scheduled_prompt_file: Path = Path("prompts/scheduled.md")
+    proactive_event_expire_days: float = 3.0
     history_max_turns: int = 20
     window_token_budget: int = 4000
     image_enabled: bool = True
@@ -241,6 +243,11 @@ class Settings:
             proactive_check_seconds=_float(env, "PROACTIVE_CHECK_SECONDS", 600.0),
             proactive_prompt_file=base_dir
             / env.get("PROACTIVE_PROMPT_FILE", "prompts/proactive.md").strip(),
+            scheduled_prompt_file=base_dir
+            / env.get("SCHEDULED_PROMPT_FILE", "prompts/scheduled.md").strip(),
+            proactive_event_expire_days=_float(
+                env, "PROACTIVE_EVENT_EXPIRE_DAYS", 3.0
+            ),
             history_max_turns=_int(env, "HISTORY_MAX_TURNS", 20),
             window_token_budget=_int(env, "WINDOW_TOKEN_BUDGET", 4000),
             image_enabled=_bool(env, "IMAGE_ENABLED", True),

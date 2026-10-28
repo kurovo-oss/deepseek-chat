@@ -366,6 +366,15 @@ class Store:
             row = self._conn.execute(sql, params).fetchone()
         return dict(row) if row else None
 
+    def latest_attempt(self) -> dict | None:
+        """最近一次真正尝试过的主动消息（待办事件不算，它还没发过）。"""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM proactive_events WHERE status IN ('sent', 'failed')"
+                " ORDER BY created_at DESC, id DESC LIMIT 1"
+            ).fetchone()
+        return dict(row) if row else None
+
     def list_proactive(self, limit: int = 10) -> list[dict]:
         with self._lock:
             rows = self._conn.execute(
@@ -373,6 +382,84 @@ class Store:
                 (int(limit),),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    # ---------------- 未来事件（scheduled）----------------
+    def add_scheduled_event(
+        self, content: str, trigger_at: int, now: int | None = None
+    ) -> int | None:
+        """登记一个未来事件。同名待办已存在时只更新时间，不重复登记。"""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id FROM proactive_events WHERE kind = 'scheduled'"
+                " AND status = 'pending' AND content = ?",
+                (content,),
+            ).fetchone()
+        if row is not None:
+            self.update_proactive_event(int(row["id"]), trigger_at=trigger_at)
+            return None
+        return self.add_proactive_event(
+            "scheduled", content, trigger_at=trigger_at, status="pending", created_at=now
+        )
+
+    def list_events(self, status: str = "pending", limit: int = 20) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM proactive_events WHERE kind = 'scheduled' AND status = ?"
+                " ORDER BY trigger_at ASC, id ASC LIMIT ?",
+                (status, int(limit)),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def next_due_event(self, now: int) -> dict | None:
+        """最早一个已经到点的待办事件。"""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM proactive_events WHERE kind = 'scheduled'"
+                " AND status = 'pending' AND trigger_at <= ?"
+                " ORDER BY trigger_at ASC, id ASC LIMIT 1",
+                (int(now),),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def update_proactive_event(
+        self,
+        event_id: int,
+        content: str | None = None,
+        status: str | None = None,
+        trigger_at: int | None = None,
+        created_at: int | None = None,
+    ) -> bool:
+        fields: list[str] = []
+        params: list = []
+        if content is not None:
+            fields.append("content = ?")
+            params.append(content)
+        if status is not None:
+            fields.append("status = ?")
+            params.append(status)
+        if trigger_at is not None:
+            fields.append("trigger_at = ?")
+            params.append(int(trigger_at))
+        if created_at is not None:
+            fields.append("created_at = ?")
+            params.append(int(created_at))
+        if not fields:
+            return False
+        params.append(int(event_id))
+        with self._lock:
+            cur = self._conn.execute(
+                f"UPDATE proactive_events SET {', '.join(fields)} WHERE id = ?", params
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    def delete_proactive_event(self, event_id: int) -> bool:
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM proactive_events WHERE id = ?", (int(event_id),)
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
 
     def search_messages(self, query: str, limit: int = 5) -> list[dict]:
         """按关键词召回历史消息；任何异常都退化为空结果，不影响主流程。"""

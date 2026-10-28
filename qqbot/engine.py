@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import re
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +33,8 @@ HELP_TEXT = (
     "/tag 名字 给刚存的表情包打标\n"
     "/img list 看看图库\n"
     "/proactive 让她主动说一句\n"
+    "/events 看她记下的事\n"
+    "/event 2026-11-04 09:00 面试 记一件事\n"
     "/status 运行状态"
 )
 
@@ -184,6 +187,12 @@ class Engine:
         if head == "/proactive":
             return self._try_proactive()
 
+        if head == "/events":
+            return self._list_events()
+
+        if head == "/event":
+            return self._event_command(rest)
+
         if head in ("/help", "/?"):
             return HELP_TEXT
 
@@ -311,6 +320,76 @@ class Engine:
             "skipped": "唔，我想了想，这次还是不说了。",
             "failed": "想说话，但是没发出去。",
         }.get(status, "试了一下。")
+
+    _EVENT_DATE_RE = re.compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})$")
+    _EVENT_TIME_RE = re.compile(r"^(\d{1,2}):(\d{2})$")
+    EVENT_DEFAULT_HOUR = 19
+
+    def _list_events(self) -> str:
+        events = self.store.list_events(status="pending", limit=10)
+        if not events:
+            return "我还没记下什么要做的事呀。"
+        lines = ["我记着这些："]
+        for index, event in enumerate(events, 1):
+            stamp = datetime.fromtimestamp(int(event["trigger_at"])).strftime(
+                "%m-%d %H:%M"
+            )
+            lines.append(f"{index}. {stamp} {event['content']}")
+        lines.append("发 /event rm 编号 可以删掉。")
+        return "\n".join(lines)
+
+    def _event_command(self, rest: str) -> str:
+        rest = (rest or "").strip()
+        if not rest:
+            return "用法：/event 2026-11-04 09:00 面试 ｜ /event now 试试 ｜ /event rm 1"
+        head, _, tail = rest.partition(" ")
+        head = head.strip()
+        tail = tail.strip()
+
+        if head == "rm":
+            return self._remove_event(tail)
+        if head == "now":
+            if not tail:
+                return "要告诉我是什么事呀。"
+            self.store.add_scheduled_event(tail[:40], int(time.time()))
+            return f"好，记下了：{tail}"
+        return self._add_event(head, tail)
+
+    def _remove_event(self, raw_index: str) -> str:
+        try:
+            index = int(raw_index)
+        except (TypeError, ValueError):
+            return "要给我编号呀，用 /events 看。"
+        events = self.store.list_events(status="pending", limit=50)
+        if not 1 <= index <= len(events):
+            return "没有这个编号呀。"
+        event = events[index - 1]
+        self.store.delete_proactive_event(int(event["id"]))
+        return f"好，删掉「{event['content']}」了。"
+
+    def _add_event(self, date_token: str, remainder: str) -> str:
+        match = self._EVENT_DATE_RE.match(date_token)
+        if not match:
+            return "日期要写成 2026-11-04 这样呀。"
+        year, month, day = (int(part) for part in match.groups())
+
+        hour, minute = self.EVENT_DEFAULT_HOUR, 0
+        first = remainder.split(" ", 1)[0] if remainder else ""
+        time_match = self._EVENT_TIME_RE.match(first)
+        if time_match:
+            hour, minute = int(time_match.group(1)), int(time_match.group(2))
+            remainder = remainder.split(" ", 1)[1].strip() if " " in remainder else ""
+
+        if not remainder:
+            return "还要告诉我是什么事呀。"
+
+        try:
+            moment = datetime(year, month, day, hour, minute)
+        except ValueError:
+            return "这个日期不太对呀。"
+
+        self.store.add_scheduled_event(remainder[:40], int(moment.timestamp()))
+        return f"好，我记住了：{moment:%m-%d %H:%M} {remainder}"
 
     # ---------------- 对话 ----------------
     def _chat(self, session: str) -> str:
