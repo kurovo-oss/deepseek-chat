@@ -1,0 +1,27 @@
+# 密钥与运行时数据（绝不入库）
+.env
+data/
+
+# 数据库
+*.db
+*.db-wal
+*.db-shm
+
+# 日志
+logs/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
