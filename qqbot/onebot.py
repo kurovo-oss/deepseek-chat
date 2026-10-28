@@ -104,7 +104,15 @@ class HttpSender:
             cq = f"[CQ:image,file={Path(image).as_uri()}]"
         return self._call("send_private_msg", {"user_id": user_id, "message": cq})
 
-    def _call(self, action: str, payload: dict) -> bool:
+    def login_info(self) -> dict[str, Any] | None:
+        """调 get_login_info，确认协议端在线且已登录。不可达返回 None。"""
+        ok, data = self._request("get_login_info", {})
+        if not ok:
+            return None
+        info = data.get("data")
+        return info if isinstance(info, dict) else {}
+
+    def _request(self, action: str, payload: dict) -> tuple[bool, dict[str, Any]]:
         url = f"{self.api_url}/{action}"
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         headers = {"Content-Type": "application/json"}
@@ -114,13 +122,18 @@ class HttpSender:
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 raw = response.read().decode("utf-8", "replace")
-        except (urllib.error.URLError, TimeoutError, OSError):
-            return False
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+            return False, {}
         try:
             data = json.loads(raw)
         except json.JSONDecodeError:
-            return False
+            return False, {}
+        if not isinstance(data, dict):
+            return False, {}
         # OneBot 约定：status == "ok" 或 retcode == 0
-        if isinstance(data, dict):
-            return data.get("status") == "ok" or data.get("retcode") == 0
-        return False
+        ok = data.get("status") == "ok" or data.get("retcode") == 0
+        return ok, data
+
+    def _call(self, action: str, payload: dict) -> bool:
+        ok, _data = self._request(action, payload)
+        return ok

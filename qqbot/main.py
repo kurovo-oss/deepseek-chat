@@ -95,6 +95,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="qqbot", description="大肥鱼 QQ 机器人")
     parser.add_argument("--base-dir", default=None, help="项目根目录（默认当前目录）")
     parser.add_argument("--check", action="store_true", help="只校验配置并探测模型")
+    parser.add_argument(
+        "--check-adapter", action="store_true", help="只探测协议端是否在线并已登录"
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -119,6 +122,23 @@ def main(argv: list[str] | None = None) -> int:
         ok, detail = client.probe()
         print(f"模型探测：{'OK' if ok else '失败'}（{detail}）")
         return 0 if ok else 1
+
+    if args.check_adapter:
+        info = HttpSender(
+            settings.adapter_api_url, settings.adapter_token
+        ).login_info()
+        if info is None:
+            print(
+                f"协议端探测：失败（{settings.adapter_api_url} 无响应）\n"
+                "  检查：NapCat/LLOneBot 是否已启动、HTTP API 端口是否一致、"
+                "ADAPTER_TOKEN 是否正确"
+            )
+            return 1
+        print(
+            f"协议端探测：OK（已登录 {info.get('nickname', '?')}"
+            f"（{info.get('user_id', '?')}））"
+        )
+        return 0
 
     engine = build_engine(settings)
     try:

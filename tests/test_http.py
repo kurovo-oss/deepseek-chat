@@ -162,3 +162,62 @@ def test_sender_posts_image_as_base64(ok_server, tmp_path):
     message = _OkHandler.received[-1]["message"]
     assert message.startswith("[CQ:image,file=base64://")
     assert base64.b64encode(b"fake").decode() in message
+
+
+# ---------------- 协议端探测 ----------------
+class _LoginHandler(BaseHTTPRequestHandler):
+    response = {
+        "status": "ok",
+        "retcode": 0,
+        "data": {"user_id": 10001, "nickname": "大肥鱼"},
+    }
+    last_auth = None
+
+    def do_POST(self):  # noqa: N802
+        length = int(self.headers.get("Content-Length") or 0)
+        self.rfile.read(length)
+        type(self).last_auth = self.headers.get("Authorization")
+        body = json.dumps(type(self).response).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+
+@pytest.fixture
+def login_server():
+    _LoginHandler.last_auth = None
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), _LoginHandler)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    yield f"http://127.0.0.1:{httpd.server_address[1]}"
+    httpd.shutdown()
+    httpd.server_close()
+    thread.join(timeout=5)
+
+
+def test_login_info_ok(login_server):
+    info = HttpSender(login_server).login_info()
+    assert info == {"user_id": 10001, "nickname": "大肥鱼"}
+
+
+def test_login_info_sends_token(login_server):
+    HttpSender(login_server, token="secret").login_info()
+    assert _LoginHandler.last_auth == "Bearer secret"
+
+
+def test_login_info_unreachable():
+    assert HttpSender("http://127.0.0.1:1", timeout=1).login_info() is None
+
+
+def test_login_info_fails_on_error_response(login_server):
+    original = _LoginHandler.response
+    _LoginHandler.response = {"status": "failed", "retcode": 1404, "data": None}
+    try:
+        assert HttpSender(login_server).login_info() is None
+    finally:
+        _LoginHandler.response = original

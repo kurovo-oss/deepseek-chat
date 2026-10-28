@@ -52,10 +52,13 @@ tests/            97 用例，fake LLM / fake sender / 真实 socket
 copy .env.example .env      # Windows
 #    填 ALLOW_USER_ID（你的 QQ 号）与 MODEL_API_KEY
 
-# 2. 自检：确认模型 ID 可用（对应风险 R1）
+# 2. 自检模型
 python -m qqbot --check
 
-# 3. 启动
+# 3. 协议端起来之后，自检连通性（会打印登录的号）
+python -m qqbot --check-adapter
+
+# 4. 启动
 python -m qqbot
 ```
 
@@ -71,6 +74,19 @@ python -m qqbot
 | HTTP 事件上报 | `http://127.0.0.1:8080/event` |
 
 两者都只监听 `127.0.0.1`，不要暴露到公网。
+
+### 联调顺序
+
+1. `python -m qqbot --check` → 模型通
+2. 启动 NapCat / LLOneBot，确认小号已登录
+3. 在协议端配好上面两个地址（上报端口要对得上）
+4. `python -m qqbot --check-adapter` → 打印出小号昵称和 QQ 号
+5. `python -m qqbot` 启动
+6. 用你自己的号给小号发一条私聊
+
+第 6 步没反应时，按顺序查：`.env` 里 `ALLOW_USER_ID` 是否填了自己的 QQ 号 →
+协议端是否真的 POST 到了 `/event`（`GET /health` 能通说明我们的服务在）→
+`data/chat.db` 的 `messages` 表里有没有落库（有落库但 `send_state='failed'` 就是发送端的问题）。
 
 ## 指令
 
