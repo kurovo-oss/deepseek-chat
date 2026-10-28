@@ -6,7 +6,10 @@ import argparse
 import gzip
 import json
 import logging
+import socket
 import sys
+import time
+import urllib.parse
 import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -27,6 +30,41 @@ from .onebot import HttpSender
 from .store import Store
 
 log = logging.getLogger("qqbot")
+
+
+def model_host(base_url: str) -> str | None:
+    """从 API 地址里取主机名，取不到返回 None。"""
+    return urllib.parse.urlsplit(base_url or "").hostname or None
+
+
+def reachable(host: str, port: int = 443, timeout: float = 5.0) -> bool:
+    """能不能建立 TCP 连接。开机自启时网络常比登录慢，用它当就绪探测。"""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def wait_for_network(
+    probe,
+    timeout: float = 60.0,
+    interval: float = 3.0,
+    clock=time.monotonic,
+    sleep=time.sleep,
+) -> float | None:
+    """等网络就绪。返回等待秒数（0 表示立刻就通），超时返回 None。"""
+    started = clock()
+    deadline = started + timeout
+    while True:
+        try:
+            if probe():
+                return max(0.0, clock() - started)
+        except Exception:  # noqa: BLE001 - 探测本身出错也当没通
+            pass
+        if clock() >= deadline:
+            return None
+        sleep(interval)
 
 
 def build_engine(settings) -> Engine:
@@ -238,6 +276,21 @@ def main(argv: list[str] | None = None) -> int:
         log.error("无法监听 %s:%s — %s", settings.listen_host, settings.listen_port, exc)
         engine.store.close()
         return 3
+
+    # 端口已绑定（连接会排队，不会丢），这时才等网络：
+    # 开机自启常常比网络先起来，别让第一条消息直接吃兜底话术
+    host = model_host(settings.model_base_url)
+    if host and settings.network_wait_seconds > 0:
+        waited = wait_for_network(
+            lambda: reachable(host), timeout=settings.network_wait_seconds
+        )
+        if waited is None:
+            log.warning(
+                "网络还没通（已等 %.0f 秒），先照常启动；期间的消息可能失败",
+                settings.network_wait_seconds,
+            )
+        elif waited >= 1:
+            log.info("等了 %.0f 秒才等到网络", waited)
 
     log.info(
         "已启动：监听 http://%s:%s/event ，模型 %s（日志 %s）",

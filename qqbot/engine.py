@@ -296,11 +296,15 @@ class Engine:
         messages = self._build_messages(session)
         try:
             result = self.llm.chat(messages)
-        except LLMError:
+        except LLMError as exc:
+            log.warning("对话失败，改用兜底话术：%s", exc)
             self.store.log_usage(self.settings.model_id, 0, 0, "chat", ok=False)
             return FALLBACK_REPLY
         self.store.log_usage(result.model, result.tokens_in, result.tokens_out, "chat", True)
-        return result.text or FALLBACK_REPLY
+        if not result.text:
+            log.warning("模型返回空内容，改用兜底话术")
+            return FALLBACK_REPLY
+        return result.text
 
     def _build_messages(self, session: str) -> list[dict]:
         window_start = int(self.store.get_cursor(self._window_key(session), "0") or 0)
@@ -360,6 +364,9 @@ class Engine:
         image_path = self._pick_image(session, tags)
         parts = split_message(cleaned, self.settings.reply_max_chars)
         if not parts and image_path is None:
+            log.warning(
+                "回复内容为空（原文 %r，图片标记 %s），改用兜底话术", raw_text[:80], tags
+            )
             parts = [FALLBACK_REPLY]
 
         content = cleaned if cleaned else ("[图片]" if image_path else " ".join(parts))

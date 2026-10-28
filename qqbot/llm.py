@@ -7,10 +7,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+
+log = logging.getLogger("qqbot")
 
 
 class LLMError(RuntimeError):
@@ -32,7 +35,7 @@ class LLMClient:
         api_key: str,
         model: str,
         timeout: float = 60.0,
-        retries: int = 1,
+        retries: int = 2,
         sleep=time.sleep,
     ) -> None:
         self.base_url = base_url.rstrip("/")
@@ -79,6 +82,9 @@ class LLMClient:
                 )
             except LLMError as exc:
                 last_error = exc
+                log.warning(
+                    "模型调用失败（第 %d/%d 次）：%s", attempt + 1, self.retries + 1, exc
+                )
                 if attempt < self.retries:
                     self._sleep(0.5 * (2**attempt))
         raise last_error or LLMError("未知错误")
