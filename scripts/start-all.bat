@@ -4,6 +4,13 @@ rem 启动协议端 + 机器人（开机自启就用这个）
 setlocal
 cd /d "%~dp0.."
 
+rem 协议端已经在跑就不要重复启动（6099 是它的 WebUI 端口）
+netstat -ano | findstr /C:":6099" >nul 2>&1
+if not errorlevel 1 (
+  echo 协议端似乎已在运行，跳过启动。
+  goto :bot
+)
+
 set "NAPCAT="
 for /d %%D in ("tools\NapCat-*") do set "NAPCAT=%%~fD\launcher.bat"
 
