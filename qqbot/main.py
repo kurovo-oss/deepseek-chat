@@ -91,6 +91,14 @@ def make_handler(engine: Engine):
                 self.send_error(404, "not found")
                 return
 
+            log.info(
+                "收到上报：%s，chunked=%s，Content-Length=%s，Content-Type=%s",
+                self.path,
+                bool(self.headers.get("Transfer-Encoding")),
+                self.headers.get("Content-Length"),
+                self.headers.get("Content-Type"),
+            )
+
             raw = self._read_body()
             if not raw:
                 log.warning(

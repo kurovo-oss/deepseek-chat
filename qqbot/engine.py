@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,8 @@ from .formatting import extract_image_tags, split_message, strip_markdown
 from .llm import LLMError
 from .onebot import IncomingMessage, Sender, parse_event
 from .store import Store
+
+log = logging.getLogger("qqbot")
 
 FALLBACK_REPLY = "唔…我这会儿有点转不过来，等一下再跟我说好不好？"
 
@@ -46,6 +49,11 @@ class Engine:
     def handle_payload(self, payload: Any) -> bool:
         message = parse_event(payload)
         if message is None:
+            log.debug(
+                "忽略非私聊文本事件：post_type=%s message_type=%s",
+                payload.get("post_type") if isinstance(payload, dict) else type(payload),
+                payload.get("message_type") if isinstance(payload, dict) else None,
+            )
             return False
         self.handle_message(message)
         return True
@@ -53,6 +61,11 @@ class Engine:
     def handle_message(self, message: IncomingMessage) -> None:
         # 白名单：非本人消息一律静默，不回复、不落库
         if message.user_id != self.settings.allow_user_id:
+            log.info(
+                "忽略非白名单用户 %s（当前只服务 %s）",
+                message.user_id,
+                self.settings.allow_user_id,
+            )
             return
 
         text = message.text.strip()
@@ -61,7 +74,10 @@ class Engine:
 
         # 幂等：同一 qq_msg_id 只处理一次
         if message.message_id and self.store.has_qq_msg_id(message.message_id):
+            log.info("重复消息，跳过：qq_msg_id=%s", message.message_id)
             return
+
+        log.info("收到来自 %s 的消息：%s", message.user_id, text[:60])
 
         session = str(message.user_id)
         self.store.save_message(
