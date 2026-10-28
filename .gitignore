@@ -2,6 +2,9 @@
 .env
 data/
 
+# 协议端（几十 MB 的第三方发行包，不入库）
+tools/
+
 # 数据库
 *.db
 *.db-wal

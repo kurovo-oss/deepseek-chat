@@ -75,6 +75,27 @@ python -m qqbot
 
 两者都只监听 `127.0.0.1`，不要暴露到公网。
 
+### 协议端怎么装
+
+项目自带下载器，直接从官方 Release 拉最新版：
+
+```bat
+scripts\get-napcat.bat
+```
+
+双击也能跑。它只在需要时才下载 124MB 的完整包（自带 Node），
+本机已有 Node 就只下 34MB 的 `NapCat.Shell.zip`，解压到 `tools/NapCat-<版本>/`。
+
+等价的 Python 调用：
+
+```bash
+python scripts/get_napcat.py --dry-run   # 只看会下载什么
+python scripts/get_napcat.py             # 实际下载
+```
+
+> ⚠️ 这台机器 PATH 上的 `python` 是 Microsoft Store 的空壳，直接敲会静默失败。
+> 用 `.bat`（它会自己找可用的解释器），或者写全路径。
+
 ### 联调顺序
 
 1. `python -m qqbot --check` → 模型通
