@@ -4,6 +4,7 @@
 
 - 产品方向：[docs/PRD.md](docs/PRD.md)
 - 工程规格：[docs/MVP.md](docs/MVP.md)
+- 记忆设计：[docs/M2-memory.md](docs/M2-memory.md)
 - 人格卡：[docs/persona/dafeiyu.md](docs/persona/dafeiyu.md)
 - 交互演示（无后端）：[demo/index.html](demo/index.html)
 
