@@ -110,7 +110,8 @@ class Settings:
     base_dir: Path
     db_path: Path
     system_prompt_file: Path
-    model_id: str = "deepseek-v4.1-flash1017"
+    model_id: str = "deepseek-flash"
+    log_dir: Path = Path("logs")
     model_base_url: str = "https://api.deepseek.com"
     adapter_api_url: str = "http://127.0.0.1:3001"
     adapter_token: str = ""
@@ -151,6 +152,7 @@ class Settings:
             db_path=base_dir / env.get("DB_PATH", "data/chat.db").strip(),
             system_prompt_file=base_dir
             / env.get("SYSTEM_PROMPT_FILE", "prompts/system.md").strip(),
+            log_dir=base_dir / env.get("LOG_DIR", "logs").strip(),
             model_id=env.get("MODEL_ID", "deepseek-v4.1-flash1017").strip(),
             model_base_url=env.get("MODEL_BASE_URL", "https://api.deepseek.com").strip(),
             adapter_api_url=env.get("ADAPTER_API", "http://127.0.0.1:3001").strip(),

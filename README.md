@@ -15,7 +15,7 @@
 | M2 记得住 | 🚧 部分 | 表结构与 `/memory` `/forget` 已就绪，**自动抽取与注入尚未实现** |
 | M3 会配图 | 🚧 部分 | 占位图库发图 + 冷却已可用；表情包收藏未做 |
 | M4 会主动 | ⬜ 未开始 | 主动消息与闸门 |
-| M5 挂得住 | ⬜ 未开始 | 自启、发送重放 |
+| M5 挂得住 | 🚧 部分 | 开机自启 + 文件日志已完成；发送失败重放未做 |
 
 **注意**：当前版本回复里不会带记忆——它记得住"存下来了"，但还没把记忆塞进 prompt。
 
@@ -31,18 +31,58 @@
 `deepseek-v4.1-flash1017` 是 Harness 内部名，直接调用会返回 400（已实测）。
 默认用 `deepseek-flash`。
 
+## 启动与自启
+
+```bat
+scripts\start-all.bat     :: 协议端 + 机器人（自启就用这个）
+scripts\start-bot.bat     :: 只启机器人
+```
+
+两个脚本都会自动找解释器，**优先用项目内的 `tools\python\python.exe`**，
+所以即使 DSH 运行时被卸载也不受影响。
+
+日志写在 `logs\bot.log`（滚动，5MB × 4），不再只依赖控制台。
+
+安装开机自启：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install-autostart.ps1
+powershell -ExecutionPolicy Bypass -File scripts\uninstall-autostart.ps1   # 卸载
+```
+
+> 自启会在 `%APPDATA%\...\Startup\` 放一个 **约 1KB 的快捷方式**（指向 H 盘的
+> `start-all.bat`）。这是 Windows 唯一支持的自启方式，无法放在项目盘；
+> 除此之外的所有数据（数据库、日志、Python、协议端）都在项目目录里。
+
+## 数据都在哪
+
+**全部在项目目录内**，不往 C 盘写运行时数据：
+
+| 内容 | 位置 |
+|---|---|
+| 对话与记忆 | `data/chat.db`（SQLite） |
+| 日志 | `logs/bot.log`（滚动 5MB × 4） |
+| 图库 | `assets/seed-images/`（占位图，可替换） |
+| 协议端 | `tools/NapCat-*`（约 140MB） |
+| Python 运行时 | `tools/python`（约 340MB，自包含） |
+| 自启快捷方式 | `%APPDATA%\...\Startup\dafeiyu-qqbot.lnk`（约 1KB，仅此一项在 C 盘） |
+
 ## 目录
 
 ```
 qqbot/
   config.py       配置解析与校验（自带 .env 解析）
   formatting.py   Markdown 清洗、分段、{{img:tag}} 提取
+  images.py       图库：tag → 文件，带越界校验
   llm.py          DeepSeek 客户端（urllib）
+  logsetup.py     控制台 + 滚动文件日志
   store.py        SQLite：消息、记忆、用量、游标 + FTS5
-  onebot.py       OneBot 11 适配层（解析事件、发送消息）
+  onebot.py       OneBot 11 适配层（解析事件、发送消息/图片）
   engine.py       编排：白名单 → 幂等 → 指令 → 组 prompt → 发送
   main.py         HTTP 服务与命令行
-tests/            97 用例，fake LLM / fake sender / 真实 socket
+scripts/          下载协议端、启动、自启安装
+tools/            NapCat 与项目内 Python（不入库）
+data/ logs/       运行时数据（不入库）
 ```
 
 ## 快速开始

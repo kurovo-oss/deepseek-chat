@@ -75,6 +75,7 @@ def test_image_defaults(tmp_path):
     assert settings.image_cooldown_messages == 10
     assert settings.image_send_mode == "path"
     assert settings.image_lib_dir == tmp_path / "assets/seed-images"
+    assert settings.log_dir == tmp_path / "logs"
 
 
 def test_invalid_image_send_mode(tmp_path):

@@ -15,6 +15,7 @@ from .config import ConfigError, load_settings, load_system_prompt
 from .engine import Engine
 from .images import ImageLibrary
 from .llm import LLMClient
+from .logsetup import setup_logging
 from .onebot import HttpSender
 from .store import Store
 
@@ -87,10 +88,6 @@ def make_handler(engine: Engine):
             return raw
 
         def do_POST(self) -> None:  # noqa: N802 (http.server 约定)
-            if self.path.split("?")[0].rstrip("/") != "/event":
-                self.send_error(404, "not found")
-                return
-
             log.debug(
                 "收到上报：%s，chunked=%s，Content-Length=%s，Content-Type=%s",
                 self.path,
@@ -99,7 +96,12 @@ def make_handler(engine: Engine):
                 self.headers.get("Content-Type"),
             )
 
+            # 先把请求体读完再判断路径：否则客户端还在写，连接会被 RST
             raw = self._read_body()
+
+            if self.path.split("?")[0].rstrip("/") != "/event":
+                self.send_error(404, "not found")
+                return
             if not raw:
                 log.warning(
                     "收到空事件体，headers=%s",
@@ -153,17 +155,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s | %(message)s",
-    )
-
     base = Path(args.base_dir) if args.base_dir else Path.cwd()
+    # 先按默认位置配日志：这样连"配置错误"本身也能落盘
+    setup_logging(base / "logs")
+
     try:
         settings = load_settings(base)
     except ConfigError as exc:
         log.error("配置错误：%s", exc)
         return 2
+
+    log_file = setup_logging(settings.log_dir)
 
     if args.check:
         client = LLMClient(
@@ -204,10 +206,11 @@ def main(argv: list[str] | None = None) -> int:
         return 3
 
     log.info(
-        "已启动：监听 http://%s:%s/event ，模型 %s",
+        "已启动：监听 http://%s:%s/event ，模型 %s（日志 %s）",
         settings.listen_host,
         settings.listen_port,
         settings.model_id,
+        log_file,
     )
     try:
         server.serve_forever()

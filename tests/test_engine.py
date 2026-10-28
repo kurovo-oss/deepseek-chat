@@ -174,7 +174,8 @@ def test_reset_clears_window_but_keeps_history(env):
 def test_status_command_does_not_call_llm(env):
     env.engine.handle_message(make_message("/status", mid="s1"))
     assert env.llm.calls == []
-    assert "deepseek-v4.1-flash1017" in env.sender.sent[-1][1]
+    # 引用配置本身，避免模型名变更时测试误报
+    assert env.settings.model_id in env.sender.sent[-1][1]
 
 
 def test_memory_command_empty(env):

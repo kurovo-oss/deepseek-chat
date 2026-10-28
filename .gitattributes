@@ -1,0 +1,8 @@
+# 统一换行，避免 Windows 上把 CRLF 文件变成 LF
+# （cmd.exe 解析 LF-only 的 .bat 会截断命令，见 scripts/ 下的批处理）
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.sh text eol=lf
+*.py text eol=lf
+*.md text eol=lf
