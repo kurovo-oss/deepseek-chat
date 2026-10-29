@@ -149,6 +149,18 @@ def test_dream_prompt_contains_journal_cards_messages(env):
     assert "（还没有卡片）" in prompt
 
 
+def test_dream_prompt_skips_commands(env):
+    """/status 这种指令不是聊天，写进记忆本会很怪。"""
+    env.store.save_message("100", "user", "/status", created_at=at(21))
+    env.llm.payload = {"journal": "新的", "ops": []}
+
+    env.dreamer.dream(at(23, 30))
+
+    prompt = env.llm.calls[-1][0]["content"]
+    assert "/status" not in prompt
+    assert "今天加班到十点" in prompt
+
+
 def test_dream_merge_archives_source(env):
     keep = env.store.add_card("fact", "养了一只叫团子的猫", detail="橘猫")
     drop = env.store.add_card("fact", "养了一只猫", detail="掉毛")

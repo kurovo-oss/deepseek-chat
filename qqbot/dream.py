@@ -307,10 +307,12 @@ def _format_cards(cards: list[dict]) -> str:
 def _format_messages(messages: list[dict]) -> str:
     lines = []
     for item in messages:
-        who = "他" if item.get("role") == "user" else "我"
         text = str(item.get("content") or "").replace("\n", " ")[:200]
+        if item.get("role") == "user" and text.strip().startswith("/"):
+            continue  # 指令不是聊天内容：“他也会用 /reset”这种叙事很怪
+        who = "他" if item.get("role") == "user" else "我"
         lines.append(f"{who}：{text}")
-    return "\n".join(lines)
+    return "\n".join(lines) or "（这一天没有聊天，只有指令）"
 
 
 def start_dreamer(engine, store, settings, stop_event: threading.Event) -> threading.Thread:
