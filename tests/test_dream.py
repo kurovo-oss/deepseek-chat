@@ -161,6 +161,18 @@ def test_dream_prompt_skips_commands(env):
     assert "今天加班到十点" in prompt
 
 
+def test_dream_cards_start_unconfirmed(env):
+    """做梦推出来的结论，不能和"他说过的事实"一个可信度。"""
+    env.llm.payload = {
+        "journal": "x",
+        "ops": [{"op": "add", "kind": "preference", "summary": "好像喜欢爬山"}],
+    }
+
+    env.dreamer.dream(at(23, 30))
+
+    assert env.store.list_cards()[0]["confirmed"] is False
+
+
 def test_dream_merge_archives_source(env):
     keep = env.store.add_card("fact", "养了一只叫团子的猫", detail="橘猫")
     drop = env.store.add_card("fact", "养了一只猫", detail="掉毛")

@@ -247,6 +247,29 @@ def test_memory_edit_unknown_id_is_rejected(env):
     assert "没有第 999 条" in env.sender.sent[-1][1]
 
 
+def test_memory_list_marks_pending_and_hints(env):
+    env.store.add_card("fact", "他好像喜欢爬山", importance=0.9, confirmed=False)
+    env.engine.handle_message(make_message("/memory", mid="p1"))
+
+    reply = env.sender.sent[-1][1]
+    assert "待确认" in reply
+    assert "/memory ok" in reply
+
+
+def test_memory_ok_confirms_card(env):
+    card_id = env.store.add_card("fact", "他好像喜欢爬山", importance=0.9, confirmed=False)
+
+    env.engine.handle_message(make_message(f"/memory ok {card_id}", mid="p2"))
+
+    assert "记牢了" in env.sender.sent[-1][1]
+    assert env.store.get_card(card_id)["confirmed"] is True
+
+
+def test_memory_ok_rejects_unknown_card(env):
+    env.engine.handle_message(make_message("/memory ok 9999", mid="p3"))
+    assert "没有第 9999 条" in env.sender.sent[-1][1]
+
+
 def test_journal_command_when_empty(env):
     env.engine.memory = types.SimpleNamespace(journal=lambda: "", context=lambda: "")
     env.engine.handle_message(make_message("/journal", mid="j1"))

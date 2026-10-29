@@ -216,6 +216,7 @@ class Dreamer:
                     summary=summary,
                     detail=str(item.get("detail") or "")[:200],
                     importance=_clamp(item.get("importance"), 0.5),
+                    confirmed=False,  # 做梦推出来的，等她慢慢确认
                 )
                 existing.add(summary)
                 counts[OP_ADD] += 1

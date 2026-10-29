@@ -140,6 +140,8 @@ class Settings:
     replay_interval_seconds: float = 60.0
     dream_enabled: bool = True
     dream_at: str = "23:30"
+    recall_enabled: bool = True
+    recall_max_messages: int = 3
     dream_check_seconds: float = 600.0
     dream_prompt_file: Path = Path("prompts/dream.md")
     journal_file: Path = Path("data/journal.md")
@@ -290,6 +292,8 @@ class Settings:
             compact_prompt_file=base_dir
             / env.get("COMPACT_PROMPT_FILE", "prompts/compact.md").strip(),
             dream_enabled=_bool(env, "DREAM_ENABLED", True),
+            recall_enabled=_bool(env, "RECALL_ENABLED", True),
+            recall_max_messages=_int(env, "RECALL_MAX_MESSAGES", 3, minimum=0),
             dream_at=env.get("DREAM_AT", "23:30").strip(),
             dream_check_seconds=_float(env, "DREAM_CHECK_SECONDS", 600.0),
             dream_prompt_file=base_dir

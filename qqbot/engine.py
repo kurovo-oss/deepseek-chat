@@ -24,6 +24,7 @@ from .store import Store
 log = logging.getLogger("qqbot")
 
 FALLBACK_REPLY = "唔…我这会儿有点转不过来，等一下再跟我说好不好？"
+RECALL_TITLE = "# 他以前说过的原话"
 
 
 def _size_text(size: int) -> str:
@@ -34,7 +35,7 @@ def _size_text(size: int) -> str:
 HELP_TEXT = (
     "我会这些呀：\n"
     "/reset 清空刚才的对话\n"
-    "/memory 看看我记得什么（add 加一条、edit 改一条）\n"
+    "/memory 看看我记得什么（add 加一条、edit 改一条、ok 编号 确认）\n"
     "/forget 编号 忘掉某件事\n"
     "/pin 编号 把某件事记牢一点\n"
     "/journal 看看记忆本\n"
@@ -250,6 +251,16 @@ class Engine:
             )
             return f"记下来啦（第 {card_id} 条）：{content}"
 
+        if sub in ("ok", "confirm"):
+            target = args.strip()
+            if not target.isdigit():
+                return "格式：/memory ok 编号"
+            card = self.store.get_card(int(target))
+            if card is None:
+                return f"我这儿没有第 {target} 条记忆呀。"
+            self.store.set_confirmed(int(target), True)
+            return f"好，这条我记牢了：{card['summary']}"
+
         if sub in ("edit", "set"):
             target, _, content = args.strip().partition(" ")
             if not target.isdigit() or not content.strip():
@@ -274,12 +285,20 @@ class Engine:
         )[:20]
 
         lines = []
+        has_pending = False
         for card in scored:
             weight = card_weight(card, now, half_life)
             label = KIND_LABEL.get(str(card.get("kind")), "记忆")
             pinned = "·钉" if card.get("pinned") else ""
-            lines.append(f"{card['id']}. [{label}] {card['summary']}（{weight:.2f}{pinned}）")
-        return "我记得这些事：\n" + "\n".join(lines)
+            pending = "" if card.get("confirmed", True) else "·待确认"
+            has_pending = has_pending or bool(pending)
+            lines.append(
+                f"{card['id']}. [{label}] {card['summary']}（{weight:.2f}{pinned}{pending}）"
+            )
+        text = "我记得这些事：\n" + "\n".join(lines)
+        if has_pending:
+            text += "\n\n带·待确认的是我猜的，发 /memory ok 编号 我才会当真。"
+        return text
 
     def _forget(self, rest: str) -> str:
         if not rest:
@@ -549,10 +568,43 @@ class Engine:
             context = self.memory.context()
             if context:
                 system = f"{system}\n\n{context}"
+        recall = self._recall_section(selected)
+        if recall:
+            system = f"{system}\n\n{recall}"
 
         messages = [{"role": "system", "content": system}]
         messages.extend({"role": m["role"], "content": m["content"]} for m in selected)
         return messages
+
+    def _recall_section(self, history: list[dict]) -> str:
+        """从原话里捞几句相关的。
+
+        卡片记的是"结论"，这句补的是"他当时怎么说的"——
+        Paramecium 那套思路：原文才是唯一真相，摘要只是索引。
+        """
+        if not self.settings.recall_enabled or not history:
+            return ""
+        last_user = next((m for m in reversed(history) if m.get("role") == "user"), None)
+        if last_user is None:
+            return ""
+        try:
+            rows = self.store.recall_messages(
+                str(last_user.get("content") or ""),
+                limit=self.settings.recall_max_messages,
+                exclude_ids={m.get("id") for m in history},
+            )
+        except Exception:  # noqa: BLE001 - 召回是加分项，失败就当没想起来
+            log.exception("原话召回失败")
+            return ""
+        if not rows:
+            return ""
+
+        lines = [RECALL_TITLE]
+        for row in rows:
+            stamp = time.strftime("%m-%d", time.localtime(row.get("created_at") or 0))
+            text = str(row.get("content") or "").replace("\n", " ")[:80]
+            lines.append(f"[{stamp}] {text}")
+        return "\n".join(lines)
 
     # ---------------- 发送 ----------------
     def _pick_image(self, session: str, tags: list[str]) -> Path | None:

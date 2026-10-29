@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS cards (
   source_from  INTEGER,
   source_to    INTEGER,
   status       TEXT NOT NULL DEFAULT 'active',
+  confirmed    INTEGER NOT NULL DEFAULT 1,
   created_at   INTEGER NOT NULL,
   updated_at   INTEGER NOT NULL
 );
@@ -140,10 +141,54 @@ END;
 
 _FTS_SPECIAL = re.compile(r'["*():^-]')
 _SPLIT = re.compile(r"[\s,，。！？、；：'\"“”‘’（）()\[\]【】{}<>]+")
+_WORD_RUN = re.compile(r"[0-9A-Za-z_]+|[\u4e00-\u9fff]+")
+
+
+def trigrams(text: str, limit: int = 12) -> list[str]:
+    """切出 FTS5 trigram 分词器能匹配的片段。
+
+    trigram 只认 3 个字以上的子串，2 个字的词召不回来——宁可少召回，
+    也不要为了两个字的词去全表 LIKE（历史表会越滚越大）。
+    """
+    terms: list[str] = []
+    seen: set[str] = set()
+    for run in _WORD_RUN.findall(text or ""):
+        if len(run) < 3:
+            continue
+        pieces = [run] if len(run) == 3 else [run[i : i + 3] for i in range(len(run) - 2)]
+        for piece in pieces:
+            if piece in seen:
+                continue
+            seen.add(piece)
+            terms.append(piece)
+            if len(terms) >= limit:
+                return terms
+    return terms
 _LEGACY_KIND = {"fact": "fact", "preference": "preference", "event": "event"}
 _CARD_UPDATABLE = frozenset(
     {"kind", "summary", "detail", "entities", "occurred_at", "importance", "status", "updated_at"}
 )
+
+
+def bigrams(text: str, limit: int = 12) -> list[str]:
+    """两字片段，给 FTS 兜底用：trigram 索引不到 2 个字的词。
+
+    "香菜""火锅""加班" 这类短词是日常最常出现的，只靠 trigram 会全部漏掉。
+    """
+    terms: list[str] = []
+    seen: set[str] = set()
+    for run in _WORD_RUN.findall(text or ""):
+        if len(run) < 2:
+            continue
+        pieces = [run] if len(run) == 2 else [run[i : i + 2] for i in range(len(run) - 1)]
+        for piece in pieces:
+            if piece in seen:
+                continue
+            seen.add(piece)
+            terms.append(piece)
+            if len(terms) >= limit:
+                return terms
+    return terms
 
 
 def sanitize_fts_query(query: str) -> str:
@@ -209,6 +254,15 @@ class Store:
         if "attempts" not in event_columns:
             self._conn.execute(
                 "ALTER TABLE proactive_events ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0"
+            )
+        card_columns = {
+            row["name"]
+            for row in self._conn.execute("PRAGMA table_info(cards)").fetchall()
+        }
+        if "confirmed" not in card_columns:
+            # 老库里的卡都是"用过一阵的"，视为已确认；新抽取的才进待确认
+            self._conn.execute(
+                "ALTER TABLE cards ADD COLUMN confirmed INTEGER NOT NULL DEFAULT 1"
             )
         self._migrate_memories_to_cards()
 
@@ -573,6 +627,66 @@ class Store:
             ).fetchall()
             return [dict(r) for r in rows]
 
+    def recall_messages(
+        self,
+        query: str,
+        limit: int = 3,
+        exclude_ids: set | None = None,
+        role: str = "user",
+    ) -> list[dict]:
+        """从历史原话里召回和这句话相关的几句（"你以前说过的"）。
+
+        两条路：三元片段走 FTS（bm25 排序），两字词走有界 LIKE 兜底——
+        trigram 索引不到「香菜」「火锅」这种两个字的词，可那才是最常说的。
+        """
+        skip = set(exclude_ids or ())
+        picked: list[dict] = []
+        seen: set = set()
+
+        def take(rows) -> None:
+            for row in rows:
+                item = dict(row)
+                if item["id"] in skip or item["id"] in seen:
+                    continue
+                seen.add(item["id"])
+                picked.append(item)
+                if len(picked) >= int(limit):
+                    return
+
+        with self._lock:
+            terms = trigrams(query)
+            if terms and self.fts_enabled:
+                match = " OR ".join(f'"{term}"' for term in terms)
+                try:
+                    rows = self._conn.execute(
+                        "SELECT m.* FROM messages_fts f JOIN messages m ON m.id = f.rowid"
+                        " WHERE messages_fts MATCH ? AND m.role = ?"
+                        " ORDER BY bm25(messages_fts) LIMIT ?",
+                        (match, role, int(limit) + len(skip)),
+                    ).fetchall()
+                    take(rows)
+                except sqlite3.Error:
+                    pass  # FTS 坏了不该影响对话
+            if len(picked) < int(limit):
+                take(self._recall_by_pairs(query, role, limit))
+        return picked[: int(limit)]
+
+    _RECENT_SCAN = 8000
+
+    def _recall_by_pairs(self, query: str, role: str, limit: int) -> list:
+        """两字词兜底：只在最近一段消息里扫，不做全表 LIKE。"""
+        pairs = bigrams(query)
+        if not pairs:
+            return []
+        floor_row = self._conn.execute("SELECT MAX(id) FROM messages").fetchone()
+        floor = (floor_row[0] or 0) - self._RECENT_SCAN
+        clause = " OR ".join(["content LIKE ?"] * len(pairs))
+        return self._conn.execute(
+            f"SELECT * FROM messages WHERE role = ? AND id >= ? AND ({clause})"
+            " ORDER BY id DESC LIMIT ?",
+            (role, floor, *[f"%{pair}%" for pair in pairs], int(limit) * 3),
+        ).fetchall()
+
     # ---------------- memories ----------------
     def add_memory(
         self,
@@ -630,14 +744,15 @@ class Store:
         source_to: int | None = None,
         pinned: bool = False,
         created_at: int | None = None,
+        confirmed: bool = True,
     ) -> int:
         now = int(created_at if created_at is not None else time.time())
         with self._lock:
             cur = self._conn.execute(
                 "INSERT INTO cards"
                 "(kind, summary, detail, entities, occurred_at, importance, pinned,"
-                " source_from, source_to, created_at, updated_at)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                " source_from, source_to, created_at, updated_at, confirmed)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     kind,
                     summary,
@@ -650,6 +765,7 @@ class Store:
                     source_to,
                     now,
                     now,
+                    1 if confirmed else 0,
                 ),
             )
             self._conn.commit()
@@ -663,7 +779,18 @@ class Store:
         except json.JSONDecodeError:
             item["entities"] = []
         item["pinned"] = bool(item.get("pinned"))
+        item["confirmed"] = bool(item.get("confirmed", 1))
         return item
+
+    def set_confirmed(self, card_id: int, confirmed: bool = True) -> bool:
+        """确认（或撤回确认）一张卡；不存在返回 False。"""
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE cards SET confirmed = ?, updated_at = ? WHERE id = ?",
+                (1 if confirmed else 0, int(time.time()), int(card_id)),
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
 
     def get_card(self, card_id: int) -> dict | None:
         with self._lock:

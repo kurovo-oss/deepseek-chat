@@ -34,6 +34,7 @@ DEDUPE_RATIO = 0.8
 MAX_SUMMARY_CHARS = 80
 MAX_DETAIL_CHARS = 400
 BLOCK_TITLE = "# 你记得的事（关于对方）"
+PENDING_TITLE = "# 听来的、还没核实的（别当事实说）"
 DAY_SECONDS = 86400
 
 
@@ -137,6 +138,19 @@ def build_block(cards: list[dict]) -> str:
         lines.append(f"[{label}] {summary}")
     if len(lines) == 1:
         return ""
+    return "\n".join(lines)
+
+
+def build_pending_block(cards: list[dict]) -> str:
+    """待确认的卡片单独成块：标注清楚"这是猜的"，别让模型当事实用。"""
+    lines = [PENDING_TITLE]
+    for card in cards:
+        summary = str(card.get("summary") or "").strip()
+        if summary:
+            lines.append(f"- {summary}")
+    if len(lines) == 1:
+        return ""
+    lines.append("（这些都是听来的，可能不准，别当确定的事说）")
     return "\n".join(lines)
 
 
@@ -355,17 +369,33 @@ class Memory:
             return ""
         now = self._clock()
         cards = self.store.list_cards(status="active", limit=300)
+        confirmed = [card for card in cards if card.get("confirmed", True)]
+        pending = [card for card in cards if not card.get("confirmed", True)]
+
+        parts: list[str] = []
         selected = select_cards(
-            cards,
+            confirmed,
             now=now,
             threshold=self.settings.card_weight_threshold,
             char_budget=self.settings.card_inject_char_budget,
             half_life_days=self.settings.decay_half_life_days,
         )
-        if not selected:
-            return ""
-        self.store.touch_cards([card["id"] for card in selected], int(now))
-        return build_block(selected)
+        if selected:
+            self.store.touch_cards([card["id"] for card in selected], int(now))
+            parts.append(build_block(selected))
+
+        # 待确认的单独给一小份预算：不碰权重（被注入不该等于变可信），最多 4 条
+        pending_selected = select_cards(
+            pending,
+            now=now,
+            threshold=0.0,
+            char_budget=400,
+            half_life_days=self.settings.decay_half_life_days,
+        )
+        if pending_selected:
+            parts.append(build_pending_block(pending_selected[:4]))
+
+        return "\n\n".join(part for part in parts if part)
 
     # ---------------- 抽取 ----------------
     def note_reply(self, session: str, user_text: str = "") -> None:
@@ -457,6 +487,7 @@ class Memory:
                     entities=op["entities"],
                     occurred_at=op["occurred_at"],
                     importance=op["importance"],
+                    confirmed=False,  # 抽出来的先按"听来的"算，确认了才当真
                 )
                 applied += 1
                 continue
@@ -554,6 +585,7 @@ class Memory:
                 importance=op["importance"],
                 source_from=span[0]["id"],
                 source_to=span[-1]["id"],
+                confirmed=False,  # 从对话里读出来的，也是"听来的"
             )
             created += 1
         return created

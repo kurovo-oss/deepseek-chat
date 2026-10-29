@@ -110,6 +110,44 @@ def test_no_journal_means_no_section(env):
     assert env.memory.journal() == ""
 
 
+def test_recall_injects_old_utterance(tmp_path):
+    """窗口外的旧话要能被"想起来"——卡片记结论，原话记怎么说。"""
+    ctx = build(tmp_path, replies=["好呀。"], history_max_turns=1)
+    ctx.store.save_message("100", "user", "我对香菜过敏，别放香菜", created_at=1000)
+    ctx.store.save_message("100", "assistant", "记住啦", created_at=1001)
+    ctx.store.save_message("100", "user", "今天想吃什么", created_at=1002)
+    ctx.store.save_message("100", "assistant", "都行呀", created_at=1003)
+
+    ctx.engine.handle_message(make_message("晚上吃火锅可以放香菜吗"))
+
+    system = _system_prompt(ctx.llm.calls)
+    assert "他以前说过的原话" in system
+    assert "别放香菜" in system
+    ctx.store.close()
+
+
+def test_recall_can_be_turned_off(tmp_path):
+    ctx = build(tmp_path, replies=["好呀。"], history_max_turns=1, recall_enabled=False)
+    ctx.store.save_message("100", "user", "我对香菜过敏，别放香菜", created_at=1000)
+    ctx.store.save_message("100", "assistant", "记住啦", created_at=1001)
+
+    ctx.engine.handle_message(make_message("晚上吃火锅可以放香菜吗"))
+
+    assert "他以前说过的原话" not in _system_prompt(ctx.llm.calls)
+    ctx.store.close()
+
+
+def test_recall_absent_when_nothing_matches(tmp_path):
+    ctx = build(tmp_path, replies=["好呀。"], history_max_turns=1)
+    ctx.store.save_message("100", "user", "我对香菜过敏", created_at=1000)
+    ctx.store.save_message("100", "assistant", "记住啦", created_at=1001)
+
+    ctx.engine.handle_message(make_message("今天股票又跌了"))
+
+    assert "他以前说过的原话" not in _system_prompt(ctx.llm.calls)
+    ctx.store.close()
+
+
 def card_reply(**kwargs):
     payload = {"cards": [{"op": "add", "kind": "preference", "summary": "不喜欢被叫起床"}]}
     payload["cards"][0].update(kwargs)
