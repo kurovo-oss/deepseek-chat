@@ -123,7 +123,14 @@ class Dreamer:
         )
 
         try:
-            result = self.llm.chat([{"role": "user", "content": prompt}])
+            # max_tokens 必须给足，而且要比"写多少字"大很多：
+            # deepseek-flash 是推理模型，推理 token 也算在这个额度里。
+            # 真实踩过两次——1600 全被推理吃掉，finish_reason=length、正文 0 字。
+            result = self.llm.chat(
+                [{"role": "user", "content": prompt}],
+                temperature=0.4,
+                max_tokens=6000,
+            )
         except Exception as exc:  # noqa: BLE001 - 做梦失败不该影响任何东西
             log.warning("做梦失败（模型调用）：%s", exc)
             self.store.finish_dream(
@@ -132,14 +139,16 @@ class Dreamer:
             )
             return {"ok": False, "messages": len(messages), "note": str(exc)[:80]}
 
-        data = parse_dream(getattr(result, "text", ""))
+        raw = getattr(result, "text", "") or ""
+        data = parse_dream(raw)
         if data is None:
-            log.warning("做梦失败（输出不是 JSON）")
+            note = "模型没返回正文（推理占满额度）" if not raw.strip() else "输出不是 JSON"
+            log.warning("做梦失败（%s）：%r", note, raw[:200])
             self.store.finish_dream(
                 dream_id, finished_at=stamp, messages_seen=len(messages),
-                ok=False, note="输出不是 JSON",
+                ok=False, note=note,
             )
-            return {"ok": False, "messages": len(messages), "note": "输出不是 JSON"}
+            return {"ok": False, "messages": len(messages), "note": note}
 
         self.store.log_usage(
             result.model, result.tokens_in, result.tokens_out, "dream", True

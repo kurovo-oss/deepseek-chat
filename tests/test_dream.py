@@ -234,3 +234,34 @@ def test_dream_non_json_output_fails_cleanly(env):
     assert result["ok"] is False
     assert result["note"] == "输出不是 JSON"
     assert env.store.list_dreams()[0]["ok"] == 0
+
+
+def test_dream_empty_output_is_named_for_what_it_is(env):
+    """真实踩过：推理模型把额度烧在 reasoning 上，正文是空的。"""
+
+    class ReasoningHungryLLM:
+        def chat(self, messages, **kwargs):
+            return ChatResult("", 1000, 6000, "fake")
+
+    env.dreamer.llm = ReasoningHungryLLM()
+
+    result = env.dreamer.dream(at(23, 30))
+
+    assert result["ok"] is False
+    assert "推理占满额度" in result["note"]
+    assert env.store.list_dreams()[0]["note"] == "模型没返回正文（推理占满额度）"
+
+
+def test_dream_asks_for_enough_tokens(env):
+    """推理 token 也占额度，给 800 必然被截断。"""
+    seen = {}
+
+    class RecordingLLM:
+        def chat(self, messages, **kwargs):
+            seen.update(kwargs)
+            return ChatResult('{"journal": "x", "ops": []}', 10, 5, "fake")
+
+    env.dreamer.llm = RecordingLLM()
+    env.dreamer.dream(at(23, 30))
+
+    assert seen["max_tokens"] >= 4000
