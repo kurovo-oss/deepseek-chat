@@ -28,6 +28,15 @@ def test_m2_design_doc_exists_and_is_linked():
     assert "docs/M2-memory.md" in read("README.md")
 
 
+def test_progress_doc_is_linked_and_covers_milestones():
+    """进度文档必须覆盖每个里程碑，否则它会慢慢变成谎言。"""
+    assert (ROOT / "docs" / "PROGRESS.md").exists()
+    assert "docs/PROGRESS.md" in read("README.md")
+    text = read("docs/PROGRESS.md")
+    for milestone in ("M1", "M2", "M3", "M4", "M5"):
+        assert milestone in text, f"进度文档缺少 {milestone}"
+
+
 @pytest.mark.parametrize(
     "keyword",
     ["卡片", "三重权重", "记忆本", "做梦", "identity", "压缩", "抽取"],
