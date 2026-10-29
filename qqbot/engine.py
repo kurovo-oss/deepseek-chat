@@ -34,7 +34,7 @@ def _size_text(size: int) -> str:
 HELP_TEXT = (
     "我会这些呀：\n"
     "/reset 清空刚才的对话\n"
-    "/memory 看看我记得什么\n"
+    "/memory 看看我记得什么（add 加一条、edit 改一条）\n"
     "/forget 编号 忘掉某件事\n"
     "/pin 编号 把某件事记牢一点\n"
     "/tag 名字 给刚存的表情包打标\n"
@@ -187,7 +187,7 @@ class Engine:
             )
 
         if head == "/memory":
-            return self._list_cards()
+            return self._memory_command(rest)
 
         if head == "/forget":
             return self._forget(rest)
@@ -216,6 +216,39 @@ class Engine:
         return "唔…这个指令我不认识呀。\n" + HELP_TEXT
 
     # ---------------- 记忆指令 ----------------
+    def _memory_command(self, rest: str) -> str:
+        """记忆本：查看 / 手动加一条 / 改一条。
+
+        自动抽取会记错、会漏；能改才是"记忆本"，不能改只是个公告板。
+        """
+        raw = (rest or "").strip()
+        if not raw:
+            return self._list_cards()
+
+        sub, _, args = raw.partition(" ")
+        sub = sub.lower()
+
+        if sub == "add":
+            content = args.strip()
+            if not content:
+                return "要记什么呀？发 /memory add 爸爸不吃香菜"
+            card_id = self.store.add_card(
+                kind="fact", summary=content, importance=0.6
+            )
+            return f"记下来啦（第 {card_id} 条）：{content}"
+
+        if sub in ("edit", "set"):
+            target, _, content = args.strip().partition(" ")
+            if not target.isdigit() or not content.strip():
+                return "格式：/memory edit 编号 新的内容"
+            if self.store.get_card(int(target)) is None:
+                return f"我这儿没有第 {target} 条记忆呀。"
+            summary = content.strip()
+            self.store.update_card(int(target), summary=summary)
+            return f"改好了：{summary}"
+
+        return self._list_cards()
+
     def _list_cards(self) -> str:
         cards = self.store.list_cards(status="active", limit=300)
         if not cards:

@@ -216,6 +216,37 @@ def test_memory_command_lists_entries(env):
     assert "事实" in reply
 
 
+def test_memory_add_records_manual_card(env):
+    """自动抽取会记错、会漏，所以得能自己塞一条进去。"""
+    env.engine.handle_message(make_message("/memory add 爸爸不吃香菜", mid="ma1"))
+
+    cards = env.store.list_cards(status="active")
+    assert [card["summary"] for card in cards] == ["爸爸不吃香菜"]
+    assert cards[0]["kind"] == "fact"
+    assert "记下来啦" in env.sender.sent[-1][1]
+
+
+def test_memory_add_without_text_asks_back(env):
+    env.engine.handle_message(make_message("/memory add", mid="ma2"))
+    assert "要记什么" in env.sender.sent[-1][1]
+    assert env.store.count_cards() == 0
+
+
+def test_memory_edit_updates_summary(env):
+    card_id = env.store.add_card("fact", "养了一只叫团子的猫")
+    env.engine.handle_message(
+        make_message(f"/memory edit {card_id} 养了一只叫团子的橘猫", mid="me3")
+    )
+
+    assert env.store.get_card(card_id)["summary"] == "养了一只叫团子的橘猫"
+    assert "改好了" in env.sender.sent[-1][1]
+
+
+def test_memory_edit_unknown_id_is_rejected(env):
+    env.engine.handle_message(make_message("/memory edit 999 随便什么", mid="me4"))
+    assert "没有第 999 条" in env.sender.sent[-1][1]
+
+
 def test_forget_requires_confirmation(env):
     card_id = env.store.add_card("fact", "养了一只叫团子的猫")
     env.engine.handle_message(make_message(f"/forget {card_id}", mid="f1"))
