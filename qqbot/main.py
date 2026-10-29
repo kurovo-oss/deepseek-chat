@@ -170,6 +170,24 @@ def make_handler(dispatcher):
                 raise ValueError("body too large")
             return self.rfile.read(length) if length > 0 else b""
 
+        def _drain_body(self) -> None:
+            """拒收后把剩下的请求体读干净。
+
+            不读的话，服务端先关连接、对端还在写，内核回 RST——
+            客户端拿到的是连接被重置，而不是我们精心准备的 413。
+            （压测里这个偶发失败就是这么来的。）
+            """
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                return
+            remaining = min(length, 4 * MAX_BODY_BYTES)
+            while remaining > 0:
+                chunk = self.rfile.read(min(remaining, 65536))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+
         def _decode_body(self, raw: bytes) -> bytes:
             encoding = (self.headers.get("Content-Encoding") or "").lower()
             if "gzip" in encoding:
@@ -191,6 +209,7 @@ def make_handler(dispatcher):
             try:
                 raw = self._read_body()
             except ValueError:
+                self._drain_body()
                 log.warning("事件体超过上限（%d 字节），已拒收", MAX_BODY_BYTES)
                 self.send_error(413, "body too large")
                 return

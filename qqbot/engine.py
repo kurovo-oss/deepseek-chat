@@ -136,7 +136,8 @@ class Engine:
 
         if self.mood is not None:
             try:
-                self.mood.note_talk()  # 他来了：想念落地，亲近涨一点
+                # 他来了 + 这句话的情绪：两条一起推一把状态
+                self.mood.note_message(text or "")
             except Exception:  # noqa: BLE001 - 情绪是附加状态，不能拖垮对话
                 log.exception("更新情绪状态失败")
 

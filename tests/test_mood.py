@@ -115,6 +115,50 @@ def test_snapshot_is_stable_without_events(mood):
     assert first == pytest.approx(second)
 
 
+# ---------------------------------------------------------------- 共情（读他的情绪）
+def test_note_message_applies_tone_effect(mood):
+    before = mood.snapshot(at(12))
+
+    values = mood.note_message("今天加班到十点，好累", at(12))
+
+    assert mood.current_tone(at(12)) == "tired"
+    assert values["tired"] > before["tired"]
+
+
+def test_happy_message_wakes_her_up(mood):
+    mood.save({"miss": 0.3, "warmth": 0.3, "tired": 0.5}, at(12))
+
+    values = mood.note_message("拿到 offer 了，太开心了", at(12))
+
+    assert values["tired"] < 0.5  # 一起高兴，疲惫被冲淡
+    assert values["warmth"] > 0.38
+
+
+def test_tone_hint_enters_the_prompt(mood):
+    mood.note_message("今天真的好难过", at(12))
+
+    text = mood.describe(at(12))
+
+    assert "先陪着" in text
+
+
+def test_tone_expires_after_half_an_hour(mood):
+    mood.note_message("今天真的好难过", at(12))
+
+    assert mood.current_tone(at(12) + 1801) is None
+    assert "先陪着" not in mood.describe(at(12) + 1801)
+
+
+def test_commands_do_not_set_a_tone(mood):
+    mood.note_message("/status", at(12))
+    assert mood.current_tone(at(12)) is None
+
+
+def test_line_mentions_his_tone(mood):
+    mood.note_message("一个人待着有点孤单", at(12))
+    assert "孤单" in mood.line(at(12))
+
+
 # ---------------------------------------------------------------- 人话
 def test_mood_line_describes_extremes():
     line = mood_line({"miss": 0.9, "warmth": 0.8, "tired": 0.9})

@@ -124,6 +124,19 @@ def test_mood_is_injected_into_prompt(tmp_path):
     ctx.store.close()
 
 
+def test_his_tone_reaches_the_prompt(tmp_path):
+    """他说"难过"，这条回复的语气就该先照顾他。"""
+    from qqbot.mood import Mood
+
+    ctx = build(tmp_path, replies=["嗯，我在。"])
+    ctx.engine.mood = Mood(ctx.store, ctx.settings)
+
+    ctx.engine.handle_message(make_message("今天真的好难过，什么事都不顺"))
+
+    assert "先陪着" in _system_prompt(ctx.llm.calls)
+    ctx.store.close()
+
+
 def test_recall_injects_old_utterance(tmp_path):
     """窗口外的旧话要能被"想起来"——卡片记结论，原话记怎么说。"""
     ctx = build(tmp_path, replies=["好呀。"], history_max_turns=1)

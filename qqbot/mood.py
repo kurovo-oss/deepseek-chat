@@ -18,6 +18,8 @@ from __future__ import annotations
 import time
 from datetime import datetime
 
+from . import emotion
+
 DRIVES = ("miss", "warmth", "tired")
 
 # 半衰期（小时）：想念变得快，亲近和疲惫慢一些
@@ -30,6 +32,8 @@ NIGHT_HOURS = (22, 6)  # 22 点到次日 6 点算夜里
 TITLE = "# 此刻的你"
 TIRED_LIMIT = 0.7
 MISS_LIMIT = 0.75
+# 他这条消息的情绪，最多"新鲜"半小时：再久就不该左右她现在的语气
+TONE_FRESH_SECONDS = 1800
 
 
 def _clamp01(value: float) -> float:
@@ -102,6 +106,9 @@ class Mood:
         self.store = store
         self.settings = settings
         self._clock = clock
+        # 他上一条消息读出来的情绪：只活在内存里，重启就忘（本来就该忘）
+        self.tone: str | None = None
+        self._tone_at: int = 0
 
     @property
     def session(self) -> str:
@@ -135,28 +142,65 @@ class Mood:
         self.save(values, stamp)
         return values
 
+    def note_message(self, text: str, now: int | None = None) -> dict[str, float]:
+        """他这句带着情绪：先做 note_talk，再按读出来的语气推一把。"""
+        stamp = int(now if now is not None else self._clock())
+        values = self.note_talk(stamp)
+
+        tone = emotion.detect(text)
+        if tone is None:
+            return values
+
+        warmth, tired, miss = emotion.effect(tone)
+        values["warmth"] = _clamp01(values["warmth"] + warmth)
+        values["tired"] = _clamp01(values["tired"] + tired)
+        values["miss"] = _clamp01(values["miss"] + miss)
+        self.save(values, stamp)
+        self.tone = tone
+        self._tone_at = stamp
+        return values
+
+    def current_tone(self, now: int | None = None) -> str | None:
+        """还在"新鲜期"内的情绪，过半小时就不算了。"""
+        stamp = int(now if now is not None else self._clock())
+        if not self.tone:
+            return None
+        if stamp - self._tone_at > TONE_FRESH_SECONDS:
+            return None
+        return self.tone
+
     def describe(self, now: int | None = None) -> str:
         """进 system prompt 的那一段；关闭或没有状态时返回空串。"""
         if not getattr(self.settings, "mood_enabled", True):
             return ""
-        values = self.snapshot(now)
+        stamp = int(now if now is not None else self._clock())
+        values = self.snapshot(stamp)
         head = (
             f"{TITLE}\n"
             f"想念 {values['miss']:.2f}、亲近 {values['warmth']:.2f}、"
             f"疲惫 {values['tired']:.2f} —— {mood_line(values)}"
         )
         hints = []
-        if values["miss"] >= MISS_LIMIT:
-            hints.append("惦记他，可以主动问一句，但别腻。")
-        if values["tired"] >= TIRED_LIMIT:
-            hints.append("今天累了，句子短一点，别硬撑热闹。")
-        if values["warmth"] >= 0.6 and not hints:
-            hints.append("心情好，可以稍微活泼一点。")
+        tone_hint = emotion.hint(self.current_tone(stamp))
+        if tone_hint:
+            hints.append(tone_hint)  # 他这条的情绪最优先，别的都让位
+        if not tone_hint:
+            if values["miss"] >= MISS_LIMIT:
+                hints.append("惦记他，可以主动问一句，但别腻。")
+            if values["tired"] >= TIRED_LIMIT:
+                hints.append("今天累了，句子短一点，别硬撑热闹。")
+            if values["warmth"] >= 0.6 and not hints:
+                hints.append("心情好，可以稍微活泼一点。")
         return head if not hints else head + "\n" + "".join(hints)
 
     def line(self, now: int | None = None) -> str:
-        values = self.snapshot(now)
-        return (
+        stamp = int(now if now is not None else self._clock())
+        values = self.snapshot(stamp)
+        text = (
             f"我现在：想念 {values['miss']:.2f}、亲近 {values['warmth']:.2f}、"
             f"疲惫 {values['tired']:.2f}\n{mood_line(values)}。"
         )
+        tone = self.current_tone(stamp)
+        if tone:
+            text += f"\n（你刚才听起来有点{emotion.TONE_LABEL.get(tone, tone)}）"
+        return text
