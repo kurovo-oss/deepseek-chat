@@ -21,7 +21,7 @@ KEYWORDS: dict[str, tuple[str, ...]] = {
                 "睡不着", "失眠", "面试", "截止", "来不及"),
     "angry": ("气死", "烦死", "火大", "生气", "可恶", "无语", "受不了", "想骂人"),
     "lonely": ("孤单", "寂寞", "一个人", "没人懂", "没人说话", "好空"),
-    "tired": ("好累", "太累", "累死", "疲惫", "好困", "熬夜", "加班", "撑不住",
+    "tired": ("好累", "太累", "真累", "很累", "累了", "累死", "疲惫", "好困", "熬夜", "加班", "撑不住",
               "没力气", "没睡好"),
     "happy": ("开心", "高兴", "太好了", "好棒", "舒服", "快乐", "哈哈", "爽",
               "顺利", "拿到了", "成了", "搞定了"),
@@ -64,6 +64,17 @@ TONE_LABEL: dict[str, str] = {
 
 _NEGATION = "不没别"
 
+# 匹配前先抹掉程度词：口语里"心里有点堵"和"心里堵"是一回事，
+# 词表要是穷举所有变体就写不完了（真机验证才发现的盲点）。
+_FILLERS = ("有点儿", "有点", "有些", "一点儿", "一点", "真的", "特别", "非常", "挺", "蛮")
+
+
+def _normalize(text: str) -> str:
+    result = text
+    for filler in _FILLERS:
+        result = result.replace(filler, "")
+    return result
+
 
 def _negated(text: str, index: int) -> bool:
     prefix = text[max(0, index - 2) : index]
@@ -75,6 +86,7 @@ def detect(text: str) -> str | None:
     content = (text or "").strip()
     if not content or content.startswith("/"):
         return None
+    content = _normalize(content)
 
     for tone, words in NEGATED.items():
         if any(word in content for word in words):

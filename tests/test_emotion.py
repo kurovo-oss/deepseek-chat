@@ -20,6 +20,16 @@ def test_detect_basic_tones(text, tone):
     assert emotion.detect(text) == tone
 
 
+def test_level_words_are_ignored():
+    """"心里有点堵"和"心里堵"是一个意思——中间的"有点"不能把匹配搅黄。
+
+    这是真机验证踩到的：她对着"心里有点堵"完全没反应。
+    """
+    assert emotion.detect("这两天心里有点堵，什么都不太想干") == "sad"
+    assert emotion.detect("今天真的很累") == "tired"
+    assert emotion.detect("有点不开心") == "sad"
+
+
 def test_negated_positive_is_sad():
     """"不开心"不能因为含"开心"就被当成高兴。"""
     assert emotion.detect("今天有点不开心") == "sad"
