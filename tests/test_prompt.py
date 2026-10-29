@@ -48,6 +48,20 @@ def test_prompt_states_length_limit():
     assert "300 字" in read_prompt()
 
 
+def test_prompt_forbids_voice_templates():
+    """模板腔是这类人设最容易退化的地方，规则掉了就等于没管。"""
+    text = read_prompt()
+    for phrase in ("不要每句都用", "关心 + 反问", "不空行", "问句别连发", "不用括号"):
+        assert phrase in text, f"提示词缺少防模板规则：{phrase}"
+
+
+def test_prompt_has_voice_samples():
+    """示例对话是主要信号；没有它，形容词再准也落不了地。"""
+    text = read_prompt()
+    assert text.count("他：") >= 5
+    assert "别照抄" in text
+
+
 def test_extract_prompt_exists_and_forbids_delete():
     text = (ROOT / "prompts" / "extract.md").read_text(encoding="utf-8")
     assert "identity" in text

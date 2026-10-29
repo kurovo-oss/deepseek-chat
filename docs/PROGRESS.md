@@ -149,6 +149,13 @@ variability budget，属性写成行为锚点而不是形容词）：
 来源：[表达校准包策略](https://raw.githubusercontent.com/XucroYuri/how-to-make-script/master/docs/expression-lens-policy-zh.md)、
 [莉娅的酒馆写卡方法](https://github.com/feverZHONG/liya-sillytavern-cards)。
 
+**踩到的坑：她会学自己说过的旧话**。改完 prompt 先在无历史的真模型上验证，很好；
+接进机器人（带 20 轮历史）立刻退回旧模板——上下文里她那 20 条旧回复，
+比系统提示的权重大得多。所以**换人格、换声音之后必须 `/reset`**（原文不删、长期记忆保留），
+否则旧语气会一直传染。这一条是数据层面的，光改提示词救不回来。
+另外顺手修了个真的"机器人味"来源：兜底话术原本只有一个常量，
+API 挂掉那阵它连着发了四次一模一样的话。
+
 ## 六、表情包图库（M3）
 
 **做了什么**：你发表情包，它收藏起来，之后聊天会用。
