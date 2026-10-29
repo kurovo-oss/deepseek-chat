@@ -270,7 +270,7 @@ class Engine:
         if sub == "add":
             content = args.strip()
             if not content:
-                return "要记什么呀？发 /memory add 爸爸不吃香菜"
+                return "要记什么呀？发 /memory add 他不吃香菜"
             card_id = self.store.add_card(
                 kind="fact", summary=content, importance=0.6
             )

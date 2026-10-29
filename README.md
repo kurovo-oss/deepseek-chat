@@ -1,6 +1,6 @@
 # 大肥鱼
 
-把 DeepSeek 接进 QQ 私聊，做成一个**有长期记忆、有固定人格**的女儿。
+把 DeepSeek 接进 QQ 私聊，做成一个**有长期记忆、有固定人格**的女友（设定见人格卡）。
 
 - 产品方向：[docs/PRD.md](docs/PRD.md)
 - 工程规格：[docs/MVP.md](docs/MVP.md)

@@ -221,10 +221,10 @@ def test_memory_command_lists_entries(env):
 
 def test_memory_add_records_manual_card(env):
     """自动抽取会记错、会漏，所以得能自己塞一条进去。"""
-    env.engine.handle_message(make_message("/memory add 爸爸不吃香菜", mid="ma1"))
+    env.engine.handle_message(make_message("/memory add 他不吃香菜", mid="ma1"))
 
     cards = env.store.list_cards(status="active")
-    assert [card["summary"] for card in cards] == ["爸爸不吃香菜"]
+    assert [card["summary"] for card in cards] == ["他不吃香菜"]
     assert cards[0]["kind"] == "fact"
     assert "记下来啦" in env.sender.sent[-1][1]
 

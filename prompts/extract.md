@@ -10,7 +10,7 @@
 
 - `op`：`add`（新记忆）或 `update`（改写已有记忆，必须带 `id`）
 - `kind`：`identity` / `preference` / `fact` / `event` / `chat`
-- `summary`：≤40 字，一句话，**省略主语**——写"常加班到十点"，不要写"爸爸常加班到十点"
+- `summary`：≤40 字，一句话，**省略主语**——写"常加班到十点"，不要写"他常加班到十点"
 - `detail`：可选补充，≤200 字；没有就留空
 - `entities`：涉及的人物或对象，最多 5 个
 - `occurred_at`：事情发生的日期 `YYYY-MM-DD`；不确定就不填
