@@ -358,7 +358,7 @@ def test_tag_command_without_name_shows_current(tmp_path):
     env_ctx.engine.handle_message(
         IncomingMessage(user_id=100, message_id="m1", text="/tag", raw={})
     )
-    assert "cute" in env_ctx.sender.sent[-1][1]
+    assert "cute" in "".join(text for _, text in env_ctx.sender.sent)
     env_ctx.store.close()
 
 

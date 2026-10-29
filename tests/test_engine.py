@@ -166,9 +166,18 @@ def test_blank_lines_are_collapsed(env):
 
     env.engine.handle_message(make_message("在干嘛"))
 
-    sent = "".join(text for _, text in env.sender.sent)
-    assert "\n\n" not in sent
-    assert "头发又画歪了" in sent
+    texts = [text for _, text in env.sender.sent]
+    assert texts == ["我还在画呢。", "那个头发又画歪了。"]
+
+
+def test_multiline_reply_is_sent_as_separate_messages(env):
+    """正常 QQ 聊天是一条一条发，不是一条里塞换行。"""
+    env.llm.text = "画画\n又画歪了\n烦"
+
+    env.engine.handle_message(make_message("在干嘛"))
+
+    assert [text for _, text in env.sender.sent] == ["画画", "又画歪了", "烦"]
+    assert len(env.sleeps) == 2  # 三条之间各停一次
 
 
 def test_fallback_reply_is_not_fed_to_memory(env):
@@ -219,7 +228,7 @@ def test_status_command_does_not_call_llm(env):
     env.engine.handle_message(make_message("/status", mid="s1"))
     assert env.llm.calls == []
     # 引用配置本身，避免模型名变更时测试误报
-    assert env.settings.model_id in env.sender.sent[-1][1]
+    assert env.settings.model_id in "".join(text for _, text in env.sender.sent)
 
 
 def test_memory_command_empty(env):

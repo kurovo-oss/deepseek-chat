@@ -118,6 +118,7 @@ class Settings:
     listen_host: str = "127.0.0.1"
     listen_port: int = 8080
     reply_max_chars: int = 300
+    reply_max_bubbles: int = 5
     segment_delay_ms: int = 1500
     request_timeout: float = 60.0
     network_wait_seconds: float = 30.0
@@ -246,6 +247,7 @@ class Settings:
             listen_host=env.get("LISTEN_HOST", "127.0.0.1").strip(),
             listen_port=_int(env, "LISTEN_PORT", 8080),
             reply_max_chars=_int(env, "REPLY_MAX_CHARS", 300, minimum=40),
+    reply_max_bubbles=_int(env, "REPLY_MAX_BUBBLES", 5, minimum=1),
             segment_delay_ms=_int(env, "SEGMENT_DELAY_MS", 1500, minimum=0),
             request_timeout=_float(env, "REQUEST_TIMEOUT", 60.0),
             network_wait_seconds=_float(env, "NETWORK_WAIT_SECONDS", 30.0),

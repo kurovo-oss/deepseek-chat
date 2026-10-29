@@ -1,6 +1,7 @@
 from qqbot.formatting import (
     extract_image_tags,
     sanitize_tag,
+    split_bubbles,
     split_message,
     strip_markdown,
 )
@@ -89,3 +90,32 @@ def test_extract_image_tag_rejects_path_traversal():
 def test_extract_image_tag_dedupes():
     _, tags = extract_image_tags("{{img:cat}}{{img:CAT}}{{img:cat}}")
     assert tags == ["cat"]
+
+
+def test_bubbles_split_on_newlines():
+    """三行的回复要发成三条，而不是一条里带两个换行。"""
+    assert split_bubbles("画画\n又画歪了\n烦", 300) == ["画画", "又画歪了", "烦"]
+
+
+def test_bubbles_drop_blank_lines():
+    assert split_bubbles("在画画\n\n嗯", 300) == ["在画画", "嗯"]
+
+
+def test_bubbles_split_long_line_by_length():
+    text = "这句话有点长想分成好几条发出去。" * 8
+    parts = split_bubbles(text, 40)
+    assert parts
+    assert all(len(p) <= 40 for p in parts)
+    assert "".join(parts) == text
+
+
+def test_bubbles_capped_by_max_keeping_content():
+    text = "\n".join(f"第{i}句" for i in range(9))
+    parts = split_bubbles(text, 300, max_bubbles=3)
+    assert len(parts) == 3
+    assert "第8句" in parts[-1]  # 超出的并进最后一条，不丢字
+
+
+def test_bubbles_empty_returns_empty():
+    assert split_bubbles("", 300) == []
+    assert split_bubbles("   \n  ", 300) == []

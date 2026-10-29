@@ -18,7 +18,7 @@ from typing import Any
 from . import digest as digest_mod
 from .config import Settings
 from .export import export_all
-from .formatting import extract_image_tags, split_message, strip_markdown
+from .formatting import extract_image_tags, split_bubbles, split_message, strip_markdown
 from .llm import LLMError
 from .memory import KIND_LABEL, card_weight
 from .onebot import IncomingMessage, Sender, parse_event
@@ -727,7 +727,9 @@ class Engine:
         cleaned, tags = extract_image_tags(cleaned)
 
         image_path = self._pick_image(session, tags)
-        parts = split_message(cleaned, self.settings.reply_max_chars)
+        parts = split_bubbles(
+            cleaned, self.settings.reply_max_chars, self.settings.reply_max_bubbles
+        )
         if not parts and image_path is None:
             log.warning(
                 "回复内容为空（原文 %r，图片标记 %s），改用兜底话术", raw_text[:80], tags
@@ -745,10 +747,13 @@ class Engine:
         )
 
         all_ok = True
+        base_delay = self.settings.segment_delay_ms / 1000
         with self._send_lock:
             for index, part in enumerate(parts):
                 if index:
-                    self._sleep(self.settings.segment_delay_ms / 1000)
+                    # 真人不按固定间隔打字：短句快、长句慢，再加点抖动
+                    factor = random.uniform(0.6, 0.9) if len(part) <= 6 else random.uniform(1.0, 1.7)
+                    self._sleep(base_delay * factor)
                 if not self.sender.send_private(user_id, part):
                     all_ok = False
 
@@ -774,7 +779,9 @@ class Engine:
         只补文本、不补图片：历史行里只存了文件名，拼路径容易发错图，
         宁可少一张图，也不能把别人的图发出去。
         """
-        parts = split_message(text, self.settings.reply_max_chars) or [text]
+        parts = split_bubbles(
+            text, self.settings.reply_max_chars, self.settings.reply_max_bubbles
+        ) or [text]
         with self._send_lock:
             for index, part in enumerate(parts):
                 if index:

@@ -109,3 +109,34 @@ def split_message(text: str, limit: int = 300) -> list[str]:
         rest = rest[cut:].lstrip()
 
     return [c for c in chunks if c]
+
+
+def split_bubbles(text: str, limit: int = 300, max_bubbles: int = 5) -> list[str]:
+    """按"真人会发几条"切分：先按换行拆成一条条，再按长度兜底。
+
+    QQ 私聊里，一段三行的回复应该发成三条消息（每条隔一两秒），
+    而不是一条里带两个换行——后者看着像复制粘贴。
+    """
+    text = (text or "").strip()
+    if not text:
+        return []
+    if limit <= 0:
+        limit = 300
+    if max_bubbles <= 0:
+        max_bubbles = 5
+
+    bubbles: list[str] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if len(line) <= limit:
+            bubbles.append(line)
+        else:
+            bubbles.extend(split_message(line, limit))
+
+    # 行数超过上限时并进上一条，宁可少发一条也不丢字
+    while len(bubbles) > max_bubbles:
+        tail = bubbles.pop()
+        bubbles[-1] = bubbles[-1] + "\n" + tail
+    return bubbles
