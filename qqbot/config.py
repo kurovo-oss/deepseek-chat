@@ -138,6 +138,12 @@ class Settings:
     replay_window_minutes: float = 10.0
     replay_max_attempts: int = 3
     replay_interval_seconds: float = 60.0
+    dream_enabled: bool = True
+    dream_at: str = "23:30"
+    dream_check_seconds: float = 600.0
+    dream_prompt_file: Path = Path("prompts/dream.md")
+    journal_file: Path = Path("data/journal.md")
+    journal_char_budget: int = 1200
     history_max_turns: int = 20
     window_token_budget: int = 4000
     image_enabled: bool = True
@@ -283,6 +289,14 @@ class Settings:
             / env.get("EXTRACT_PROMPT_FILE", "prompts/extract.md").strip(),
             compact_prompt_file=base_dir
             / env.get("COMPACT_PROMPT_FILE", "prompts/compact.md").strip(),
+            dream_enabled=_bool(env, "DREAM_ENABLED", True),
+            dream_at=env.get("DREAM_AT", "23:30").strip(),
+            dream_check_seconds=_float(env, "DREAM_CHECK_SECONDS", 600.0),
+            dream_prompt_file=base_dir
+            / env.get("DREAM_PROMPT_FILE", "prompts/dream.md").strip(),
+            journal_file=base_dir
+            / env.get("JOURNAL_FILE", "data/journal.md").strip(),
+            journal_char_budget=_int(env, "JOURNAL_CHAR_BUDGET", 1200, minimum=0),
         )
 
 

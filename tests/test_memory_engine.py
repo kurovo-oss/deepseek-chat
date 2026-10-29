@@ -55,6 +55,7 @@ def build(tmp_path, replies=(), with_memory=True, **overrides):
         system_prompt_file=tmp_path / "s.md",
         segment_delay_ms=0,
         reply_max_chars=100,
+        journal_file=tmp_path / "journal.md",
     )
     kwargs.update(overrides)
     settings = Settings(**kwargs)
@@ -85,6 +86,28 @@ def env(tmp_path):
     ctx = build(tmp_path, replies=["好呀。"])
     yield ctx
     ctx.store.close()
+
+
+def _system_prompt(calls):
+    return next(call for call in calls if call[0]["role"] == "system")[0]["content"]
+
+
+def test_journal_is_injected_into_prompt(env):
+    """记忆本（做梦写出来的叙事）要和卡片一起进 system prompt。"""
+    env.settings.journal_file.write_text("他在赶项目，常常十点才下班。\n", encoding="utf-8")
+
+    env.engine.handle_message(make_message("在忙什么呀"))
+
+    system = _system_prompt(env.llm.calls)
+    assert "【记忆本】" in system
+    assert "他在赶项目，常常十点才下班。" in system
+
+
+def test_no_journal_means_no_section(env):
+    env.engine.handle_message(make_message("在忙什么呀"))
+
+    assert "【记忆本】" not in _system_prompt(env.llm.calls)
+    assert env.memory.journal() == ""
 
 
 def card_reply(**kwargs):

@@ -156,7 +156,7 @@ def test_fallback_reply_is_not_fed_to_memory(env):
     """兜底话术不是她说的话，喂给抽取会抽出"她经常走神"这种垃圾卡片。"""
     calls = []
     env.engine.memory = types.SimpleNamespace(
-        block=lambda: "", note_reply=lambda session, text="": calls.append(text)
+        context=lambda: "", note_reply=lambda session, text="": calls.append(text)
     )
     env.llm.error = LLMError("boom")
 
@@ -169,7 +169,7 @@ def test_fallback_reply_is_not_fed_to_memory(env):
 def test_normal_reply_is_fed_to_memory(env):
     calls = []
     env.engine.memory = types.SimpleNamespace(
-        block=lambda: "", note_reply=lambda session, text="": calls.append(text)
+        context=lambda: "", note_reply=lambda session, text="": calls.append(text)
     )
 
     env.engine.handle_message(make_message("今天加班到十点"))
@@ -245,6 +245,46 @@ def test_memory_edit_updates_summary(env):
 def test_memory_edit_unknown_id_is_rejected(env):
     env.engine.handle_message(make_message("/memory edit 999 随便什么", mid="me4"))
     assert "没有第 999 条" in env.sender.sent[-1][1]
+
+
+def test_journal_command_when_empty(env):
+    env.engine.memory = types.SimpleNamespace(journal=lambda: "", context=lambda: "")
+    env.engine.handle_message(make_message("/journal", mid="j1"))
+    assert "还没整理过" in env.sender.sent[-1][1]
+
+
+def test_journal_command_shows_text(env):
+    env.engine.memory = types.SimpleNamespace(
+        journal=lambda: "他在赶项目。", context=lambda: ""
+    )
+    env.engine.handle_message(make_message("/journal", mid="j2"))
+    assert "他在赶项目。" in env.sender.sent[-1][1]
+
+
+def test_dream_command_reports_result(env):
+    class FakeDreamer:
+        def dream(self, now=None):
+            return {
+                "ok": True,
+                "messages": 12,
+                "added": 2,
+                "merged": 1,
+                "reweight": 0,
+                "chars": 300,
+            }
+
+    env.engine.dreamer = FakeDreamer()
+    env.engine.handle_message(make_message("/dream", mid="d1"))
+
+    reply = env.sender.sent[-1][1]
+    assert "12 条消息" in reply
+    assert "新记 2 条" in reply
+    assert env.llm.calls == []  # 指令不调对话模型
+
+
+def test_dream_command_without_dreamer(env):
+    env.engine.handle_message(make_message("/dream", mid="d2"))
+    assert "还没准备好" in env.sender.sent[-1][1]
 
 
 def test_forget_requires_confirmation(env):

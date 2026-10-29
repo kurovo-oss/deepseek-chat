@@ -328,6 +328,28 @@ class Memory:
         self._clock = clock
 
     # ---------------- 注入 ----------------
+    def journal(self) -> str:
+        """记忆本：做梦重写出来的叙事段落。
+
+        卡片是"关键词式"的结构化记忆，记忆本是"讲得下去"的那部分。
+        没做过梦就是空的，不算错误。
+        """
+        path = self.settings.journal_file
+        try:
+            text = path.read_text(encoding="utf-8").strip()
+        except OSError:
+            return ""
+        budget = self.settings.journal_char_budget
+        return text[:budget] if budget > 0 else ""
+
+    def context(self) -> str:
+        """进 system prompt 的全部记忆：卡片块 + 记忆本。"""
+        parts = [self.block()]
+        journal = self.journal()
+        if journal:
+            parts.append("【记忆本】\n" + journal)
+        return "\n\n".join(part for part in parts if part)
+
     def block(self) -> str:
         if not self.settings.memory_enabled:
             return ""

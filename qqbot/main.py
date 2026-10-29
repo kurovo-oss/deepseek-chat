@@ -23,6 +23,7 @@ from .config import (
 )
 from .collect import StickerCollector
 from .dispatcher import MessageDispatcher
+from .dream import start_dreamer
 from .engine import Engine
 from .images import ImageLibrary, import_seed_library
 from .llm import LLMClient
@@ -375,6 +376,16 @@ def main(argv: list[str] | None = None) -> int:
             settings.proactive_end_hour,
             settings.proactive_min_gap_hours,
             settings.proactive_idle_hours,
+        )
+
+    if settings.dream_enabled:
+        start_dreamer(engine, engine.store, settings, stop_event)
+        log.info(
+            "做梦已启用：每天 %s 整理一次记忆（上次成功：%s）",
+            settings.dream_at,
+            time.strftime("%m-%d %H:%M", time.localtime(engine.store.last_dream_at() or 0))
+            if engine.store.last_dream_at()
+            else "还没做过",
         )
 
     log.info(

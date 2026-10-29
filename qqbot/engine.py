@@ -37,6 +37,8 @@ HELP_TEXT = (
     "/memory 看看我记得什么（add 加一条、edit 改一条）\n"
     "/forget 编号 忘掉某件事\n"
     "/pin 编号 把某件事记牢一点\n"
+    "/journal 看看记忆本\n"
+    "/dream 手动整理一次记忆\n"
     "/tag 名字 给刚存的表情包打标\n"
     "/img list 看看图库\n"
     "/img clean 清掉回收来的旧图\n"
@@ -70,6 +72,8 @@ class Engine:
         self.collector = collector
         # 主动消息调度器建好后由 main 注入：/proactive 用它手动试一句
         self.proactive_trigger = None
+        # 做梦器同样由 main 注入：/dream 手动整理一次
+        self.dreamer = None
         # 一条回复可能分好几段发送；主动消息线程和消息线程同时发时，
         # 不加锁就会出现"她的话被劈成两半插进另一条回复中间"
         self._send_lock = threading.Lock()
@@ -195,6 +199,15 @@ class Engine:
         if head in ("/pin", "/unpin"):
             return self._set_pin(rest, pinned=head == "/pin")
 
+        if head == "/journal":
+            journal = self.memory.journal() if self.memory is not None else ""
+            if not journal:
+                return "我还没整理过记忆呢，夜里做梦的时候会写下来。"
+            return "我记着的这些：\n" + journal
+
+        if head == "/dream":
+            return self._dream_now()
+
         if head == "/tag":
             return self._tag_latest(rest)
 
@@ -291,6 +304,27 @@ class Engine:
         if removed:
             return f"删掉 {removed} 条关于「{target}」的记忆了。"
         return f"我好像没有关于「{target}」的记忆呀。"
+
+    def _dream_now(self) -> str:
+        """手动整理一次记忆（夜里也会自动做，这是调试用的入口）。"""
+        dreamer = self.dreamer
+        if dreamer is None:
+            return "做梦还没准备好呢。"
+        try:
+            result = dreamer.dream()
+        except Exception as exc:  # noqa: BLE001 - 手动触发也不能崩
+            log.exception("手动做梦失败")
+            return f"这次没整理成：{exc}"
+
+        if not result.get("ok"):
+            return f"这次没整理成：{result.get('note') or '不知道怎么了'}"
+        if not result.get("messages"):
+            return "这会儿没什么要整理的呢。"
+        return (
+            f"整理完啦：看了 {result['messages']} 条消息，"
+            f"新记 {result['added']} 条、合并 {result['merged']} 条、"
+            f"调了 {result['reweight']} 条权重，记忆本 {result['chars']} 字。"
+        )
 
     def _set_pin(self, rest: str, pinned: bool) -> str:
         target = rest.strip()
@@ -512,9 +546,9 @@ class Engine:
 
         system = self.system_prompt
         if self.memory is not None:
-            block = self.memory.block()
-            if block:
-                system = f"{system}\n\n{block}"
+            context = self.memory.context()
+            if context:
+                system = f"{system}\n\n{context}"
 
         messages = [{"role": "system", "content": system}]
         messages.extend({"role": m["role"], "content": m["content"]} for m in selected)

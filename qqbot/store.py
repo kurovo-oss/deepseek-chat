@@ -69,6 +69,19 @@ CREATE TABLE IF NOT EXISTS proactive_events (
   created_at  INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS dream_log (
+  id             INTEGER PRIMARY KEY,
+  started_at     INTEGER NOT NULL,
+  finished_at    INTEGER,
+  messages_seen  INTEGER NOT NULL DEFAULT 0,
+  cards_added    INTEGER NOT NULL DEFAULT 0,
+  cards_merged   INTEGER NOT NULL DEFAULT 0,
+  cards_reweight INTEGER NOT NULL DEFAULT 0,
+  journal_chars  INTEGER NOT NULL DEFAULT 0,
+  ok             INTEGER NOT NULL DEFAULT 1,
+  note           TEXT NOT NULL DEFAULT ''
+);
+
 CREATE TABLE IF NOT EXISTS images (
   id            INTEGER PRIMARY KEY,
   sha256        TEXT NOT NULL UNIQUE,
@@ -707,6 +720,46 @@ class Store:
             self._conn.commit()
             return int(cur.rowcount)
 
+    def merge_cards(self, source_id: int, target_id: int) -> bool:
+        """把信息少的卡并进信息多的那张：detail 合并、命中次数累加、源卡归档。
+
+        归档不是删除：卡片还在库里，只是不再进上下文——做梦**永远不删**东西。
+        """
+        if int(source_id) == int(target_id):
+            return False
+        source = self.get_card(int(source_id))
+        target = self.get_card(int(target_id))
+        if source is None or target is None:
+            return False
+
+        detail = (target.get("detail") or "").strip()
+        extra = (source.get("detail") or source.get("summary") or "").strip()
+        if extra and extra not in detail:
+            detail = (f"{detail}；{extra}" if detail else extra)[:400]
+
+        now = int(time.time())
+        with self._lock:
+            self._conn.execute(
+                "UPDATE cards SET detail = ?, hit_count = hit_count + ?, updated_at = ?"
+                " WHERE id = ?",
+                (detail, int(source.get("hit_count") or 0), now, int(target_id)),
+            )
+            self._conn.execute(
+                "UPDATE cards SET status = 'archived', updated_at = ? WHERE id = ?",
+                (now, int(source_id)),
+            )
+            self._conn.commit()
+        return True
+
+    def messages_since(self, since: int, limit: int = 400) -> list[dict]:
+        """上次做梦之后的所有消息（跨会话，按时间正序）。"""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM messages WHERE created_at >= ? ORDER BY id ASC LIMIT ?",
+                (int(since), int(limit)),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def set_pinned(self, card_id: int, pinned: bool) -> bool:
         with self._lock:
             cur = self._conn.execute(
@@ -875,6 +928,63 @@ class Store:
                 )
                 self._conn.commit()
         return len(ids)
+
+    # ---------------- 做梦 ----------------
+    def start_dream(self, started_at: int | None = None) -> int:
+        now = int(started_at if started_at is not None else time.time())
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO dream_log(started_at) VALUES (?)", (now,)
+            )
+            self._conn.commit()
+            return int(cur.lastrowid)
+
+    def finish_dream(
+        self,
+        dream_id: int,
+        *,
+        finished_at: int | None = None,
+        messages_seen: int = 0,
+        cards_added: int = 0,
+        cards_merged: int = 0,
+        cards_reweight: int = 0,
+        journal_chars: int = 0,
+        ok: bool = True,
+        note: str = "",
+    ) -> None:
+        now = int(finished_at if finished_at is not None else time.time())
+        with self._lock:
+            self._conn.execute(
+                "UPDATE dream_log SET finished_at = ?, messages_seen = ?,"
+                " cards_added = ?, cards_merged = ?, cards_reweight = ?,"
+                " journal_chars = ?, ok = ?, note = ? WHERE id = ?",
+                (
+                    now,
+                    int(messages_seen),
+                    int(cards_added),
+                    int(cards_merged),
+                    int(cards_reweight),
+                    int(journal_chars),
+                    1 if ok else 0,
+                    note,
+                    int(dream_id),
+                ),
+            )
+            self._conn.commit()
+
+    def last_dream_at(self) -> int | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT MAX(finished_at) AS ts FROM dream_log WHERE ok = 1"
+            ).fetchone()
+        return int(row["ts"]) if row is not None and row["ts"] is not None else None
+
+    def list_dreams(self, limit: int = 10) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM dream_log ORDER BY id DESC LIMIT ?", (int(limit),)
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     # ---------------- usage ----------------
     def log_usage(
