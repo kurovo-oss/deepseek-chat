@@ -7,7 +7,7 @@
 import pytest
 
 from qqbot.config import Settings
-from qqbot.memory import BLOCK_TITLE, PENDING_TITLE, Memory
+from qqbot.memory import BLOCK_TITLE, PENDING_TITLE, Memory, crossed_day
 from qqbot.store import Store, trigrams
 
 
@@ -133,3 +133,15 @@ def test_injecting_pending_does_not_raise_its_weight(tmp_path, store):
     memory.block()
     memory.block()
     assert store.get_card(card_id)["hit_count"] == 0
+
+
+def test_crossed_day_compares_calendar_days():
+    from datetime import datetime
+
+    first = int(datetime(2026, 10, 1, 10, 0).timestamp())
+    assert crossed_day(first, first + 3600) is False  # 同一天
+    assert crossed_day(first, first + 86400) is True  # 隔天
+    assert crossed_day(None, first) is False
+    # 跨午夜也算隔天
+    late = int(datetime(2026, 10, 1, 23, 30).timestamp())
+    assert crossed_day(late, late + 3600) is True

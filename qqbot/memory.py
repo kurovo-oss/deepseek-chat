@@ -172,6 +172,18 @@ def find_duplicate(kind: str, summary: str, cards: list[dict], ratio: float = DE
     return best
 
 
+def crossed_day(created_at: int | None, now: float) -> bool:
+    """两次观察是不是隔了不同的日历天。
+
+    "隔天又提到一次"才算数：同一天里翻来覆去说，可能只是随口一提。
+    """
+    if not created_at:
+        return False
+    first = datetime.fromtimestamp(int(created_at)).date()
+    today = datetime.fromtimestamp(int(now)).date()
+    return today > first
+
+
 def load_json_object(raw: str) -> dict | None:
     """从模型输出里挖出第一个完整 JSON 对象，容忍 ```json 围栏与前后废话。"""
     text = (raw or "").strip()
@@ -478,6 +490,10 @@ class Memory:
                         importance=op["importance"],
                         updated_at=now,
                     )
+                    if crossed_day(duplicate.get("created_at"), now):
+                        # 隔天又独立提到一次，就不只是说岔了——转正
+                        self.store.set_confirmed(int(duplicate["id"]), True)
+                        log.info("记忆转正：%s（隔天又提到一次）", op["summary"])
                     applied += 1
                     continue
                 self.store.add_card(

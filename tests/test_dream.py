@@ -222,6 +222,29 @@ def test_dream_ignores_delete_and_unknown_ids(env):
     assert env.store.count_cards() == 1  # 什么都没删
 
 
+def test_dream_promotes_fact_from_another_day(env):
+    """同一条事实隔天又被总结出来：转正。"""
+    card_id = env.store.add_card(
+        "fact", "常加班到十点", importance=0.5, confirmed=False, created_at=at(20, day=28)
+    )
+    env.llm.payload = {"journal": "x", "ops": [{"op": "add", "summary": "常加班到十点"}]}
+
+    env.dreamer.dream(at(23, 30, day=29))
+
+    assert env.store.get_card(card_id)["confirmed"] is True
+
+
+def test_dream_keeps_same_day_fact_pending(env):
+    card_id = env.store.add_card(
+        "fact", "常加班到十点", importance=0.5, confirmed=False, created_at=at(1, day=29)
+    )
+    env.llm.payload = {"journal": "x", "ops": [{"op": "add", "summary": "常加班到十点"}]}
+
+    env.dreamer.dream(at(23, 30, day=29))
+
+    assert env.store.get_card(card_id)["confirmed"] is False
+
+
 def test_dream_skips_duplicate_summary(env):
     env.store.add_card("fact", "常加班到十点")
     env.llm.payload = {

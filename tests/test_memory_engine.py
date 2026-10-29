@@ -1,6 +1,7 @@
 """记忆与引擎的接合处：注入、抽取时机、压缩、开关。"""
 
 import json
+import time
 import types
 
 import pytest
@@ -230,6 +231,30 @@ def test_command_skips_extraction(tmp_path):
     ctx = build(tmp_path, replies=[])
     ctx.engine.handle_message(make_message("/memory"))
     assert ctx.llm.calls == []
+    ctx.store.close()
+
+
+def test_same_fact_next_day_is_promoted(tmp_path):
+    """隔天又说了一次同一件事：从"待确认"转正。"""
+    ctx = build(tmp_path, replies=["好呀。", card_reply(), "好呀。", card_reply()])
+    ctx.engine.handle_message(make_message("我不喜欢周末被叫起来", mid="m1"))
+    card = ctx.store.list_cards()[0]
+    assert card["confirmed"] is False
+
+    ctx.memory._clock = lambda: time.time() + 86400  # 第二天又提到
+    ctx.engine.handle_message(make_message("还是不喜欢被叫起来，别早上叫我", mid="m2"))
+
+    assert ctx.store.get_card(card["id"])["confirmed"] is True
+    ctx.store.close()
+
+
+def test_same_fact_same_day_stays_pending(tmp_path):
+    """同一天里说两遍不算证据，可能只是随口一提。"""
+    ctx = build(tmp_path, replies=["好呀。", card_reply(), "好呀。", card_reply()])
+    ctx.engine.handle_message(make_message("我不喜欢周末被叫起来", mid="m1"))
+    ctx.engine.handle_message(make_message("还是不喜欢被叫起来，别早上叫我", mid="m2"))
+
+    assert ctx.store.list_cards()[0]["confirmed"] is False
     ctx.store.close()
 
 

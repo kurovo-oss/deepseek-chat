@@ -24,6 +24,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from .memory import crossed_day
+
 log = logging.getLogger("qqbot")
 
 OP_ADD = "add"
@@ -154,7 +156,7 @@ class Dreamer:
             result.model, result.tokens_in, result.tokens_out, "dream", True
         )
 
-        counts = self._apply(data.get("ops"))
+        counts = self._apply(data.get("ops"), stamp)
         journal = str(data.get("journal") or "").strip()[:MAX_JOURNAL]
         if journal:
             self._write_journal(journal_file, journal)
@@ -187,7 +189,7 @@ class Dreamer:
         }
 
     # ---------------- 应用操作 ----------------
-    def _apply(self, ops) -> dict:
+    def _apply(self, ops, now: int) -> dict:
         counts = {OP_ADD: 0, OP_MERGE: 0, OP_REWEIGHT: 0}
         if not isinstance(ops, list):
             return counts
@@ -207,18 +209,28 @@ class Dreamer:
                     kind = "fact"
                 if existing is None:
                     existing = {
-                        card["summary"] for card in self.store.list_cards(limit=500)
+                        card["summary"]: card
+                        for card in self.store.list_cards(limit=500)
                     }
-                if summary in existing:  # 逐字重复就不加了
+                prior = existing.get(summary)
+                if prior is not None:  # 已经是知道的事，不重复加
+                    if crossed_day(prior.get("created_at"), now):
+                        # 隔天又被总结出来一次，可以转正
+                        self.store.set_confirmed(int(prior["id"]), True)
+                        log.info("记忆转正：%s（隔天又总结出来一次）", summary)
                     continue
-                self.store.add_card(
+                card_id = self.store.add_card(
                     kind=kind,
                     summary=summary,
                     detail=str(item.get("detail") or "")[:200],
                     importance=_clamp(item.get("importance"), 0.5),
                     confirmed=False,  # 做梦推出来的，等她慢慢确认
                 )
-                existing.add(summary)
+                existing[summary] = self.store.get_card(card_id) or {
+                    "id": card_id,
+                    "summary": summary,
+                    "created_at": now,
+                }
                 counts[OP_ADD] += 1
                 continue
 
