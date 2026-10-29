@@ -72,8 +72,15 @@ def test_miss_target_grows_with_idle_time():
 
 
 def test_tired_target_is_night_biased():
-    assert targets(at(23), None)["tired"] == pytest.approx(0.65)
+    assert targets(at(23), None)["tired"] == pytest.approx(0.8)
     assert targets(at(12), None)["tired"] == pytest.approx(0.2)
+
+
+def test_night_tired_reaches_the_gate():
+    """值只会逼近目标，所以夜间目标必须高过阈值，否则闸门永远不触发。"""
+    from qqbot.mood import TIRED_LIMIT
+
+    assert targets(at(23), None)["tired"] > TIRED_LIMIT
 
 
 # ---------------------------------------------------------------- 状态机

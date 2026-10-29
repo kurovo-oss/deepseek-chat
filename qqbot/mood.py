@@ -58,7 +58,9 @@ def targets(now: int, last_talk: int | None) -> dict[str, float]:
     if last_talk is not None:
         idle_hours = max(0.0, (int(now) - int(last_talk)) / 3600)
     miss = _clamp01(0.15 + 0.85 * min(1.0, idle_hours / MISS_IDLE_FULL_HOURS))
-    tired = 0.65 if is_night(now) else 0.2
+    # 夜里目标必须高过 TIRED_LIMIT：值只会"逼近"目标，目标定 0.65 就永远
+    # 到不了 0.7 的闸门，"累了不开口"会变成死代码（真机验证时发现的）。
+    tired = 0.8 if is_night(now) else 0.2
     return {"miss": miss, "warmth": 0.35, "tired": tired}
 
 
