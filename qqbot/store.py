@@ -70,6 +70,12 @@ CREATE TABLE IF NOT EXISTS proactive_events (
   created_at  INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS bot_state (
+  key         TEXT PRIMARY KEY,
+  value       REAL NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS dream_log (
   id             INTEGER PRIMARY KEY,
   started_at     INTEGER NOT NULL,
@@ -686,6 +692,27 @@ class Store:
             " ORDER BY id DESC LIMIT ?",
             (role, floor, *[f"%{pair}%" for pair in pairs], int(limit) * 3),
         ).fetchall()
+
+    # ---------------- 状态（情绪 / 驱力） ----------------
+    def load_state(self) -> dict[str, tuple[float, int]]:
+        """读全部状态值：key -> (value, updated_at)。"""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT key, value, updated_at FROM bot_state"
+            ).fetchall()
+        return {
+            row["key"]: (float(row["value"]), int(row["updated_at"])) for row in rows
+        }
+
+    def save_state(self, values: dict[str, float], now: int) -> None:
+        with self._lock:
+            self._conn.executemany(
+                "INSERT INTO bot_state(key, value, updated_at) VALUES (?,?,?)"
+                " ON CONFLICT(key) DO UPDATE SET value = excluded.value,"
+                " updated_at = excluded.updated_at",
+                [(key, float(value), int(now)) for key, value in values.items()],
+            )
+            self._conn.commit()
 
     # ---------------- memories ----------------
     def add_memory(

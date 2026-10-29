@@ -247,6 +247,17 @@ def test_memory_edit_unknown_id_is_rejected(env):
     assert "没有第 999 条" in env.sender.sent[-1][1]
 
 
+def test_mood_command_shows_state(env):
+    env.engine.mood = types.SimpleNamespace(line=lambda: "我现在：想念 0.80")
+    env.engine.handle_message(make_message("/mood", mid="mo1"))
+    assert "想念 0.80" in env.sender.sent[-1][1]
+
+
+def test_mood_command_without_state(env):
+    env.engine.handle_message(make_message("/mood", mid="mo2"))
+    assert "没什么特别" in env.sender.sent[-1][1]
+
+
 def test_memory_list_marks_pending_and_hints(env):
     env.store.add_card("fact", "他好像喜欢爬山", importance=0.9, confirmed=False)
     env.engine.handle_message(make_message("/memory", mid="p1"))

@@ -111,6 +111,19 @@ def test_no_journal_means_no_section(env):
     assert env.memory.journal() == ""
 
 
+def test_mood_is_injected_into_prompt(tmp_path):
+    """她"此刻的状态"要进 system prompt，语气才会跟着变。"""
+    from qqbot.mood import Mood
+
+    ctx = build(tmp_path, replies=["嗯嗯。"])
+    ctx.engine.mood = Mood(ctx.store, ctx.settings)
+
+    ctx.engine.handle_message(make_message("在干嘛呀"))
+
+    assert "# 此刻的你" in _system_prompt(ctx.llm.calls)
+    ctx.store.close()
+
+
 def test_recall_injects_old_utterance(tmp_path):
     """窗口外的旧话要能被"想起来"——卡片记结论，原话记怎么说。"""
     ctx = build(tmp_path, replies=["好呀。"], history_max_turns=1)

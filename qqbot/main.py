@@ -25,6 +25,7 @@ from .collect import StickerCollector
 from .dispatcher import MessageDispatcher
 from .dream import start_dreamer
 from .engine import Engine
+from .mood import Mood
 from .images import ImageLibrary, import_seed_library
 from .llm import LLMClient
 from .logsetup import setup_logging
@@ -387,6 +388,10 @@ def main(argv: list[str] | None = None) -> int:
             if engine.store.last_dream_at()
             else "还没做过",
         )
+
+    if settings.mood_enabled:
+        engine.mood = Mood(engine.store, settings)
+        log.info("情绪状态：%s", engine.mood.line())
 
     log.info(
         "已启动：监听 http://%s:%s/event ，模型 %s（日志 %s）",

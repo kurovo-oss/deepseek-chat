@@ -40,6 +40,7 @@ HELP_TEXT = (
     "/pin 编号 把某件事记牢一点\n"
     "/journal 看看记忆本\n"
     "/dream 手动整理一次记忆\n"
+    "/mood 看看我现在的心情\n"
     "/tag 名字 给刚存的表情包打标\n"
     "/img list 看看图库\n"
     "/img clean 清掉回收来的旧图\n"
@@ -75,6 +76,8 @@ class Engine:
         self.proactive_trigger = None
         # 做梦器同样由 main 注入：/dream 手动整理一次
         self.dreamer = None
+        # 情绪/驱力状态由 main 注入：没配就当没有，clone 也能跑
+        self.mood = None
         # 一条回复可能分好几段发送；主动消息线程和消息线程同时发时，
         # 不加锁就会出现"她的话被劈成两半插进另一条回复中间"
         self._send_lock = threading.Lock()
@@ -130,6 +133,12 @@ class Engine:
         ):
             log.info("重复消息，跳过：qq_msg_id=%s", message.message_id)
             return
+
+        if self.mood is not None:
+            try:
+                self.mood.note_talk()  # 他来了：想念落地，亲近涨一点
+            except Exception:  # noqa: BLE001 - 情绪是附加状态，不能拖垮对话
+                log.exception("更新情绪状态失败")
 
         collected: list[dict] = []
         if message.images and self.collector is not None:
@@ -208,6 +217,11 @@ class Engine:
 
         if head == "/dream":
             return self._dream_now()
+
+        if head == "/mood":
+            if self.mood is None:
+                return "我现在没什么特别的感觉。"
+            return self.mood.line()
 
         if head == "/tag":
             return self._tag_latest(rest)
@@ -571,6 +585,11 @@ class Engine:
         recall = self._recall_section(selected)
         if recall:
             system = f"{system}\n\n{recall}"
+
+        if self.mood is not None:
+            state = self.mood.describe()
+            if state:
+                system = f"{system}\n\n{state}"
 
         messages = [{"role": "system", "content": system}]
         messages.extend({"role": m["role"], "content": m["content"]} for m in selected)

@@ -25,6 +25,7 @@ import time
 from datetime import datetime
 
 from .llm import LLMError
+from .mood import MISS_LIMIT, TIRED_LIMIT
 
 log = logging.getLogger("qqbot")
 
@@ -115,7 +116,15 @@ class ProactiveScheduler:
         if last_sent is not None and int(last_sent["created_at"]) > last_user:
             return None
 
-        if now - last_user < settings.proactive_idle_hours * 3600:
+        idle_required = settings.proactive_idle_hours * 3600
+        mood = getattr(self.engine, "mood", None)
+        if mood is not None:
+            values = mood.snapshot(now)
+            if values["tired"] >= TIRED_LIMIT:
+                return None  # 累了就别硬撑着找他
+            if values["miss"] >= MISS_LIMIT:
+                idle_required *= 0.6  # 很想他的时候，早一点开口
+        if now - last_user < idle_required:
             return None
 
         week_ago = now - 7 * 86400
