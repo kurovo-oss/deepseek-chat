@@ -152,6 +152,31 @@ def test_llm_failure_falls_back(env):
     assert env.sender.sent[-1][1] == FALLBACK_REPLY
 
 
+def test_fallback_reply_is_not_fed_to_memory(env):
+    """兜底话术不是她说的话，喂给抽取会抽出"她经常走神"这种垃圾卡片。"""
+    calls = []
+    env.engine.memory = types.SimpleNamespace(
+        block=lambda: "", note_reply=lambda session, text="": calls.append(text)
+    )
+    env.llm.error = LLMError("boom")
+
+    env.engine.handle_message(make_message("你好"))
+
+    assert env.sender.sent[-1][1] == FALLBACK_REPLY
+    assert calls == []
+
+
+def test_normal_reply_is_fed_to_memory(env):
+    calls = []
+    env.engine.memory = types.SimpleNamespace(
+        block=lambda: "", note_reply=lambda session, text="": calls.append(text)
+    )
+
+    env.engine.handle_message(make_message("今天加班到十点"))
+
+    assert calls == ["今天加班到十点"]
+
+
 def test_send_failure_marks_message_failed(env):
     env.sender.ok = False
     env.engine.handle_message(make_message("你好"))

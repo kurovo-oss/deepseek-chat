@@ -224,6 +224,24 @@ def test_submit_failure_still_returns_204():
         thread.join(timeout=5)
 
 
+def test_check_model_reports_failure(tmp_path):
+    """key 失效时启动就要喊出来，别等用户发消息只收到兜底话术。"""
+    from qqbot.config import Settings
+    from qqbot.main import check_model
+
+    settings = Settings(
+        allow_user_id=100,
+        model_api_key="k",
+        base_dir=tmp_path,
+        db_path=tmp_path / "d.db",
+        system_prompt_file=tmp_path / "s.md",
+        model_base_url="http://127.0.0.1:1",
+    )
+    ok, detail = check_model(settings, timeout=1.0)
+    assert ok is False
+    assert detail
+
+
 # ---------------- 发送端 ----------------
 class _OkHandler(BaseHTTPRequestHandler):
     received: list = []

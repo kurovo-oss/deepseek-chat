@@ -224,6 +224,25 @@ def make_handler(dispatcher):
     return OneBotHandler
 
 
+def check_model(settings, timeout: float = 15.0) -> tuple[bool, str]:
+    """启动自检：key 失效时现在就喊出来。
+
+    真实教训（2026-10-29）：换了 .env 里的 key 但没重启进程，进程还拿着旧 key，
+    用户发消息只收到兜底话术，日志里才有 401——不说出来等于没有。
+    """
+    client = LLMClient(
+        settings.model_base_url,
+        settings.model_api_key,
+        settings.model_id,
+        timeout=timeout,
+        retries=0,
+    )
+    try:
+        return client.probe()
+    except Exception as exc:  # noqa: BLE001 - 自检失败不该拖垮启动
+        return False, str(exc)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="qqbot", description="大肥鱼 QQ 机器人")
     parser.add_argument("--base-dir", default=None, help="项目根目录（默认当前目录）")
@@ -301,6 +320,16 @@ def main(argv: list[str] | None = None) -> int:
 
     stop_event = threading.Event()
     dispatcher.start(stop_event)
+
+    model_ok, model_detail = check_model(settings)
+    if model_ok:
+        log.info("模型自检通过：%s", model_detail)
+    else:
+        log.error(
+            "模型自检失败：%s。现在收到的消息只会回兜底话术，请检查 MODEL_API_KEY（改完必须重启）",
+            model_detail,
+        )
+
     if settings.adapter_watchdog_seconds > 0:
         start_watchdog(engine.sender, settings.adapter_watchdog_seconds, stop_event)
     if settings.proactive_enabled:

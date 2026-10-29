@@ -150,9 +150,11 @@ class Engine:
                 self.store.set_cursor(self._window_key(session), str(top))
             return
 
-        self._send_reply(message.user_id, session, self._chat(session))
-        if self.memory is not None:
-            # 抽取与压缩发生在回复发出之后，不拖慢响应
+        reply = self._chat(session)
+        self._send_reply(message.user_id, session, reply)
+        if self.memory is not None and reply != FALLBACK_REPLY:
+            # 抽取与压缩发生在回复发出之后，不拖慢响应。
+            # 兜底话术不喂给抽取：那不是她说的话，抽出来的卡片全是垃圾。
             self.memory.note_reply(session, text)
 
     # ---------------- 指令 ----------------
