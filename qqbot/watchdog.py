@@ -53,11 +53,15 @@ class AdapterWatchdog:
         return "down"
 
     def run(self, stop_event: threading.Event) -> None:
-        while not stop_event.wait(self.interval):
+        # 先探一次再等：等满一个周期才报，故障就晚 5 分钟才被发现
+        # （2026-10-29 的真事：09:31 启动，09:41 才报协议端掉线）
+        while not stop_event.is_set():
             try:
                 self.tick()
             except Exception:  # noqa: BLE001 - 看门狗自己不能死
                 log.exception("协议端探测异常")
+            if stop_event.wait(self.interval):
+                break
 
 
 def start_watchdog(sender, interval: float, stop_event: threading.Event) -> threading.Thread:

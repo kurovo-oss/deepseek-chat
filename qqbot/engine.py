@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -62,6 +63,9 @@ class Engine:
         self.collector = collector
         # 主动消息调度器建好后由 main 注入：/proactive 用它手动试一句
         self.proactive_trigger = None
+        # 一条回复可能分好几段发送；主动消息线程和消息线程同时发时，
+        # 不加锁就会出现"她的话被劈成两半插进另一条回复中间"
+        self._send_lock = threading.Lock()
         self._sleep = sleep
 
     # ---------------- 入口 ----------------
@@ -100,12 +104,20 @@ class Engine:
         if not text and not message.images:
             return
 
-        # 幂等：同一 qq_msg_id 只处理一次
-        if message.message_id and self.store.has_qq_msg_id(message.message_id):
+        session = str(message.user_id)
+
+        # 幂等靠"抢占式写入"：先落库占位，写不进去说明这条已经处理过了。
+        # 顺序很关键——必须在任何网络 IO（下载表情包、调模型）之前完成。
+        # 否则"查重 → 下载 → 写入"之间有个几秒的窗口，NapCat 超时重推就会
+        # 让同一条消息被处理两遍（2026-10-29 审查发现的竞态）。
+        if (
+            self.store.save_message(
+                session, "user", text or "[表情]", qq_msg_id=message.message_id or None
+            )
+            is None
+        ):
             log.info("重复消息，跳过：qq_msg_id=%s", message.message_id)
             return
-
-        session = str(message.user_id)
 
         collected: list[dict] = []
         if message.images and self.collector is not None:
@@ -119,10 +131,6 @@ class Engine:
                 log.info("收藏了 %d 张表情包", len(collected))
 
         log.info("收到来自 %s 的消息：%s", message.user_id, text[:60] or "[表情]")
-
-        self.store.save_message(
-            session, "user", text or "[表情]", qq_msg_id=message.message_id or None
-        )
 
         if not text:
             self._send_reply(message.user_id, session, self._sticker_ack(collected))
@@ -485,17 +493,18 @@ class Engine:
         )
 
         all_ok = True
-        for index, part in enumerate(parts):
-            if index:
-                self._sleep(self.settings.segment_delay_ms / 1000)
-            if not self.sender.send_private(user_id, part):
-                all_ok = False
+        with self._send_lock:
+            for index, part in enumerate(parts):
+                if index:
+                    self._sleep(self.settings.segment_delay_ms / 1000)
+                if not self.sender.send_private(user_id, part):
+                    all_ok = False
 
-        if image_path is not None:
-            if not self.sender.send_private_image(
-                user_id, image_path, self.settings.image_send_mode
-            ):
-                all_ok = False
+            if image_path is not None:
+                if not self.sender.send_private_image(
+                    user_id, image_path, self.settings.image_send_mode
+                ):
+                    all_ok = False
 
         if record_id is not None:
             self.store.update_send_state(record_id, "sent" if all_ok else "failed")

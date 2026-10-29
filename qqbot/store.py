@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS proactive_events (
   content     TEXT NOT NULL,
   trigger_at  INTEGER NOT NULL,
   status      TEXT NOT NULL DEFAULT 'pending',
+  attempts    INTEGER NOT NULL DEFAULT 0,
   created_at  INTEGER NOT NULL
 );
 
@@ -176,6 +177,14 @@ class Store:
         if "manual" not in image_columns:
             self._conn.execute(
                 "ALTER TABLE images ADD COLUMN manual INTEGER NOT NULL DEFAULT 0"
+            )
+        event_columns = {
+            row["name"]
+            for row in self._conn.execute("PRAGMA table_info(proactive_events)").fetchall()
+        }
+        if "attempts" not in event_columns:
+            self._conn.execute(
+                "ALTER TABLE proactive_events ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0"
             )
         self._migrate_memories_to_cards()
 
@@ -457,6 +466,20 @@ class Store:
         with self._lock:
             cur = self._conn.execute(
                 "DELETE FROM proactive_events WHERE id = ?", (int(event_id),)
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    def reschedule_event(self, event_id: int, next_trigger: int) -> bool:
+        """把一个待办事件往后推，并记一次尝试。
+
+        用于"这次先不说"和"发送失败"——不是放弃，是换个时间再来一次。
+        """
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE proactive_events SET trigger_at = ?, attempts = attempts + 1"
+                " WHERE id = ?",
+                (int(next_trigger), int(event_id)),
             )
             self._conn.commit()
             return cur.rowcount > 0

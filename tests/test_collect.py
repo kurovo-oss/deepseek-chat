@@ -257,6 +257,35 @@ def test_engine_acknowledges_sticker(tmp_path):
     env_ctx.store.close()
 
 
+def test_duplicate_message_is_dropped_before_download(tmp_path):
+    """幂等键必须在下载表情包之前写入。
+
+    否则"查重 → 下载 → 写入"之间有几秒窗口，NapCat 超时重推会让同一条
+    消息被收藏两遍、回复两遍。
+    """
+    env_ctx = build_engine(tmp_path)
+    downloads = []
+    env_ctx.engine.collector = StickerCollector(
+        env_ctx.settings,
+        env_ctx.store,
+        env_ctx.settings.image_dir,
+        fetch=lambda url: downloads.append(url) or (PNG + b"dup"),
+    )
+    message = IncomingMessage(
+        user_id=100,
+        message_id="m-dup",
+        text="",
+        raw={},
+        images=(IncomingImage(url="http://x/1", sub_type=1),),
+    )
+    env_ctx.engine.handle_message(message)
+    env_ctx.engine.handle_message(message)
+
+    assert len(downloads) == 1
+    assert len(env_ctx.sender.sent) == 1
+    env_ctx.store.close()
+
+
 def test_engine_keeps_chatting_after_sticker_with_text(tmp_path):
     env_ctx = build_engine(tmp_path)
     env_ctx.engine.collector = StickerCollector(

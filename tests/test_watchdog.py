@@ -2,6 +2,7 @@
 
 import logging
 import threading
+import time
 
 import pytest
 
@@ -110,3 +111,20 @@ def test_run_returns_immediately_when_stopped():
     sender = FakeSender([])
     AdapterWatchdog(sender).run(stop)
     assert sender.calls == 0
+
+
+def test_run_probes_immediately_on_start():
+    """等满一个周期才探，故障就晚 5 分钟才发现（09:31 启动、09:41 才报的真事）。"""
+    sender = FakeSender([FRIENDS])
+    watchdog = AdapterWatchdog(sender, interval=30)
+    stop = threading.Event()
+    thread = threading.Thread(target=watchdog.run, args=(stop,), daemon=True)
+    thread.start()
+
+    deadline = time.monotonic() + 2
+    while sender.calls == 0 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    stop.set()
+    thread.join(timeout=2)
+
+    assert sender.calls >= 1

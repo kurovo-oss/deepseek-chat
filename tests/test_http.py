@@ -8,31 +8,36 @@ import gzip
 import json
 import socket
 import threading
+import time
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
+from qqbot.dispatcher import MessageDispatcher
 from qqbot.main import make_handler
 from qqbot.onebot import HttpSender
 
 
-class FakeEngine:
+class FakeDispatcher:
+    """真实调度器会入队；这里同步记录，方便断言"上报被收到了"。"""
+
     def __init__(self):
         self.payloads = []
 
-    def handle_payload(self, payload):
+    def submit(self, payload):
         self.payloads.append(payload)
+        return True
 
 
 @pytest.fixture
 def server():
-    engine = FakeEngine()
-    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(engine))
+    dispatcher = FakeDispatcher()
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(dispatcher))
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
-    yield f"http://127.0.0.1:{httpd.server_address[1]}", engine
+    yield f"http://127.0.0.1:{httpd.server_address[1]}", dispatcher
     httpd.shutdown()
     httpd.server_close()
     thread.join(timeout=5)
@@ -47,7 +52,7 @@ def _post(url, payload, raw=None):
 
 
 def test_event_endpoint_accepts_and_dispatches(server):
-    base, engine = server
+    base, dispatcher = server
     event = {
         "post_type": "message",
         "message_type": "private",
@@ -57,7 +62,7 @@ def test_event_endpoint_accepts_and_dispatches(server):
     }
     with _post(f"{base}/event", event) as response:
         assert response.status == 204
-    assert engine.payloads == [event]
+    assert dispatcher.payloads == [event]
 
 
 def test_health_endpoint(server):
@@ -68,11 +73,11 @@ def test_health_endpoint(server):
 
 
 def test_bad_json_returns_400(server):
-    base, engine = server
+    base, dispatcher = server
     with pytest.raises(urllib.error.HTTPError) as exc:
         _post(f"{base}/event", None, raw=b"{not json")
     assert exc.value.code == 400
-    assert engine.payloads == []
+    assert dispatcher.payloads == []
 
 
 # ---------------- 协议端实际发送方式 ----------------
@@ -87,7 +92,7 @@ SAMPLE_EVENT = {
 
 def test_chunked_body_accepted(server):
     """NapCat 用 Transfer-Encoding: chunked 上报，不能当成空 body。"""
-    base, engine = server
+    base, dispatcher = server
     host, port = "127.0.0.1", int(base.rsplit(":", 1)[1])
     payload = json.dumps(SAMPLE_EVENT, ensure_ascii=False).encode("utf-8")
 
@@ -114,11 +119,11 @@ def test_chunked_body_accepted(server):
             response += data
 
     assert b" 204 " in response
-    assert engine.payloads == [SAMPLE_EVENT]
+    assert dispatcher.payloads == [SAMPLE_EVENT]
 
 
 def test_gzip_body_accepted(server):
-    base, engine = server
+    base, dispatcher = server
     raw = gzip.compress(json.dumps(SAMPLE_EVENT).encode("utf-8"))
     request = urllib.request.Request(
         f"{base}/event",
@@ -128,11 +133,11 @@ def test_gzip_body_accepted(server):
     )
     with urllib.request.urlopen(request, timeout=5) as response:
         assert response.status == 204
-    assert engine.payloads == [SAMPLE_EVENT]
+    assert dispatcher.payloads == [SAMPLE_EVENT]
 
 
 def test_empty_body_returns_400(server):
-    base, engine = server
+    base, dispatcher = server
     request = urllib.request.Request(
         f"{base}/event",
         data=b"",
@@ -142,7 +147,7 @@ def test_empty_body_returns_400(server):
     with pytest.raises(urllib.error.HTTPError) as exc:
         urllib.request.urlopen(request, timeout=5)
     assert exc.value.code == 400
-    assert engine.payloads == []
+    assert dispatcher.payloads == []
 
 
 def test_unknown_path_returns_404(server):
@@ -152,12 +157,59 @@ def test_unknown_path_returns_404(server):
     assert exc.value.code == 404
 
 
-def test_engine_exception_does_not_break_server():
-    class BoomEngine:
-        def handle_payload(self, payload):
+class SlowEngine:
+    """模拟一轮真实处理：两次模型调用加起来几百毫秒起步。"""
+
+    def __init__(self, delay):
+        self.delay = delay
+        self.payloads = []
+
+    def handle_payload(self, payload):
+        time.sleep(self.delay)
+        self.payloads.append(payload)
+
+
+def test_report_is_acknowledged_before_processing():
+    """NapCat 的 baseTimeout 是 10 秒：必须先回 204，再慢慢处理。
+
+    原来是在请求线程里处理完才回 204，处理一慢就被判超时重推，
+    于是同一条消息回两遍。
+    """
+    engine = SlowEngine(0.6)
+    dispatcher = MessageDispatcher(engine)
+    stop = threading.Event()
+    worker = dispatcher.start(stop)
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(dispatcher))
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+    try:
+        started = time.monotonic()
+        with _post(f"{base}/event", SAMPLE_EVENT) as response:
+            assert response.status == 204
+        elapsed = time.monotonic() - started
+        assert elapsed < 0.4, f"应答被处理拖住了：{elapsed:.2f}s"
+
+        deadline = time.monotonic() + 3
+        while not engine.payloads and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert engine.payloads == [SAMPLE_EVENT]  # 处理确实发生了，只是晚一点
+    finally:
+        stop.set()
+        httpd.shutdown()
+        httpd.server_close()
+        thread.join(timeout=5)
+        worker.join(timeout=5)
+
+
+def test_submit_failure_still_returns_204():
+    """投递失败也要回 204：回错误码只会让协议端重推同一批消息。"""
+
+    class BoomDispatcher:
+        def submit(self, payload):
             raise RuntimeError("boom")
 
-    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(BoomEngine()))
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(BoomDispatcher()))
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     base = f"http://127.0.0.1:{httpd.server_address[1]}"

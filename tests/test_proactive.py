@@ -2,6 +2,7 @@
 
 import types
 from datetime import datetime
+import threading
 import time
 
 import pytest
@@ -382,13 +383,98 @@ def test_scheduled_fires_and_marks_event_sent(tmp_path):
     env.store.close()
 
 
-def test_scheduled_skip_retires_event(tmp_path):
-    """模型判断现在不合适 → 标记跳过，不会十分钟后再问一遍。"""
+def test_scheduled_skip_postpones_instead_of_dropping(tmp_path):
+    """模型一时不想说话，不该把"面试"这种事弄丢——推迟几小时再来一次。"""
     env = build(tmp_path, reply="SKIP")
     env.store.add_scheduled_event("面试", ts(10, 28, 14))
     assert env.scheduler.tick(now=ts(10, 28, 14)) == "skipped"
+
+    pending = env.store.list_events(status="pending")
+    assert len(pending) == 1
+    assert pending[0]["attempts"] == 1
+    assert pending[0]["trigger_at"] == ts(10, 28, 17)  # +3 小时
+    env.store.close()
+
+
+def test_scheduled_gives_up_after_two_attempts(tmp_path):
+    env = build(tmp_path, reply="SKIP")
+    env.store.add_scheduled_event("面试", ts(10, 28, 14))
+    env.scheduler.tick(now=ts(10, 28, 14))
+    assert env.scheduler.tick(now=ts(10, 28, 17)) == "skipped"
+
     assert env.store.list_events(status="pending") == []
     assert env.store.list_events(status="skipped")
+    env.store.close()
+
+
+def test_scheduled_send_failure_is_retried(tmp_path):
+    env = build(tmp_path, sender_ok=False)
+    env.store.add_scheduled_event("面试", ts(10, 28, 14))
+    assert env.scheduler.tick(now=ts(10, 28, 14)) == "failed"
+
+    pending = env.store.list_events(status="pending")
+    assert len(pending) == 1  # 还留着，晚点再试
+    assert pending[0]["attempts"] == 1
+    env.store.close()
+
+
+def test_scheduler_ticks_immediately_on_start(tmp_path):
+    """等满一个周期的话，开机后到点的事件要白等十分钟。"""
+    env = build(tmp_path)
+    calls = []
+    env.scheduler.tick = lambda now=None: calls.append(now) or "blocked"
+
+    stop = threading.Event()
+    thread = threading.Thread(target=env.scheduler.run, args=(stop,), daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 2
+    while not calls and time.monotonic() < deadline:
+        time.sleep(0.01)
+    stop.set()
+    thread.join(timeout=2)
+
+    assert calls, "启动后没有立刻检查一次"
+    env.store.close()
+
+
+def test_concurrent_sends_do_not_interleave(tmp_path):
+    """主动消息线程和消息线程同时发时，一条回复不能被劈成两半插进另一条。"""
+    env = build(tmp_path)
+    events = []
+    inside = threading.Event()
+    release = threading.Event()
+
+    class BlockingSender:
+        def send_private(self, user_id, text):
+            events.append(("start", text))
+            if len(events) == 1:
+                inside.set()
+                release.wait(timeout=5)
+            events.append(("end", text))
+            return True
+
+        def send_private_image(self, user_id, image, mode="path"):
+            return True
+
+    env.engine.sender = BlockingSender()
+
+    first = threading.Thread(target=env.engine.send_proactive, args=("100", "第一句"))
+    first.start()
+    assert inside.wait(timeout=2)
+
+    second = threading.Thread(target=env.engine.send_proactive, args=("100", "第二句"))
+    second.start()
+    time.sleep(0.05)  # 给第二个线程时间去抢锁
+    release.set()
+    first.join(timeout=5)
+    second.join(timeout=5)
+
+    assert events == [
+        ("start", "第一句"),
+        ("end", "第一句"),
+        ("start", "第二句"),
+        ("end", "第二句"),
+    ]
     env.store.close()
 
 

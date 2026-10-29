@@ -31,7 +31,9 @@
 
 - 用 **NapCat** 把 QQ 协议转成 **OneBot 11** 标准接口。
 - **收**：用 HTTP 上报（`httpClients` 指向 `127.0.0.1:8080/event`，`messagePostFormat: "array"`），
-  我们自己起一个 `ThreadingHTTPServer` 接。
+  我们自己起一个 `ThreadingHTTPServer` 接。**收到就入队并立刻回 204**，真正处理在单线程队列里
+  按到达顺序跑——NapCat 的 `baseTimeout` 只有 10 秒，等处理完再应答会被判超时重推，
+  那样同一条消息会回两遍。
 - **发**：反向调 NapCat 的 HTTP API（`/send_private_msg`，文本直接发，图片用 array 段发）。
 - 全程只用标准库：`http.server` 收、`urllib.request` 发，没有 aiohttp/requests 之类。
   好处是换机器不用装依赖，坏处是并发靠线程池。

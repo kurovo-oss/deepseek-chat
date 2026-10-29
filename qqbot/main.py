@@ -22,6 +22,7 @@ from .config import (
     load_system_prompt,
 )
 from .collect import StickerCollector
+from .dispatcher import MessageDispatcher
 from .engine import Engine
 from .images import ImageLibrary, import_seed_library
 from .llm import LLMClient
@@ -125,7 +126,7 @@ def build_engine(settings) -> Engine:
     )
 
 
-def make_handler(engine: Engine):
+def make_handler(dispatcher):
     class OneBotHandler(BaseHTTPRequestHandler):
         server_version = "qqbot/0.1"
 
@@ -196,10 +197,12 @@ def make_handler(engine: Engine):
                 self.send_error(400, "bad json")
                 return
 
+            # 只入队就回 204：NapCat 的 baseTimeout 是 10 秒，等我们处理完
+            # 再应答就会被判超时重推，那种重推会造成同一条消息回两遍。
             try:
-                engine.handle_payload(payload)
-            except Exception:  # 单条事件处理失败不能拖垮服务
-                log.exception("处理事件失败")
+                dispatcher.submit(payload)
+            except Exception:  # noqa: BLE001 - 投递失败也要回 204，否则触发重推
+                log.exception("投递事件失败")
 
             self.send_response(204)
             self.end_headers()
@@ -271,9 +274,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     engine = build_engine(settings)
+    dispatcher = MessageDispatcher(engine)
     try:
         server = ThreadingHTTPServer(
-            (settings.listen_host, settings.listen_port), make_handler(engine)
+            (settings.listen_host, settings.listen_port), make_handler(dispatcher)
         )
     except OSError as exc:
         log.error("无法监听 %s:%s — %s", settings.listen_host, settings.listen_port, exc)
@@ -296,6 +300,7 @@ def main(argv: list[str] | None = None) -> int:
             log.info("等了 %.0f 秒才等到网络", waited)
 
     stop_event = threading.Event()
+    dispatcher.start(stop_event)
     if settings.adapter_watchdog_seconds > 0:
         start_watchdog(engine.sender, settings.adapter_watchdog_seconds, stop_event)
     if settings.proactive_enabled:

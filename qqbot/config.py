@@ -134,6 +134,7 @@ class Settings:
     proactive_prompt_file: Path = Path("prompts/proactive.md")
     scheduled_prompt_file: Path = Path("prompts/scheduled.md")
     proactive_event_expire_days: float = 3.0
+    proactive_event_retry_hours: float = 3.0
     history_max_turns: int = 20
     window_token_budget: int = 4000
     image_enabled: bool = True
@@ -247,6 +248,9 @@ class Settings:
             / env.get("SCHEDULED_PROMPT_FILE", "prompts/scheduled.md").strip(),
             proactive_event_expire_days=_float(
                 env, "PROACTIVE_EVENT_EXPIRE_DAYS", 3.0
+            ),
+            proactive_event_retry_hours=_float(
+                env, "PROACTIVE_EVENT_RETRY_HOURS", 3.0
             ),
             history_max_turns=_int(env, "HISTORY_MAX_TURNS", 20),
             window_token_budget=_int(env, "WINDOW_TOKEN_BUDGET", 4000),

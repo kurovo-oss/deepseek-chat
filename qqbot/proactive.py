@@ -45,6 +45,9 @@ DEFAULT_SCHEDULED = (
 
 
 class ProactiveScheduler:
+    # 一件未来事件最多尝试几次（模型说 SKIP 或发送失败都算一次）
+    MAX_EVENT_ATTEMPTS = 2
+
     def __init__(
         self,
         engine,
@@ -167,21 +170,41 @@ class ProactiveScheduler:
         if event is None:
             return "blocked"
 
+        attempts = int(event.get("attempts") or 0)
         text = self.compose(SCHEDULED, now, event=event["content"])
         if text is None:
-            # 模型判断现在不合适：标记跳过，别反复问同一件事
-            self.store.update_proactive_event(event["id"], status="skipped")
-            return "skipped"
+            return self._postpone(event, attempts, now, "skipped")
 
         ok = self.engine.send_proactive(self.session, text)
-        self.store.update_proactive_event(
-            event["id"], content=text, status="sent" if ok else "failed", created_at=now
-        )
         if ok:
+            self.store.update_proactive_event(
+                event["id"], content=text, status="sent", created_at=now
+            )
             log.info("主动消息（scheduled）：%s", event["content"])
-        else:
-            log.warning("主动消息发送失败，不重试")
-        return "sent" if ok else "failed"
+            return "sent"
+        return self._postpone(event, attempts, now, "failed")
+
+    def _postpone(self, event: dict, attempts: int, now: int, outcome: str) -> str:
+        """这次没发出去：往后推再试，别把事弄丢。
+
+        "下周三面试"不该因为模型某一刻不想说话、或一次网络抖动就消失。
+        但也不能无限重试——那是骚扰，所以最多 MAX_EVENT_ATTEMPTS 次。
+        """
+        if attempts + 1 >= self.MAX_EVENT_ATTEMPTS:
+            self.store.update_proactive_event(event["id"], status=outcome)
+            log.warning("未来事件最终没发出去（%s）：%s", outcome, event["content"])
+            return outcome
+
+        retry_hours = self.settings.proactive_event_retry_hours
+        next_at = now + int(retry_hours * 3600)
+        self.store.reschedule_event(event["id"], next_at)
+        log.info(
+            "未来事件推迟 %.0f 小时再试（第 %d 次）：%s",
+            retry_hours,
+            attempts + 1,
+            event["content"],
+        )
+        return outcome
 
     def _fire_followup(self, now: int, manual: bool = False) -> str:
         text = self.compose(FOLLOWUP, now)
@@ -231,11 +254,14 @@ class ProactiveScheduler:
 
     def run(self, stop_event: threading.Event) -> None:
         interval = self.settings.proactive_check_seconds
-        while not stop_event.wait(interval):
+        # 立刻查一次：等满一个周期的话，开机后到点的事件要白等十分钟
+        while not stop_event.is_set():
             try:
                 self.tick()
             except Exception:  # noqa: BLE001 - 调度线程不能死
                 log.exception("主动消息调度异常")
+            if stop_event.wait(interval):
+                break
 
 
 def start_scheduler(
