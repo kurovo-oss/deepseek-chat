@@ -3,7 +3,7 @@ import types
 import pytest
 
 from qqbot.config import Settings
-from qqbot.engine import FALLBACK_REPLY, Engine
+from qqbot.engine import FALLBACK_REPLIES, Engine, fallback_reply
 from qqbot.llm import ChatResult, LLMError
 from qqbot.onebot import IncomingMessage
 from qqbot.store import Store
@@ -152,7 +152,23 @@ def test_long_reply_is_split_with_delay(env):
 def test_llm_failure_falls_back(env):
     env.llm.error = LLMError("boom")
     env.engine.handle_message(make_message("你好"))
-    assert env.sender.sent[-1][1] == FALLBACK_REPLY
+    assert env.sender.sent[-1][1] in FALLBACK_REPLIES
+
+
+def test_fallback_replies_vary():
+    """同一句兜底连着发四次，比不说话更像机器人。"""
+    assert len({fallback_reply() for _ in range(60)}) > 1
+
+
+def test_blank_lines_are_collapsed(env):
+    """真人不在聊天框里空行；模型爱用它分段。"""
+    env.llm.text = "我还在画呢。\n\n那个头发又画歪了。"
+
+    env.engine.handle_message(make_message("在干嘛"))
+
+    sent = "".join(text for _, text in env.sender.sent)
+    assert "\n\n" not in sent
+    assert "头发又画歪了" in sent
 
 
 def test_fallback_reply_is_not_fed_to_memory(env):
@@ -165,7 +181,7 @@ def test_fallback_reply_is_not_fed_to_memory(env):
 
     env.engine.handle_message(make_message("你好"))
 
-    assert env.sender.sent[-1][1] == FALLBACK_REPLY
+    assert env.sender.sent[-1][1] in FALLBACK_REPLIES
     assert calls == []
 
 

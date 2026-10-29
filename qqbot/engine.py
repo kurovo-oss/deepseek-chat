@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import logging
+import random
 import re
 import threading
 import time
@@ -25,8 +26,19 @@ from .store import Store
 
 log = logging.getLogger("qqbot")
 
-FALLBACK_REPLY = "唔…我这会儿有点转不过来，等一下再跟我说好不好？"
+FALLBACK_REPLIES = (
+    "唔…我这会儿脑子有点转不过来，等一下再说好不好？",
+    "等下，刚刚走神了，你再说一遍",
+    "啊…我这边卡了一下，等我一下",
+    "唔，我好像没听清，再说一次嘛",
+)
+FALLBACK_REPLY = FALLBACK_REPLIES[0]  # 兼容旧引用
 RECALL_TITLE = "# 他以前说过的原话"
+
+
+def fallback_reply() -> str:
+    """兜底话术也要换着说：同一句连着出现四次，比不说话还像机器人。"""
+    return random.choice(FALLBACK_REPLIES)
 
 
 def _size_text(size: int) -> str:
@@ -178,7 +190,7 @@ class Engine:
 
         reply = self._chat(session)
         self._send_reply(message.user_id, session, reply)
-        if self.memory is not None and reply != FALLBACK_REPLY:
+        if self.memory is not None and reply not in FALLBACK_REPLIES:
             # 抽取与压缩发生在回复发出之后，不拖慢响应。
             # 兜底话术不喂给抽取：那不是她说的话，抽出来的卡片全是垃圾。
             self.memory.note_reply(session, text)
@@ -597,12 +609,13 @@ class Engine:
         except LLMError as exc:
             log.warning("对话失败，改用兜底话术：%s", exc)
             self.store.log_usage(self.settings.model_id, 0, 0, "chat", ok=False)
-            return FALLBACK_REPLY
+            return fallback_reply()
         self.store.log_usage(result.model, result.tokens_in, result.tokens_out, "chat", True)
         if not result.text:
             log.warning("模型返回空内容，改用兜底话术")
-            return FALLBACK_REPLY
-        return result.text
+            return fallback_reply()
+        # 真人不在聊天框里空行；模型爱用它分段，压成单换行
+        return re.sub(r"\n{2,}", "\n", result.text)
 
     def _build_messages(self, session: str) -> list[dict]:
         window_start = int(self.store.get_cursor(self._window_key(session), "0") or 0)
@@ -707,6 +720,7 @@ class Engine:
     ) -> bool:
         if sanitize:
             cleaned = strip_markdown(raw_text or "")
+            cleaned = re.sub(r"\n{2,}", "\n", cleaned)  # 不空行，像打字不像排版
         else:
             # 指令回复：只去首尾空白，编号和格式原样保留
             cleaned = (raw_text or "").strip()
@@ -718,7 +732,7 @@ class Engine:
             log.warning(
                 "回复内容为空（原文 %r，图片标记 %s），改用兜底话术", raw_text[:80], tags
             )
-            parts = [FALLBACK_REPLY]
+            parts = [fallback_reply()]
 
         content = cleaned if cleaned else ("[图片]" if image_path else " ".join(parts))
         record_id = self.store.save_message(
