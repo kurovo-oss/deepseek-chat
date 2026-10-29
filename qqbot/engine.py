@@ -10,11 +10,13 @@ import logging
 import re
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from . import digest as digest_mod
 from .config import Settings
+from .export import export_all
 from .formatting import extract_image_tags, split_message, strip_markdown
 from .llm import LLMError
 from .memory import KIND_LABEL, card_weight
@@ -41,6 +43,8 @@ HELP_TEXT = (
     "/journal 看看记忆本\n"
     "/dream 手动整理一次记忆\n"
     "/mood 看看我现在的心情\n"
+    "/digest 看今天/昨天/这周留下了什么\n"
+    "/export 把聊天和记忆导成一个文件\n"
     "/tag 名字 给刚存的表情包打标\n"
     "/img list 看看图库\n"
     "/img clean 清掉回收来的旧图\n"
@@ -219,6 +223,12 @@ class Engine:
         if head == "/dream":
             return self._dream_now()
 
+        if head == "/digest":
+            return self._digest_command(rest)
+
+        if head == "/export":
+            return self._export_command()
+
         if head == "/mood":
             if self.mood is None:
                 return "我现在没什么特别的感觉。"
@@ -358,6 +368,42 @@ class Engine:
             f"整理完啦：看了 {result['messages']} 条消息，"
             f"新记 {result['added']} 条、合并 {result['merged']} 条、"
             f"调了 {result['reweight']} 条权重，记忆本 {result['chars']} 字。"
+        )
+
+    def _digest_command(self, rest: str) -> str:
+        keyword = rest.strip().lower()
+        if keyword in ("周", "一周", "上周", "week"):
+            return digest_mod.week_text(self.settings)
+
+        today = digest_mod.day_of(time.time())
+        if keyword in ("昨天", "yesterday"):
+            target = today - timedelta(days=1)
+        elif keyword in ("", "今天", "today"):
+            target = today
+        else:
+            return "用法：/digest（今天）、/digest 昨天、/digest 周"
+
+        text = digest_mod.read(self.settings, target)
+        if text is None:
+            try:
+                text = digest_mod.generate(self.store, self.llm, self.settings, target)
+            except Exception as exc:  # noqa: BLE001 - 生成失败也别崩
+                log.exception("写日摘要失败")
+                return f"这天没写出来：{exc}"
+        if text is None:
+            return f"{target.strftime('%m-%d')} 这天没说什么呢。"
+        return text
+
+    def _export_command(self) -> str:
+        try:
+            path, stats = export_all(self.store, self.settings)
+        except Exception as exc:  # noqa: BLE001 - 导出失败不影响聊天
+            log.exception("导出失败")
+            return f"没导出成：{exc}"
+        return (
+            f"导出好了：{path}\n"
+            f"消息 {stats['messages']} 条、卡片 {stats['cards']} 张、"
+            f"事件 {stats['events']} 个、摘要 {stats['summaries']} 篇。"
         )
 
     def _set_pin(self, rest: str, pinned: bool) -> str:
@@ -586,6 +632,10 @@ class Engine:
         recall = self._recall_section(selected)
         if recall:
             system = f"{system}\n\n{recall}"
+
+        digest = digest_mod.recent_text(self.settings)
+        if digest:
+            system = f"{system}\n\n{digest}"
 
         if self.mood is not None:
             state = self.mood.describe()

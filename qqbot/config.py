@@ -147,6 +147,13 @@ class Settings:
     dream_prompt_file: Path = Path("prompts/dream.md")
     journal_file: Path = Path("data/journal.md")
     journal_char_budget: int = 1200
+    digest_enabled: bool = True
+    digest_dir: Path = Path("data/daily")
+    digest_prompt_file: Path = Path("prompts/digest.md")
+    digest_days_in_prompt: int = 3
+    digest_in_prompt_chars: int = 600
+    digest_catchup_days: int = 3
+    export_dir: Path = Path("data/exports")
     history_max_turns: int = 20
     window_token_budget: int = 4000
     image_enabled: bool = True
@@ -303,6 +310,14 @@ class Settings:
             journal_file=base_dir
             / env.get("JOURNAL_FILE", "data/journal.md").strip(),
             journal_char_budget=_int(env, "JOURNAL_CHAR_BUDGET", 1200, minimum=0),
+            digest_enabled=_bool(env, "DIGEST_ENABLED", True),
+            digest_dir=base_dir / env.get("DIGEST_DIR", "data/daily").strip(),
+            digest_prompt_file=base_dir
+            / env.get("DIGEST_PROMPT_FILE", "prompts/digest.md").strip(),
+            digest_days_in_prompt=_int(env, "DIGEST_DAYS_IN_PROMPT", 3, minimum=0),
+            digest_in_prompt_chars=_int(env, "DIGEST_IN_PROMPT_CHARS", 600, minimum=0),
+            digest_catchup_days=_int(env, "DIGEST_CATCHUP_DAYS", 3, minimum=0),
+            export_dir=base_dir / env.get("EXPORT_DIR", "data/exports").strip(),
         )
 
 

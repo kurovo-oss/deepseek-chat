@@ -914,6 +914,16 @@ class Store:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def messages_between(self, start: int, end: int, limit: int = 800) -> list[dict]:
+        """某个时间段的消息（按时间正序），给日摘要用。"""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM messages WHERE created_at >= ? AND created_at < ?"
+                " ORDER BY id ASC LIMIT ?",
+                (int(start), int(end), int(limit)),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def set_pinned(self, card_id: int, pinned: bool) -> bool:
         with self._lock:
             cur = self._conn.execute(

@@ -15,6 +15,7 @@ import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from . import digest as digest_mod
 from .config import (
     ConfigError,
     load_optional_prompt,
@@ -282,6 +283,16 @@ def check_model(settings, timeout: float = 15.0) -> tuple[bool, str]:
         return False, str(exc)
 
 
+def _warm_digests(engine, settings) -> None:
+    """启动后补最近几天缺的日摘要。失败不影响服务。"""
+    try:
+        made = digest_mod.ensure_recent(engine.store, engine.llm, settings)
+    except Exception:  # noqa: BLE001 - 补摘要失败不该拖垮启动
+        log.exception("补日摘要失败")
+        return
+    log.info("日摘要已补齐：新写 %d 篇", made)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="qqbot", description="大肥鱼 QQ 机器人")
     parser.add_argument("--base-dir", default=None, help="项目根目录（默认当前目录）")
@@ -411,6 +422,14 @@ def main(argv: list[str] | None = None) -> int:
     if settings.mood_enabled:
         engine.mood = Mood(engine.store, settings)
         log.info("情绪状态：%s", engine.mood.line())
+
+    if settings.digest_enabled:
+        threading.Thread(
+            target=_warm_digests,
+            args=(engine, settings),
+            name="digest-warmup",
+            daemon=True,
+        ).start()
 
     log.info(
         "已启动：监听 http://%s:%s/event ，模型 %s（日志 %s）",

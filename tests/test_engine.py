@@ -63,6 +63,9 @@ def build_env(tmp_path, **overrides):
         system_prompt_file=tmp_path / "s.md",
         segment_delay_ms=0,
         reply_max_chars=100,
+        digest_dir=tmp_path / "daily",
+        digest_prompt_file=tmp_path / "digest.md",
+        export_dir=tmp_path / "exports",
     )
     kwargs.update(overrides)
     settings = Settings(**kwargs)
@@ -245,6 +248,41 @@ def test_memory_edit_updates_summary(env):
 def test_memory_edit_unknown_id_is_rejected(env):
     env.engine.handle_message(make_message("/memory edit 999 随便什么", mid="me4"))
     assert "没有第 999 条" in env.sender.sent[-1][1]
+
+
+def test_digest_command_writes_today(env):
+    import time
+    from datetime import date
+
+    env.store.save_message("100", "user", "今天面试完了", created_at=int(time.time()))
+    env.llm.text = "他今天面完试，说还行。"
+
+    env.engine.handle_message(make_message("/digest", mid="dg1"))
+
+    assert "他今天面完试" in env.sender.sent[-1][1]
+    saved = env.settings.digest_dir / f"{date.today():%Y-%m-%d}.md"
+    assert saved.exists()
+
+
+def test_digest_command_on_empty_day(env):
+    env.engine.handle_message(make_message("/digest 昨天", mid="dg2"))
+    assert "没说什么" in env.sender.sent[-1][1]
+
+
+def test_digest_command_rejects_unknown_period(env):
+    env.engine.handle_message(make_message("/digest 前天", mid="dg3"))
+    assert "用法" in env.sender.sent[-1][1]
+
+
+def test_export_command_writes_file(env):
+    env.store.add_card("fact", "他不吃香菜", importance=0.7)
+
+    env.engine.handle_message(make_message("/export", mid="ex1"))
+
+    joined = "".join(text for _, text in env.sender.sent)  # 长消息会被分段
+    assert "导出好了" in joined
+    files = list(env.settings.export_dir.glob("*.md"))
+    assert files and "不吃香菜" in files[0].read_text(encoding="utf-8")
 
 
 def test_mood_command_shows_state(env):
