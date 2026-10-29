@@ -80,6 +80,18 @@ def test_bad_json_returns_400(server):
     assert dispatcher.payloads == []
 
 
+def test_oversized_body_is_rejected(server, monkeypatch):
+    """正常事件几百字节；几 MB 的 body 只可能是打错端口或者被塞东西。"""
+    import qqbot.main as main_module
+
+    monkeypatch.setattr(main_module, "MAX_BODY_BYTES", 64)
+    base, dispatcher = server
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        _post(f"{base}/event", None, raw=b"x" * 5000)
+    assert exc.value.code == 413
+    assert dispatcher.payloads == []
+
+
 # ---------------- 协议端实际发送方式 ----------------
 SAMPLE_EVENT = {
     "post_type": "message",

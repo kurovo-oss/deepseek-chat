@@ -196,3 +196,46 @@ def test_vocabulary_matches_system_prompt():
     assert match
     listed = {tag.strip() for tag in match.group(1).split("、") if tag.strip()}
     assert listed == set(TAG_VOCABULARY)
+
+
+# ---------------------------------------------------------------- 回收磁盘
+def _engine_with_library(store, root, tmp_path):
+    """只为了拿到 _clean_archived_images：LLM 和 sender 都用不到。"""
+    from qqbot.config import Settings
+    from qqbot.engine import Engine
+
+    settings = Settings(
+        allow_user_id=100,
+        model_api_key="k",
+        base_dir=tmp_path,
+        db_path=tmp_path / "d.db",
+        system_prompt_file=tmp_path / "s.md",
+    )
+    library = ImageLibrary(store, root)
+    return Engine(settings, store, object(), object(), "你是大肥鱼", images=library)
+
+
+def test_clean_removes_archived_files_and_rows(store, tmp_path):
+    """淘汰只置 archived、文件留着，久了照样占满盘——所以要能真删。"""
+    root = tmp_path / "lib"
+    for seed in (b"1", b"2", b"3"):
+        make_image(store, root, ["cat"], seed=seed)
+    store.evict_images(max_count=1)
+
+    engine = _engine_with_library(store, root, tmp_path)
+    removed, freed = engine._clean_archived_images()
+
+    assert removed == 2
+    assert freed > 0
+    assert store.list_images(status="archived") == []
+    assert len(store.list_images(status="active")) == 1  # 在用的那张不能动
+    assert len(list(root.rglob("*.*"))) == 1
+
+
+def test_clean_says_there_is_nothing_to_do(store, tmp_path):
+    root = tmp_path / "lib"
+    make_image(store, root, ["cat"], seed=b"only")
+    engine = _engine_with_library(store, root, tmp_path)
+
+    assert engine._clean_archived_images() == (0, 0)
+    assert "没有要回收" in engine._img_command("clean")

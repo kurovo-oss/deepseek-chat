@@ -25,6 +25,12 @@ log = logging.getLogger("qqbot")
 
 FALLBACK_REPLY = "唔…我这会儿有点转不过来，等一下再跟我说好不好？"
 
+
+def _size_text(size: int) -> str:
+    if size >= 1024 * 1024:
+        return "%.1f MB" % (size / (1024 * 1024))
+    return "%.0f KB" % (size / 1024)
+
 HELP_TEXT = (
     "我会这些呀：\n"
     "/reset 清空刚才的对话\n"
@@ -33,6 +39,7 @@ HELP_TEXT = (
     "/pin 编号 把某件事记牢一点\n"
     "/tag 名字 给刚存的表情包打标\n"
     "/img list 看看图库\n"
+    "/img clean 清掉回收来的旧图\n"
     "/proactive 让她主动说一句\n"
     "/events 看她记下的事\n"
     "/event 2026-11-04 09:00 面试 记一件事\n"
@@ -308,6 +315,12 @@ class Engine:
             self.store.delete_image(image_id)
             return f"第 {image_id} 张删掉了。"
 
+        if sub == "clean":
+            removed, freed = self._clean_archived_images()
+            if not removed:
+                return "图库没有要回收的旧图呢。"
+            return f"收回 {removed} 张旧图（{_size_text(freed)}），磁盘松快点了。"
+
         if sub == "tag":
             if len(parts) < 3 or not parts[1].isdigit():
                 return "格式：/img tag 编号 名字，可以给多个名字。"
@@ -318,7 +331,35 @@ class Engine:
             self.store.tag_image(image_id, tags)
             return f"好，第 {image_id} 张标成「{'、'.join(tags)}」了。"
 
-        return "图库指令：/img list [tag]、/img tag 编号 名字、/img rm 编号"
+        return "图库指令：/img list [tag]、/img tag 编号 名字、/img rm 编号、/img clean"
+
+    def _clean_archived_images(self) -> tuple[int, int]:
+        """把已归档图片的文件和记录真正删掉，返回 (张数, 释放字节)。
+
+        淘汰时只置 `archived`（规范如此：不再发送但保留文件），久了还是会
+        占满盘——所以留一个手动回收口，不自动删，免得删掉你还想看的东西。
+        """
+        if self.images is None:
+            return 0, 0
+
+        removed = 0
+        freed = 0
+        for image in self.store.list_images(status="archived", limit=1000):
+            path = self.images.path_of(image)
+            if path is not None:
+                try:
+                    size = path.stat().st_size
+                    path.unlink()
+                    freed += size
+                except OSError:
+                    log.warning("回收旧图失败（跳过）：%s", path)
+                    continue
+            self.store.delete_image(image["id"])
+            removed += 1
+
+        if removed:
+            log.info("回收归档图片 %d 张，释放 %s", removed, _size_text(freed))
+        return removed, freed
 
     def _try_proactive(self) -> str:
         hook = self.proactive_trigger
@@ -468,7 +509,12 @@ class Engine:
         return "这张我存下啦嘿嘿，回头再给它起个名字。"
 
     def _send_reply(
-        self, user_id: int, session: str, raw_text: str, sanitize: bool = True
+        self,
+        user_id: int,
+        session: str,
+        raw_text: str,
+        sanitize: bool = True,
+        origin: str = "reply",
     ) -> bool:
         if sanitize:
             cleaned = strip_markdown(raw_text or "")
@@ -492,6 +538,7 @@ class Engine:
             content,
             send_state="pending",
             image_tags=[image_path.name] if image_path else [],
+            origin=origin,
         )
 
         all_ok = True
@@ -516,7 +563,22 @@ class Engine:
     def send_proactive(self, session: str, text: str) -> bool:
         """她先开口。走和普通回复一样的清洗、分段、配图流程。"""
         log.info("主动开口（%s）：%s", session, text[:60])
-        return self._send_reply(int(session), session, text)
+        return self._send_reply(int(session), session, text, origin="proactive")
+
+    def resend(self, user_id: int, text: str) -> bool:
+        """重放一条发送失败的回复。
+
+        只补文本、不补图片：历史行里只存了文件名，拼路径容易发错图，
+        宁可少一张图，也不能把别人的图发出去。
+        """
+        parts = split_message(text, self.settings.reply_max_chars) or [text]
+        with self._send_lock:
+            for index, part in enumerate(parts):
+                if index:
+                    self._sleep(self.settings.segment_delay_ms / 1000)
+                if not self.sender.send_private(user_id, part):
+                    return False
+        return True
 
     @staticmethod
     def _window_key(session: str) -> str:

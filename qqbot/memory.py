@@ -256,10 +256,11 @@ DUE_FORMATS = (
 )
 
 
-def parse_due_at(raw, now: int) -> int | None:
+def parse_due_at(raw) -> int | None:
     """把模型给的时间字符串解析成时间戳；解析不出来返回 None。
 
     解析不了就丢掉——**猜时间比不提醒更糟**（会在错误的日子开口）。
+    "是不是已经过去了"由调用方判断，这里只负责解析。
     """
     text = str(raw or "").strip().replace("Z", "")
     if not text:
@@ -294,7 +295,7 @@ def parse_events(raw: str, now: int, max_events: int = MAX_EVENTS) -> list[dict]
         summary = str(item.get("summary") or "").strip()
         if not summary:
             continue
-        due_at = parse_due_at(item.get("due_at"), now)
+        due_at = parse_due_at(item.get("due_at"))
         if due_at is None:
             log.info("丢弃解析不出时间的未来事件：%s", summary[:40])
             continue

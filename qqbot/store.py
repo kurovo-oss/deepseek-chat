@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS messages (
   content     TEXT NOT NULL,
   send_state  TEXT NOT NULL DEFAULT 'sent',
   image_tags  TEXT NOT NULL DEFAULT '[]',
+  origin      TEXT NOT NULL DEFAULT 'reply',
+  attempts    INTEGER NOT NULL DEFAULT 0,
   created_at  INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id);
@@ -170,6 +172,15 @@ class Store:
             self._conn.execute(
                 "ALTER TABLE messages ADD COLUMN image_tags TEXT NOT NULL DEFAULT '[]'"
             )
+        if "origin" not in columns:
+            # reply=回复用户，proactive=她先开口（失败不重放，重放等于骚扰）
+            self._conn.execute(
+                "ALTER TABLE messages ADD COLUMN origin TEXT NOT NULL DEFAULT 'reply'"
+            )
+        if "attempts" not in columns:
+            self._conn.execute(
+                "ALTER TABLE messages ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0"
+            )
         image_columns = {
             row["name"]
             for row in self._conn.execute("PRAGMA table_info(images)").fetchall()
@@ -239,6 +250,7 @@ class Store:
         send_state: str = "sent",
         created_at: int | None = None,
         image_tags: list[str] | None = None,
+        origin: str = "reply",
     ) -> int | None:
         """写入消息；qq_msg_id 重复时返回 None（幂等保护）。"""
         ts = int(created_at if created_at is not None else time.time())
@@ -246,9 +258,18 @@ class Store:
         with self._lock:
             cur = self._conn.execute(
                 "INSERT OR IGNORE INTO messages"
-                "(session_id, qq_msg_id, role, content, send_state, image_tags, created_at)"
-                " VALUES (?,?,?,?,?,?,?)",
-                (session_id, qq_msg_id, role, content, send_state, tags_json, ts),
+                "(session_id, qq_msg_id, role, content, send_state, image_tags,"
+                " origin, created_at) VALUES (?,?,?,?,?,?,?,?)",
+                (
+                    session_id,
+                    qq_msg_id,
+                    role,
+                    content,
+                    send_state,
+                    tags_json,
+                    origin,
+                    ts,
+                ),
             )
             self._conn.commit()
             return cur.lastrowid if cur.rowcount > 0 else None
@@ -311,6 +332,34 @@ class Store:
                 "UPDATE messages SET send_state = ? WHERE id = ?", (state, message_id)
             )
             self._conn.commit()
+
+    def list_failed_replies(self, since: int, limit: int = 10) -> list[dict]:
+        """发送失败、还值得补发的回复。
+
+        只挑 origin='reply'：主动消息失败了不重放，隔几个小时再冒出来等于骚扰。
+        """
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM messages"
+                " WHERE role = 'assistant' AND send_state = 'failed'"
+                " AND origin = 'reply' AND created_at >= ?"
+                " ORDER BY id ASC LIMIT ?",
+                (int(since), int(limit)),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def bump_reply_attempt(self, message_id: int, state: str = "failed") -> int:
+        """重放又失败：次数 +1，返回新次数。"""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE messages SET attempts = attempts + 1, send_state = ? WHERE id = ?",
+                (state, int(message_id)),
+            )
+            row = self._conn.execute(
+                "SELECT attempts FROM messages WHERE id = ?", (int(message_id),)
+            ).fetchone()
+            self._conn.commit()
+        return int(row["attempts"]) if row is not None else 0
 
     # ---------------- 主动消息 ----------------
     def last_message_time(self, session_id: str, role: str | None = None) -> int | None:

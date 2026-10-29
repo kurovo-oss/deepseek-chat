@@ -135,6 +135,9 @@ class Settings:
     scheduled_prompt_file: Path = Path("prompts/scheduled.md")
     proactive_event_expire_days: float = 3.0
     proactive_event_retry_hours: float = 3.0
+    replay_window_minutes: float = 10.0
+    replay_max_attempts: int = 3
+    replay_interval_seconds: float = 60.0
     history_max_turns: int = 20
     window_token_budget: int = 4000
     image_enabled: bool = True
@@ -252,6 +255,9 @@ class Settings:
             proactive_event_retry_hours=_float(
                 env, "PROACTIVE_EVENT_RETRY_HOURS", 3.0
             ),
+            replay_window_minutes=_float(env, "REPLAY_WINDOW_MINUTES", 10.0),
+            replay_max_attempts=_int(env, "REPLAY_MAX_ATTEMPTS", 3, minimum=1),
+            replay_interval_seconds=_float(env, "REPLAY_INTERVAL_SECONDS", 60.0),
             history_max_turns=_int(env, "HISTORY_MAX_TURNS", 20),
             window_token_budget=_int(env, "WINDOW_TOKEN_BUDGET", 4000),
             image_enabled=_bool(env, "IMAGE_ENABLED", True),

@@ -30,10 +30,14 @@ from .logsetup import setup_logging
 from .memory import Memory
 from .onebot import HttpSender
 from .proactive import start_scheduler
+from .replay import start_replayer
 from .store import Store
 from .watchdog import start_watchdog
 
 log = logging.getLogger("qqbot")
+
+# 上报体上限：正常事件几百字节，上百万字节只可能是打错端口或者被塞东西
+MAX_BODY_BYTES = 1_000_000
 
 
 def model_host(base_url: str) -> str | None:
@@ -131,9 +135,13 @@ def make_handler(dispatcher):
         server_version = "qqbot/0.1"
 
         def _read_body(self) -> bytes:
-            """读请求体。协议端常用 chunked，不实现就会拿到空 body。"""
+            """读请求体。协议端常用 chunked，不实现就会拿到空 body。
+
+            有上限：正常事件几百字节，几 MB 的 body 只可能是打错端口或者被人塞东西。
+            """
             if "chunked" in (self.headers.get("Transfer-Encoding") or "").lower():
                 chunks: list[bytes] = []
+                total = 0
                 while True:
                     line = self.rfile.readline(65536).strip()
                     if not line:
@@ -145,6 +153,9 @@ def make_handler(dispatcher):
                     if size == 0:
                         self.rfile.readline(65536)  # trailer
                         break
+                    total += size
+                    if total > MAX_BODY_BYTES:
+                        raise ValueError("body too large")
                     chunks.append(self.rfile.read(size))
                     self.rfile.read(2)  # 每块后的 CRLF
                 return b"".join(chunks)
@@ -153,6 +164,8 @@ def make_handler(dispatcher):
                 length = int(self.headers.get("Content-Length") or 0)
             except ValueError:
                 length = 0
+            if length > MAX_BODY_BYTES:
+                raise ValueError("body too large")
             return self.rfile.read(length) if length > 0 else b""
 
         def _decode_body(self, raw: bytes) -> bytes:
@@ -173,7 +186,12 @@ def make_handler(dispatcher):
             )
 
             # 先把请求体读完再判断路径：否则客户端还在写，连接会被 RST
-            raw = self._read_body()
+            try:
+                raw = self._read_body()
+            except ValueError:
+                log.warning("事件体超过上限（%d 字节），已拒收", MAX_BODY_BYTES)
+                self.send_error(413, "body too large")
+                return
 
             if self.path.split("?")[0].rstrip("/") != "/event":
                 self.send_error(404, "not found")
@@ -332,6 +350,13 @@ def main(argv: list[str] | None = None) -> int:
 
     if settings.adapter_watchdog_seconds > 0:
         start_watchdog(engine.sender, settings.adapter_watchdog_seconds, stop_event)
+
+    start_replayer(engine, engine.store, settings, stop_event)
+    log.info(
+        "失败回复重放已启用：%.0f 分钟内的回复，最多补发 %d 次",
+        settings.replay_window_minutes,
+        settings.replay_max_attempts,
+    )
     if settings.proactive_enabled:
         scheduler = start_scheduler(
             engine,
