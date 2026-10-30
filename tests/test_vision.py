@@ -125,7 +125,7 @@ def test_save_rejects_non_image(tmp_path):
 
 def test_translate_prompt_knows_her_look():
     """她画自己的时候，外观必须由代码补全，不能指望模型每次记住。"""
-    assert "whale girl" in draw_mod.CHARACTER
+    assert "whale-themed" in draw_mod.CHARACTER
     assert draw_mod.CHARACTER in draw_mod.PROMPT_SYSTEM
     assert "鲸鱼娘" in draw_mod.PROMPT_SYSTEM
 
@@ -206,3 +206,36 @@ def test_openai_retries_without_response_format(monkeypatch):
     assert data == PNG
     assert "response_format" in bodies[0]
     assert "response_format" not in bodies[1]
+
+def test_soften_removes_risky_words():
+    """智谱审核对 chibi/girl 很敏感，软化要有实际效果。"""
+    text = draw_mod.soften("A chibi little girl and a young girl in a bikini")
+    lowered = text.lower()
+    for word in ("chibi", "girl", "bikini"):
+        assert word not in lowered
+
+
+def test_content_filter_retries_with_softened_prompt(monkeypatch):
+    prompts = []
+
+    def fake_openai(prompt, size, timeout, settings):
+        prompts.append(prompt)
+        if len(prompts) == 1:
+            raise draw_mod.ContentFiltered("contentFilter")
+        return PNG
+
+    monkeypatch.setattr(draw_mod, "_openai_compatible", fake_openai)
+    monkeypatch.setattr(draw_mod, "time", types.SimpleNamespace(sleep=lambda _: None))
+
+    class Settings:
+        draw_provider = "openai"
+        draw_base_url = "https://example.invalid/v4"
+        draw_api_key = "k"
+        draw_model = "cogview-3-flash"
+        draw_size = 512
+        draw_timeout = 1.0
+
+    assert draw_mod.generate(Settings(), None, "a chibi girl on a windowsill") == PNG
+    assert len(prompts) == 2
+    assert "chibi" in prompts[0].lower()
+    assert "chibi" not in prompts[1].lower()

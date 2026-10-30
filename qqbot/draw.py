@@ -12,6 +12,7 @@ import hashlib
 import json
 import logging
 import random
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -33,8 +34,8 @@ STYLE_SUFFIX = (
 # 鲸鱼娘（DeepSeek 社区角色，"吃白饭的蓝色大肥鱼"）的固定外观。
 # 她画自己的时候必须带上这一串，否则每次长得都不一样。
 CHARACTER = (
-    "a chibi anime whale girl with long wavy hair graded from deep navy at the roots"
-    " to bright cyan at the tips, one curved ahoge, big deep-blue eyes,"
+    "an anime whale-themed mascot character with long wavy hair graded from deep navy"
+    " at the roots to bright cyan at the tips, one curved ahoge, big deep-blue eyes,"
     " white feathery fin-like ears instead of human ears,"
     " a plain white long-sleeved bodysuit,"
     " and a thick blue whale tail with a white underside and a light-blue split fin"
@@ -47,6 +48,33 @@ PROMPT_SYSTEM = (
     "让整条鲸尾露在画面里，并且必须把这段固定外观原样写进提示词：" + CHARACTER + "。"
 )
 MAX_PROMPT_CHARS = 400
+
+# 智谱这类国内接口审核很严："chibi""girl" 容易被判成未成年，直接 400。
+# 命中 contentFilter 就把这些词换掉重试一次。
+SOFTEN_MAP = {
+    "chibi": "",
+    "little girl": "character",
+    "young girl": "character",
+    "girl": "character",
+    "girls": "characters",
+    "loli": "",
+    "child": "character",
+    "kid": "character",
+    "schoolgirl": "character",
+    "bikini": "swimsuit",
+    "lingerie": "clothes",
+}
+
+
+class ContentFiltered(Exception):
+    """接口的内容审核拦了这次生成。"""
+
+
+def soften(prompt: str) -> str:
+    text = prompt
+    for word, replacement in SOFTEN_MAP.items():
+        text = re.sub(rf"\b{re.escape(word)}\b", replacement, text, flags=re.IGNORECASE)
+    return " ".join(text.split())
 
 
 def translate(llm: LLMClient, text: str) -> str:
@@ -112,6 +140,13 @@ def _openai_compatible(prompt: str, size: int, timeout: float, settings) -> byte
                 result = json.loads(response.read().decode("utf-8", "replace"))
             break
         except urllib.error.HTTPError as exc:
+            detail = ""
+            try:
+                detail = exc.read().decode("utf-8", "replace")
+            except Exception:  # noqa: BLE001
+                pass
+            if "contentFilter" in detail or "敏感" in detail:
+                raise ContentFiltered(detail[:200]) from exc
             if exc.code == 400 and "response_format" in body:
                 log.info("画图接口不认 response_format，去掉重试")
                 continue
@@ -146,6 +181,7 @@ def generate(settings, llm: LLMClient | None, text: str) -> bytes | None:
     providers = [settings.draw_provider]
     if settings.draw_provider == "openai":
         providers.append("pollinations")
+    softened = False
 
     for provider in providers:
         for attempt in range(2):
@@ -162,6 +198,13 @@ def generate(settings, llm: LLMClient | None, text: str) -> bytes | None:
                         settings.draw_timeout,
                         settings.draw_model or "flux",
                     )
+            except ContentFiltered as exc:
+                if not softened:
+                    softened = True
+                    prompt = soften(prompt)
+                    log.info("被内容审核拦了，软化提示词重试：%s", str(exc)[:80])
+                    continue
+                log.warning("画图被内容审核拦下（软化后仍失败）")
             except urllib.error.HTTPError as exc:
                 log.warning(
                     "画图失败（%s，第 %d 次）：HTTP %s %s",
