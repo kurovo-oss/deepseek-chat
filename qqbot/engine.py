@@ -872,7 +872,7 @@ class Engine:
             return None
         digest = hashlib.sha256(data).hexdigest()
         day = time.strftime("%Y-%m-%d", time.localtime())
-        target = self.settings.inbox_dir / day / f"{digest[:16]}.{sniffed[1]}"
+        target = self.settings.inbox_dir / day / f"{digest[:16]}{sniffed[1]}"
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
             if not target.exists():

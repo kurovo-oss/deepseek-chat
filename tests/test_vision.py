@@ -108,5 +108,12 @@ def test_save_dedupes_same_bytes(tmp_path):
     assert Path(first).exists()
 
 
+def test_save_extension_has_single_dot(tmp_path):
+    """踩过的坑：sniff_image 返回的 ext 自带点，再补一个就成了 a..png。"""
+    first = draw_mod.save(tmp_path, PNG)
+    assert ".." not in Path(first).name
+    assert Path(first).suffix == ".png"
+
+
 def test_save_rejects_non_image(tmp_path):
     assert draw_mod.save(tmp_path, b"nope") is None

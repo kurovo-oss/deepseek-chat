@@ -1,5 +1,6 @@
 import time
 import types
+from pathlib import Path
 
 import pytest
 
@@ -539,6 +540,9 @@ def test_image_message_is_described_and_fed_to_context(tmp_path):
     assert "胖猫" in rows[0]["content"]
     assert "图片" in rows[0]["content"]
     assert env.sender.sent  # 她回应了画面，而不是走收藏话术
+
+    saved = [p for p in Path(env.settings.inbox_dir).rglob("*") if p.is_file()]
+    assert saved and ".." not in saved[0].name
 
 
 def test_sticker_image_is_described_as_sticker(tmp_path):

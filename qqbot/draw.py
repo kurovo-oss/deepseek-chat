@@ -14,6 +14,7 @@ import random
 import time
 import urllib.parse
 import urllib.request
+from pathlib import Path
 
 from .images import sniff_image
 from .llm import LLMClient
@@ -111,17 +112,15 @@ def generate(settings, llm: LLMClient | None, text: str) -> bytes | None:
     return data
 
 
-def save(root, data: bytes) -> "object | None":
+def save(root, data: bytes) -> "Path | None":
     """落盘：data/drawn/YYYY-MM-DD/<sha>.<ext>，同图只存一份。"""
-    from pathlib import Path
-
     sniffed = sniff_image(data)
     if not sniffed:
         return None
     _, ext = sniffed
     digest = hashlib.sha256(data).hexdigest()
     day = time.strftime("%Y-%m-%d", time.localtime())
-    target = Path(root) / day / f"{digest[:16]}.{ext}"
+    target = Path(root) / day / f"{digest[:16]}{ext}"
     target.parent.mkdir(parents=True, exist_ok=True)
     if not target.exists():
         target.write_bytes(data)
