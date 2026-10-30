@@ -160,3 +160,17 @@ def split_bubbles(text: str, limit: int = 300, max_bubbles: int = 5) -> list[str
         tail = bubbles.pop()
         bubbles[-1] = bubbles[-1] + "\n" + tail
     return bubbles
+
+# 旧人设留下过"爸爸"这种称呼，日摘要/记忆本里带着它，回灌 prompt 后模型会照着叫。
+# 注入前统一换掉——这比在 prompt 里解释"以前叫爸爸"有效得多。
+_ADDRESS_MAP = {"爸爸": "你", "爹地": "你", "爸": "你"}
+
+
+def fix_address(text: str) -> str:
+    """把旧称呼改成情侣之间的说法。"""
+    if not text:
+        return text
+    for old, new in _ADDRESS_MAP.items():
+        text = text.replace(old, new)
+    return text
+

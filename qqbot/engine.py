@@ -19,11 +19,13 @@ from typing import Any
 
 from . import digest as digest_mod
 from . import draw as draw_mod
+from . import life as life_mod
 from . import vision as vision_mod
 from .config import Settings
 from .export import export_all
 from .formatting import (
     extract_draw_tags,
+    fix_address,
     extract_image_tags,
     split_bubbles,
     split_message,
@@ -66,6 +68,7 @@ HELP_TEXT = (
     "/journal 看看记忆本\n"
     "/dream 手动整理一次记忆\n"
     "/mood 看看我现在的心情\n"
+    "/life 看她今天在干嘛（/life 换 重新生成）\n"
     "/digest 看今天/昨天/这周留下了什么\n"
     "/export 把聊天和记忆导成一个文件\n"
     "/tag 名字 给刚存的表情包打标\n"
@@ -114,6 +117,8 @@ class Engine:
         # 画图是异步的：她说完"我画了"，图过几秒才到
         self._draw_lock = threading.Lock()
         self._last_draw_at = 0.0
+        self._life_lock = threading.Lock()
+        self._life_day = ""
 
     # ---------------- 入口 ----------------
     def handle_payload(self, payload: Any) -> bool:
@@ -152,6 +157,9 @@ class Engine:
             return
 
         session = str(message.user_id)
+
+        # 每天补一次"她今天的日子"，后台生成，不挡回复
+        self._ensure_life()
 
         # 幂等靠"抢占式写入"：先落库占位，写不进去说明这条已经处理过了。
         # 顺序很关键——必须在任何网络 IO（下载表情包、调模型）之前完成。
@@ -263,6 +271,9 @@ class Engine:
 
         if head == "/export":
             return self._export_command()
+
+        if head == "/life":
+            return self._life_command(rest)
 
         if head == "/mood":
             if self.mood is None:
@@ -695,13 +706,23 @@ class Engine:
         if digest:
             system = f"{system}\n\n{digest}"
 
+        if self.settings.life_enabled:
+            life_note = life_mod.snippet(self.settings)
+            if life_note:
+                system = f"{system}\n\n{life_note}"
+
         if self.mood is not None:
             state = self.mood.describe()
             if state:
                 system = f"{system}\n\n{state}"
 
         messages = [{"role": "system", "content": system}]
-        messages.extend({"role": m["role"], "content": m["content"]} for m in selected)
+        for item in selected:
+            content = item["content"]
+            # 她自己说过的旧话里可能还带"爸爸"，改掉再喂回去，否则模型会学着叫
+            if item["role"] != "user":
+                content = fix_address(content)
+            messages.append({"role": item["role"], "content": content})
         return messages
 
     def _recall_section(self, history: list[dict]) -> str:
@@ -814,6 +835,53 @@ class Engine:
         for prompt in drawings[:1]:
             self._schedule_draw(user_id, session, prompt)
         return all_ok
+
+    def _life_command(self, rest: str) -> str:
+        """看看/重写她今天的日子。写这个是为了能马上验证生活线有没有跑。"""
+        if not self.settings.life_enabled:
+            return "生活线关着（LIFE_ENABLED=false）。"
+        if rest.strip() in ("换", "重来", "刷新"):
+            path = Path(self.settings.life_dir) / (time.strftime("%Y-%m-%d") + ".md")
+            try:
+                path.unlink()
+            except OSError:
+                pass
+            with self._life_lock:
+                self._life_day = ""
+            text = life_mod.today(self.settings, self.llm)
+            return ("今天改成这样了：\n" + text) if text else "没写出来，回头再试。"
+        text = life_mod.snippet(self.settings)
+        return text or "今天还没写呢。"
+
+    # ---------------- 生活线 ----------------
+    def _ensure_life(self) -> None:
+        """每天补一次"她今天的日子"。生成要好几秒，放后台，别挡着回消息。"""
+        if not self.settings.life_enabled:
+            return
+        day = time.strftime("%Y-%m-%d")
+        with self._life_lock:
+            if self._life_day == day:
+                return
+            self._life_day = day
+        if life_mod.snippet(self.settings):
+            life_mod.prune(self.settings)
+            return
+        threading.Thread(target=self._write_life, daemon=True).start()
+
+    def _write_life(self) -> None:
+        try:
+            context = ""
+            if self.memory is not None:
+                journal = self.memory.journal()
+                if journal:
+                    context = "最近的记忆：" + journal[:300]
+            digest = digest_mod.recent_text(self.settings)
+            if digest:
+                context = (context + "\n" + digest[:400]).strip()
+            life_mod.today(self.settings, self.llm, context=context)
+            life_mod.prune(self.settings)
+        except Exception:  # noqa: BLE001 - 生活线是加分项
+            log.exception("生成生活线失败")
 
     # ---------------- 画图 ----------------
     def _schedule_draw(self, user_id: int, session: str, prompt: str) -> None:

@@ -195,3 +195,13 @@ def test_week_text_joins_pages(tmp_path):
 def test_week_text_without_pages(tmp_path):
     settings = make_settings(tmp_path)
     assert "还没" in digest.week_text(settings, today=date(2026, 10, 29))
+
+
+def test_recent_text_fixes_old_address(tmp_path):
+    settings = make_settings(tmp_path)
+    digest.write(settings, date(2026, 10, 29), "这一天", "我问爸爸心情好点没。")
+
+    text = digest.recent_text(settings, days=1, today=date(2026, 10, 29))
+
+    assert "爸爸" not in text
+    assert "你心情" in text

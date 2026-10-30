@@ -119,3 +119,9 @@ def test_bubbles_capped_by_max_keeping_content():
 def test_bubbles_empty_returns_empty():
     assert split_bubbles("", 300) == []
     assert split_bubbles("   \n  ", 300) == []
+
+def test_fix_address_replaces_old_terms():
+    from qqbot.formatting import fix_address
+
+    assert fix_address("我问爸爸心情好点没") == "我问你心情好点没"
+    assert fix_address("") == ""

@@ -13,6 +13,8 @@ import time
 from datetime import datetime
 from difflib import SequenceMatcher
 
+from .formatting import fix_address
+
 log = logging.getLogger("qqbot")
 
 KIND_ORDER = ("identity", "preference", "fact", "event", "chat")
@@ -374,7 +376,7 @@ class Memory:
         journal = self.journal()
         if journal:
             parts.append("【记忆本】\n" + journal)
-        return "\n\n".join(part for part in parts if part)
+        return fix_address("\n\n".join(part for part in parts if part))
 
     def block(self) -> str:
         if not self.settings.memory_enabled:

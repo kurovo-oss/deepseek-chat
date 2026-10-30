@@ -182,6 +182,10 @@ class Settings:
     draw_timeout: float = 90.0
     draw_dir: Path = Path("data/drawn")
     draw_min_interval_seconds: int = 300
+    # ---- 生活线 ----
+    life_enabled: bool = True
+    life_dir: Path = Path("data/life")
+    life_keep_days: int = 14
     # ---- 长期记忆（M2）----
     memory_enabled: bool = True
     extract_enabled: bool = True
@@ -323,6 +327,9 @@ class Settings:
             draw_min_interval_seconds=_int(
                 env, "DRAW_MIN_INTERVAL_SECONDS", 300, minimum=0
             ),
+            life_enabled=_bool(env, "LIFE_ENABLED", True),
+            life_dir=base_dir / env.get("LIFE_DIR", "data/life").strip(),
+            life_keep_days=_int(env, "LIFE_KEEP_DAYS", 14, minimum=1),
             memory_enabled=_bool(env, "MEMORY_ENABLED", True),
             extract_enabled=_bool(env, "EXTRACT_ENABLED", True),
             decay_half_life_days=half_life,

@@ -17,6 +17,8 @@ import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from .formatting import fix_address
+
 log = logging.getLogger("qqbot")
 
 DAY_FORMAT = "%Y-%m-%d"
@@ -170,7 +172,7 @@ def recent_text(settings, days: int | None = None, today: date | None = None) ->
         used += len(chunk)
         if used >= budget:
             break
-    return f"{RECENT_TITLE}\n" + "\n".join(blocks)
+    return fix_address(f"{RECENT_TITLE}\n" + "\n".join(blocks))
 
 
 def week_text(settings, today: date | None = None) -> str:

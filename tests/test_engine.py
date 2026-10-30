@@ -78,6 +78,8 @@ def build_env(tmp_path, **overrides):
         draw_enabled=False,
         inbox_dir=tmp_path / "inbox",
         draw_dir=tmp_path / "drawn",
+        life_enabled=False,
+        life_dir=tmp_path / "life",
     )
     kwargs.update(overrides)
     settings = Settings(**kwargs)
@@ -619,3 +621,39 @@ def test_draw_command_triggers_image(tmp_path, monkeypatch):
 def test_draw_command_requires_prompt(tmp_path):
     env = build_env(tmp_path, draw_enabled=True)
     assert "格式" in env.engine._handle_command("/draw", "100")
+
+def test_life_line_goes_into_prompt(tmp_path):
+    env = build_env(tmp_path, life_enabled=True, life_dir=tmp_path / "life")
+    folder = tmp_path / "life"
+    folder.mkdir()
+    (folder / (time.strftime("%Y-%m-%d") + ".md")).write_text(
+        "洗了窗帘\n削笔刀找不到了\n泡了第二杯茶", encoding="utf-8"
+    )
+    env.store.save_message("100", "user", "在干嘛")
+
+    messages = env.engine._build_messages("100")
+
+    assert "【你今天】" in messages[0]["content"]
+    assert "洗了窗帘" in messages[0]["content"]
+
+
+def test_life_command_prints_today(tmp_path):
+    env = build_env(tmp_path, life_enabled=True, life_dir=tmp_path / "life")
+    folder = tmp_path / "life"
+    folder.mkdir()
+    (folder / (time.strftime("%Y-%m-%d") + ".md")).write_text("泡了第二杯茶", encoding="utf-8")
+
+    reply = env.engine._handle_command("/life", "100")
+
+    assert "泡了第二杯茶" in reply
+
+
+def test_assistant_history_loses_old_address(tmp_path):
+    env = build_env(tmp_path)
+    env.store.save_message("100", "user", "在干嘛")
+    env.store.save_message("100", "assistant", "我在画画呀，爸爸")
+
+    messages = env.engine._build_messages("100")
+
+    blob = "\n".join(m["content"] for m in messages if m["role"] != "user")
+    assert "爸爸" not in blob
