@@ -91,3 +91,12 @@ def test_prompt_teaches_feminine_register():
     assert "女生的说法" in text
     assert "骂你啥啦" in text
     assert "句尾" in text
+
+
+def test_prompt_teaches_pronoun_resolution():
+    from pathlib import Path
+
+    text = Path("prompts/system.md").read_text(encoding="utf-8")
+
+    assert "他说\"这个\"\"那个\"" in text
+    assert "这个\"功能\"就是刷抖音" in text

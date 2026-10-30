@@ -145,7 +145,9 @@ def test_duplicate_message_id_not_answered_twice(env):
 def test_system_prompt_comes_first(env):
     env.engine.handle_message(make_message("你好"))
     assert env.llm.calls[0][0]["role"] == "system"
-    assert env.llm.calls[0][0]["content"] == "你是大肥鱼"
+    content = env.llm.calls[0][0]["content"]
+    assert content.startswith("你是大肥鱼")  # 人设永远在最前面
+    assert "【你会的】" in content  # 后面挂的是生活会话用的补充段落
 
 
 def test_context_accumulates(env):
@@ -820,3 +822,13 @@ def test_merged_bubbles_send_as_one_message(tmp_path, monkeypatch):
     env.engine.handle_message(make_message("我被骂了"))
 
     assert [text for _, text in env.sender.sent] == ["骂你啥啦，不是，他凭什么骂你呀"]
+
+
+def test_abilities_go_into_prompt(tmp_path):
+    env = build_env(tmp_path)
+    env.store.save_message("100", "user", "你能干嘛")
+
+    messages = env.engine._build_messages("100")
+
+    assert "【你会的】" in messages[0]["content"]
+    assert "刷抖音" in messages[0]["content"]

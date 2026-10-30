@@ -19,6 +19,7 @@ from typing import Any
 
 from . import digest as digest_mod
 from . import draw as draw_mod
+from . import abilities as abilities_mod
 from . import life as life_mod
 from . import pc as pc_mod
 from . import slang as slang_mod
@@ -733,6 +734,9 @@ class Engine:
 
         if self.settings.slang_enabled:
             system = f"{system}\n\n{slang_mod.block()}"
+
+        # 她会什么、不会什么——他问"你有没有这个功能"时，她得有事实可依
+        system = f"{system}\n\n{abilities_mod.block()}"
 
         if self.mood is not None:
             state = self.mood.describe()
