@@ -81,6 +81,7 @@ def build_env(tmp_path, **overrides):
         life_enabled=False,
         sticker_chance=0.0,
         reply_reshape=False,
+        presence_enabled=False,
         life_dir=tmp_path / "life",
     )
     kwargs.update(overrides)
@@ -854,3 +855,74 @@ def test_image_hint_skips_other_image_notes(tmp_path):
     hint = env.engine._image_context_hint("100", rid)
 
     assert "一只猫在笑" not in hint
+
+
+# ------------------------------------------------ 她不是客服：会忙、会几条才回
+class FixedRng:
+    def __init__(self, value=0.9):
+        self.value = value
+
+    def random(self):
+        return self.value
+
+    def uniform(self, low, high):
+        return (low + high) / 2
+
+
+def make_busy(env, activity="在打游戏"):
+    env.engine._presence_state = lambda: {"activity": activity, "busy": True, "until": 9e9}
+
+
+def test_busy_skips_reply_when_not_forced(tmp_path):
+    env = build_env(tmp_path, presence_enabled=True)
+    make_busy(env)
+    env.engine._rng = FixedRng(0.1)  # 0.1 < 0.55，跳过
+
+    env.engine.handle_message(make_message("在吗"))
+
+    assert env.sender.sent == []
+    assert env.store.recent_messages("100", 1)  # 消息还是记下了
+
+
+def test_busy_replies_when_rng_says_so(tmp_path):
+    env = build_env(tmp_path, presence_enabled=True)
+    make_busy(env)
+    env.engine._rng = FixedRng(0.9)  # 0.9 >= 0.55，回
+
+    env.engine.handle_message(make_message("在吗"))
+
+    assert env.sender.sent
+
+
+def test_three_pending_messages_force_a_reply(tmp_path):
+    env = build_env(tmp_path, presence_enabled=True)
+    make_busy(env)
+    env.engine._rng = FixedRng(0.1)
+
+    env.engine.handle_message(make_message("在吗", mid="p1"))
+    env.engine.handle_message(make_message("人呢", mid="p2"))
+    assert env.sender.sent == []
+
+    env.engine.handle_message(make_message("喂", mid="p3"))
+
+    assert env.sender.sent
+
+
+def test_reply_after_busy_mentions_activity(tmp_path):
+    env = build_env(tmp_path, presence_enabled=True)
+    make_busy(env, "在刷抖音")
+    env.store.save_message("100", "user", "在吗")
+    env.store.save_message("100", "user", "人呢")
+
+    note = env.engine._busy_note("100")
+
+    assert "在刷抖音" in note
+    assert "先说一句刚在干嘛" in note
+
+
+def test_no_busy_note_when_only_one_message(tmp_path):
+    env = build_env(tmp_path, presence_enabled=True)
+    make_busy(env)
+    env.store.save_message("100", "user", "在吗")
+
+    assert env.engine._busy_note("100") == ""

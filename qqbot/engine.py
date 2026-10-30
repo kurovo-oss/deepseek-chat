@@ -22,6 +22,7 @@ from . import draw as draw_mod
 from . import abilities as abilities_mod
 from . import life as life_mod
 from . import memes as memes_mod
+from . import presence as presence_mod
 from . import pc as pc_mod
 from . import vision as vision_mod
 from .config import Settings
@@ -131,6 +132,7 @@ class Engine:
         self._watch_thread: threading.Thread | None = None
         self._watch_started = 0.0
         self._watch_lines = 0
+        self._rng = random
 
     # ---------------- 入口 ----------------
     def handle_payload(self, payload: Any) -> bool:
@@ -230,6 +232,14 @@ class Engine:
             if text.lower().startswith("/reset"):
                 top = self.store.max_message_id(session)
                 self.store.set_cursor(self._window_key(session), str(top))
+            return
+
+        # 她不是客服：在打游戏、在刷抖音的时候，几条才回一条是正常的
+        if not self._should_reply_now(session):
+            log.info(
+                "她这会儿%s，这条先不回（他还没等到回应）",
+                presence_mod.describe(self._presence_state()),
+            )
             return
 
         reply = self._chat(session)
@@ -680,6 +690,43 @@ class Engine:
         return f"好，我记住了：{moment:%m-%d %H:%M} {remainder}"
 
     # ---------------- 对话 ----------------
+    # ---------------- 她的状态 ----------------
+    def _presence_state(self) -> dict:
+        return presence_mod.current(
+            self.settings.presence_file, time.time(), self._rng
+        )
+
+    def _pending_count(self, session: str) -> int:
+        """他连发了几条、她还没回。"""
+        count = 0
+        for row in reversed(self.store.recent_messages(session, 12)):
+            if row["role"] == "assistant":
+                break
+            if row["role"] == "user":
+                count += 1
+        return count
+
+    def _should_reply_now(self, session: str) -> bool:
+        if not self.settings.presence_enabled:
+            return True
+        # 他发了三条以上，再忙也得回一句，不然像死了
+        if self._pending_count(session) >= self.settings.busy_max_pending:
+            return True
+        state = self._presence_state()
+        if not state.get("busy"):
+            return True
+        return self._rng.random() >= self.settings.busy_skip_chance
+
+    def _busy_note(self, session: str) -> str:
+        """忙完之后回的那一条：先交代一句刚在干嘛。"""
+        if not self.settings.presence_enabled or self._pending_count(session) < 2:
+            return ""
+        activity = presence_mod.describe(self._presence_state())
+        return (
+            f"【你刚才在忙】你{activity}，手机搁一边了，他连着发了几条。"
+            "先说一句刚在干嘛（别太正式、别提手机），再接他的话。"
+        )
+
     def _chat(self, session: str) -> str:
         messages = self._build_messages(session)
         try:
@@ -743,6 +790,10 @@ class Engine:
             state = self.mood.describe()
             if state:
                 system = f"{system}\n\n{state}"
+
+        busy_note = self._busy_note(session)
+        if busy_note:
+            system = f"{system}\n\n{busy_note}"
 
         messages = [{"role": "system", "content": system}]
         for item in selected:
