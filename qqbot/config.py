@@ -186,6 +186,10 @@ class Settings:
     life_enabled: bool = True
     life_dir: Path = Path("data/life")
     life_keep_days: int = 14
+    # ---- 口头语 / 随手表情包 ----
+    slang_enabled: bool = True
+    sticker_chance: float = 0.12
+    sticker_tags: str = "happy,cute,hmm,thinking,sleepy,tired,ok"
     # ---- 长期记忆（M2）----
     memory_enabled: bool = True
     extract_enabled: bool = True
@@ -330,6 +334,9 @@ class Settings:
             life_enabled=_bool(env, "LIFE_ENABLED", True),
             life_dir=base_dir / env.get("LIFE_DIR", "data/life").strip(),
             life_keep_days=_int(env, "LIFE_KEEP_DAYS", 14, minimum=1),
+            slang_enabled=_bool(env, "SLANG_ENABLED", True),
+            sticker_chance=_float(env, "STICKER_CHANCE", 0.12),
+            sticker_tags=env.get("STICKER_TAGS", "happy,cute,hmm,thinking,sleepy,tired,ok").strip(),
             memory_enabled=_bool(env, "MEMORY_ENABLED", True),
             extract_enabled=_bool(env, "EXTRACT_ENABLED", True),
             decay_half_life_days=half_life,

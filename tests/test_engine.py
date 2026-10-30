@@ -79,6 +79,8 @@ def build_env(tmp_path, **overrides):
         inbox_dir=tmp_path / "inbox",
         draw_dir=tmp_path / "drawn",
         life_enabled=False,
+        slang_enabled=False,
+        sticker_chance=0.0,
         life_dir=tmp_path / "life",
     )
     kwargs.update(overrides)
@@ -657,3 +659,35 @@ def test_assistant_history_loses_old_address(tmp_path):
 
     blob = "\n".join(m["content"] for m in messages if m["role"] != "user")
     assert "爸爸" not in blob
+
+
+def test_slang_block_goes_into_prompt(tmp_path):
+    env = build_env(tmp_path, slang_enabled=True)
+    env.store.save_message("100", "user", "在吗")
+
+    messages = env.engine._build_messages("100")
+
+    assert "【今天的口头语】" in messages[0]["content"]
+
+
+def test_random_sticker_is_sent_after_text(tmp_path):
+    env = build_env(
+        tmp_path,
+        sticker_chance=1.0,
+        sticker_tags="cat",
+        image_cooldown_messages=0,
+    )
+
+    env.engine.handle_message(make_message("你好"))
+
+    assert [text for _, text in env.sender.sent] == ["好呀。"]
+    assert len(env.sender.images) == 1
+    assert env.sender.images[0][1].endswith("cat.png")
+
+
+def test_sticker_disabled_by_zero_chance(tmp_path):
+    env = build_env(tmp_path, sticker_chance=0.0, sticker_tags="cat", image_cooldown_messages=0)
+
+    env.engine.handle_message(make_message("你好"))
+
+    assert env.sender.images == []

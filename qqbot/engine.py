@@ -20,6 +20,7 @@ from typing import Any
 from . import digest as digest_mod
 from . import draw as draw_mod
 from . import life as life_mod
+from . import slang as slang_mod
 from . import vision as vision_mod
 from .config import Settings
 from .export import export_all
@@ -711,6 +712,9 @@ class Engine:
             if life_note:
                 system = f"{system}\n\n{life_note}"
 
+        if self.settings.slang_enabled:
+            system = f"{system}\n\n{slang_mod.block()}"
+
         if self.mood is not None:
             state = self.mood.describe()
             if state:
@@ -829,12 +833,49 @@ class Engine:
                     user_id, image_path, self.settings.image_send_mode
                 ):
                     all_ok = False
+            elif not tags:
+                # 她有时候会随手甩个表情包，不需要理由
+                sticker = self._maybe_sticker(session)
+                if sticker is not None:
+                    if self.sender.send_private_image(
+                        user_id, sticker, self.settings.image_send_mode
+                    ):
+                        self.store.save_message(
+                            session,
+                            "assistant",
+                            "[表情包]",
+                            image_tags=[sticker.name],
+                            origin="sticker",
+                        )
+                    else:
+                        all_ok = False
 
         if record_id is not None:
             self.store.update_send_state(record_id, "sent" if all_ok else "failed")
         for prompt in drawings[:1]:
             self._schedule_draw(user_id, session, prompt)
         return all_ok
+
+    def _maybe_sticker(self, session: str) -> Path | None:
+        """随手甩个表情包。概率很低，且刚发过图就不发。"""
+        chance = float(getattr(self.settings, "sticker_chance", 0.0) or 0.0)
+        if chance <= 0 or self.images is None or not self.settings.image_enabled:
+            return None
+        if random.random() >= chance:
+            return None
+        if self.store.has_recent_image(session, self.settings.image_cooldown_messages):
+            return None
+        tags = [
+            item.strip()
+            for item in str(getattr(self.settings, "sticker_tags", "")).split(",")
+            if item.strip()
+        ]
+        random.shuffle(tags)
+        for tag in tags:
+            path = self.images.resolve(tag, max_bytes=self.settings.image_max_bytes)
+            if path is not None:
+                return path
+        return None
 
     def _life_command(self, rest: str) -> str:
         """看看/重写她今天的日子。写这个是为了能马上验证生活线有没有跑。"""
