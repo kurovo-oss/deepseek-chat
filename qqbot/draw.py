@@ -10,8 +10,10 @@
 import base64
 import hashlib
 import json
+import logging
 import random
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -19,10 +21,30 @@ from pathlib import Path
 from .images import sniff_image
 from .llm import LLMClient
 
-STYLE_SUFFIX = "，柔和的手绘动画插画风格，暖色调，干净背景，不要文字"
+log = logging.getLogger("qqbot")
+
+# 踩过的坑：提示词后缀写成中文会把画图模型的输出带崩（文字乱码、结构混乱），
+# 一律用英文。
+STYLE_SUFFIX = (
+    ", soft anime illustration, clean lineart, gentle warm lighting,"
+    " simple background, no text, no watermark"
+)
+
+# 鲸鱼娘（DeepSeek 社区角色，"吃白饭的蓝色大肥鱼"）的固定外观。
+# 她画自己的时候必须带上这一串，否则每次长得都不一样。
+CHARACTER = (
+    "a chibi anime whale girl with long wavy hair graded from deep navy at the roots"
+    " to bright cyan at the tips, one curved ahoge, big deep-blue eyes,"
+    " white feathery fin-like ears instead of human ears,"
+    " a plain white long-sleeved bodysuit,"
+    " and a thick blue whale tail with a white underside and a light-blue split fin"
+)
+
 PROMPT_SYSTEM = (
-    "把下面这句中文改写成一段给画图模型用的英文提示词。"
-    "只输出提示词本身，不要解释、不要引号、不要分点。"
+    "把下面这句中文改写成一段给画图模型用的英文提示词，只输出提示词本身，"
+    "不要解释、不要引号、不要分点。\n"
+    "如果这句话是在画她自己（出现「我」「自己」「鲸鱼娘」「大肥鱼」），要写 full body shot，"
+    "让整条鲸尾露在画面里，并且必须把这段固定外观原样写进提示词：" + CHARACTER + "。"
 )
 MAX_PROMPT_CHARS = 400
 
@@ -39,7 +61,7 @@ def translate(llm: LLMClient, text: str) -> str:
                 {"role": "user", "content": text},
             ],
             temperature=0.6,
-            max_tokens=300,
+            max_tokens=900,
         )
     except Exception:  # noqa: BLE001 - 翻译失败不该让画图失败
         return text
@@ -47,11 +69,15 @@ def translate(llm: LLMClient, text: str) -> str:
     return prompt[:MAX_PROMPT_CHARS] or text
 
 
-def _pollinations(prompt: str, size: int, timeout: float) -> bytes | None:
+def _pollinations(
+    prompt: str, size: int, timeout: float, model: str = "flux"
+) -> bytes | None:
+    # flux 是免费额度里唯一还能用的；turbo/sana 已 402，kontext/seedream 403
     url = (
         "https://image.pollinations.ai/prompt/"
-        + urllib.parse.quote(prompt[:MAX_PROMPT_CHARS])
-        + f"?width={size}&height={size}&nologo=true&seed={random.randint(1, 10**6)}"
+        + urllib.parse.quote(prompt[: MAX_PROMPT_CHARS * 2])
+        + f"?width={size}&height={size}&nologo=true&model={model or 'flux'}"
+        + f"&seed={random.randint(1, 10**6)}"
     )
     request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -95,21 +121,42 @@ def _openai_compatible(prompt: str, size: int, timeout: float, settings) -> byte
 def generate(settings, llm: LLMClient | None, text: str) -> bytes | None:
     """她写的中文 → 一张图（bytes）。任何一步失败都返回 None，不抛异常。"""
     prompt = translate(llm, text) if llm is not None else text
-    prompt = (prompt or "").strip()
+    prompt = " ".join((prompt or "").split())
     if not prompt:
         return None
-    if not prompt.lower().endswith(("style", "illustration", "anime")):
+    if "no watermark" not in prompt.lower():
         prompt += STYLE_SUFFIX
-    try:
-        if settings.draw_provider == "openai":
-            data = _openai_compatible(prompt, settings.draw_size, settings.draw_timeout, settings)
-        else:
-            data = _pollinations(prompt, settings.draw_size, settings.draw_timeout)
-    except Exception:  # noqa: BLE001 - 画图是附加能力，挂了不能影响聊天
-        return None
-    if not data or not sniff_image(data):
-        return None
-    return data
+
+    for attempt in range(2):
+        data = None
+        try:
+            if settings.draw_provider == "openai":
+                data = _openai_compatible(
+                    prompt, settings.draw_size, settings.draw_timeout, settings
+                )
+            else:
+                data = _pollinations(
+                    prompt,
+                    settings.draw_size,
+                    settings.draw_timeout,
+                    settings.draw_model or "flux",
+                )
+        except urllib.error.HTTPError as exc:
+            log.warning(
+                "画图失败（第 %d 次）：HTTP %s %s", attempt + 1, exc.code, exc.reason
+            )
+            if exc.code in (401, 402, 403):
+                return None  # 没额度、没权限，重试也是白搭
+        except Exception as exc:  # noqa: BLE001 - 画图是附加能力，挂了不能影响聊天
+            log.warning(
+                "画图失败（第 %d 次）：%s: %s", attempt + 1, type(exc).__name__, exc
+            )
+
+        if data and sniff_image(data):
+            return data
+        if attempt == 0:
+            time.sleep(2)
+    return None
 
 
 def save(root, data: bytes) -> "Path | None":

@@ -117,3 +117,31 @@ def test_save_extension_has_single_dot(tmp_path):
 
 def test_save_rejects_non_image(tmp_path):
     assert draw_mod.save(tmp_path, b"nope") is None
+
+
+def test_translate_prompt_knows_her_look():
+    """她画自己的时候，外观必须由代码补全，不能指望模型每次记住。"""
+    assert "whale girl" in draw_mod.CHARACTER
+    assert draw_mod.CHARACTER in draw_mod.PROMPT_SYSTEM
+    assert "鲸鱼娘" in draw_mod.PROMPT_SYSTEM
+
+
+def test_generate_appends_english_style(monkeypatch):
+    """踩过的坑：中文风格后缀会把 flux 的输出带崩。"""
+    seen = {}
+
+    def fake_pollinations(prompt, size, timeout, model="flux"):
+        seen["prompt"] = prompt
+        return PNG
+
+    monkeypatch.setattr(draw_mod, "_pollinations", fake_pollinations)
+
+    class Settings:
+        draw_provider = "pollinations"
+        draw_size = 1024
+        draw_timeout = 1.0
+        draw_model = "flux"
+
+    assert draw_mod.generate(Settings(), None, "a cat on a windowsill")
+    assert "no watermark" in seen["prompt"]
+    assert "soft anime illustration" in seen["prompt"]

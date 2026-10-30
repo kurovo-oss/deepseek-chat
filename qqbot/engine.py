@@ -72,6 +72,7 @@ HELP_TEXT = (
     "/img list 看看图库\n"
     "/img clean 清掉回收来的旧图\n"
     "/img retag 给没标签的表情包补标\n"
+    "/draw 一只猫 让她画一张（测画图用）\n"
     "/proactive 让她主动说一句\n"
     "/events 看她记下的事\n"
     "/event 2026-11-04 09:00 面试 记一件事\n"
@@ -273,6 +274,15 @@ class Engine:
 
         if head == "/img":
             return self._img_command(rest)
+
+        if head == "/draw":
+            prompt = rest.strip()
+            if not prompt:
+                return "格式：/draw 一只猫在窗台上打瞌睡"
+            if not self.settings.draw_enabled:
+                return "画图关着（DRAW_ENABLED=false）。"
+            self._schedule_draw(int(session), session, prompt)
+            return "好，我画一张，画好直接发你。"
 
         if head == "/proactive":
             return self._try_proactive()

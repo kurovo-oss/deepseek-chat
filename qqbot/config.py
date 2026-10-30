@@ -176,7 +176,7 @@ class Settings:
     draw_base_url: str = ""
     draw_api_key: str = ""
     draw_model: str = ""
-    draw_size: int = 768
+    draw_size: int = 1024
     draw_timeout: float = 90.0
     draw_dir: Path = Path("data/drawn")
     draw_min_interval_seconds: int = 300
@@ -313,7 +313,7 @@ class Settings:
             draw_base_url=env.get("DRAW_BASE_URL", "").strip(),
             draw_api_key=env.get("DRAW_API_KEY", "").strip(),
             draw_model=env.get("DRAW_MODEL", "").strip(),
-            draw_size=_int(env, "DRAW_SIZE", 768, minimum=256),
+            draw_size=_int(env, "DRAW_SIZE", 1024, minimum=256),
             draw_timeout=_float(env, "DRAW_TIMEOUT", 90.0),
             draw_dir=base_dir / env.get("DRAW_DIR", "data/drawn").strip(),
             draw_min_interval_seconds=_int(

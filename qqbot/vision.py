@@ -47,7 +47,7 @@ def describe(llm: LLMClient, data: bytes, sticker: bool = False) -> str:
             ],
         }
     ]
-    result = llm.chat(messages, temperature=0.2, max_tokens=500)
+    result = llm.chat(messages, temperature=0.2, max_tokens=2000)
     return _clean(result.text)
 
 

@@ -599,3 +599,23 @@ def test_draw_respects_interval(tmp_path, monkeypatch):
     time.sleep(0.3)
 
     assert len(calls) == 1  # 间隔没到，第二次不画
+
+def test_draw_command_triggers_image(tmp_path, monkeypatch):
+    env = build_env(tmp_path, draw_enabled=True, draw_min_interval_seconds=0)
+    monkeypatch.setattr(
+        engine_mod.draw_mod, "generate", lambda settings, llm, text: PNG_BYTES
+    )
+
+    reply = env.engine._handle_command("/draw 一只趴在窗台上的猫", "100")
+
+    assert "画好直接发你" in reply
+    for _ in range(100):
+        if env.sender.images:
+            break
+        time.sleep(0.02)
+    assert env.sender.images
+
+
+def test_draw_command_requires_prompt(tmp_path):
+    env = build_env(tmp_path, draw_enabled=True)
+    assert "格式" in env.engine._handle_command("/draw", "100")
