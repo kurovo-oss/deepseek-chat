@@ -1,5 +1,9 @@
 """看图 / 画图：两条链路都依赖外部服务，单元测试里必须全部假掉。"""
 
+import base64
+import json
+import types
+import urllib.error
 from pathlib import Path
 
 from qqbot import draw as draw_mod
@@ -145,3 +149,60 @@ def test_generate_appends_english_style(monkeypatch):
     assert draw_mod.generate(Settings(), None, "a cat on a windowsill")
     assert "no watermark" in seen["prompt"]
     assert "soft anime illustration" in seen["prompt"]
+
+def test_openai_provider_falls_back_to_free(monkeypatch):
+    """自己的 key 挂了还能退回免费版，不能让"画图"整个失灵。"""
+    monkeypatch.setattr(draw_mod, "_openai_compatible", lambda *a, **k: None)
+    monkeypatch.setattr(draw_mod, "_pollinations", lambda *a, **k: PNG)
+    monkeypatch.setattr(draw_mod, "time", types.SimpleNamespace(sleep=lambda _: None))
+
+    class Settings:
+        draw_provider = "openai"
+        draw_base_url = "https://example.invalid/v4"
+        draw_api_key = "k"
+        draw_model = "cogview-3-flash"
+        draw_size = 512
+        draw_timeout = 1.0
+
+    assert draw_mod.generate(Settings(), None, "a cat") == PNG
+
+
+def test_openai_retries_without_response_format(monkeypatch):
+    """智谱不认 response_format，400 时要能自动去掉重试。"""
+    bodies = []
+
+    class Response:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def read(self):
+            return json.dumps(self.payload).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def fake_urlopen(request, timeout=0):
+        body = json.loads(request.data.decode())
+        bodies.append(body)
+        if len(bodies) == 1:
+            raise urllib.error.HTTPError(request.full_url, 400, "Bad Request", {}, None)
+        return Response({"data": [{"b64_json": base64.b64encode(PNG).decode()}]})
+
+    monkeypatch.setattr(draw_mod.urllib.request, "urlopen", fake_urlopen)
+
+    class Settings:
+        draw_provider = "openai"
+        draw_base_url = "https://example.invalid/v4"
+        draw_api_key = "k"
+        draw_model = "cogview-3-flash"
+        draw_size = 512
+        draw_timeout = 1.0
+
+    data = draw_mod.generate(Settings(), None, "a cat")
+
+    assert data == PNG
+    assert "response_format" in bodies[0]
+    assert "response_format" not in bodies[1]

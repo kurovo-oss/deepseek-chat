@@ -92,19 +92,34 @@ def _openai_compatible(prompt: str, size: int, timeout: float, settings) -> byte
         "prompt": prompt[:MAX_PROMPT_CHARS],
         "n": 1,
         "size": f"{size}x{size}",
-        "response_format": "b64_json",
     }
     headers = {"Content-Type": "application/json"}
     if settings.draw_api_key:
         headers["Authorization"] = f"Bearer {settings.draw_api_key}"
-    request = urllib.request.Request(
-        settings.draw_base_url.rstrip("/") + "/images/generations",
-        data=json.dumps(payload).encode("utf-8"),
-        headers=headers,
-    )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        data = json.loads(response.read().decode("utf-8", "replace"))
-    items = data.get("data") or []
+    endpoint = settings.draw_base_url.rstrip("/") + "/images/generations"
+
+    # 各家对 response_format 的支持不一致（智谱就不认），400 时去掉再试一次
+    variants = [{**payload, "response_format": "b64_json"}, payload]
+    result = None
+    for body in variants:
+        request = urllib.request.Request(
+            endpoint,
+            data=json.dumps(body).encode("utf-8"),
+            headers=headers,
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                result = json.loads(response.read().decode("utf-8", "replace"))
+            break
+        except urllib.error.HTTPError as exc:
+            if exc.code == 400 and "response_format" in body:
+                log.info("画图接口不认 response_format，去掉重试")
+                continue
+            raise
+
+    if not result:
+        return None
+    items = result.get("data") or []
     if not items:
         return None
     first = items[0]
@@ -127,35 +142,49 @@ def generate(settings, llm: LLMClient | None, text: str) -> bytes | None:
     if "no watermark" not in prompt.lower():
         prompt += STYLE_SUFFIX
 
-    for attempt in range(2):
-        data = None
-        try:
-            if settings.draw_provider == "openai":
-                data = _openai_compatible(
-                    prompt, settings.draw_size, settings.draw_timeout, settings
-                )
-            else:
-                data = _pollinations(
-                    prompt,
-                    settings.draw_size,
-                    settings.draw_timeout,
-                    settings.draw_model or "flux",
-                )
-        except urllib.error.HTTPError as exc:
-            log.warning(
-                "画图失败（第 %d 次）：HTTP %s %s", attempt + 1, exc.code, exc.reason
-            )
-            if exc.code in (401, 402, 403):
-                return None  # 没额度、没权限，重试也是白搭
-        except Exception as exc:  # noqa: BLE001 - 画图是附加能力，挂了不能影响聊天
-            log.warning(
-                "画图失败（第 %d 次）：%s: %s", attempt + 1, type(exc).__name__, exc
-            )
+    # 自己的 key 挂了还能退回免费版：有图总比没有强
+    providers = [settings.draw_provider]
+    if settings.draw_provider == "openai":
+        providers.append("pollinations")
 
-        if data and sniff_image(data):
-            return data
-        if attempt == 0:
-            time.sleep(2)
+    for provider in providers:
+        for attempt in range(2):
+            data = None
+            try:
+                if provider == "openai":
+                    data = _openai_compatible(
+                        prompt, settings.draw_size, settings.draw_timeout, settings
+                    )
+                else:
+                    data = _pollinations(
+                        prompt,
+                        settings.draw_size,
+                        settings.draw_timeout,
+                        settings.draw_model or "flux",
+                    )
+            except urllib.error.HTTPError as exc:
+                log.warning(
+                    "画图失败（%s，第 %d 次）：HTTP %s %s",
+                    provider,
+                    attempt + 1,
+                    exc.code,
+                    exc.reason,
+                )
+                if exc.code in (401, 402, 403):
+                    break  # 没额度、没权限，换下一个供应商
+            except Exception as exc:  # noqa: BLE001 - 画图是附加能力，挂了不能影响聊天
+                log.warning(
+                    "画图失败（%s，第 %d 次）：%s: %s",
+                    provider,
+                    attempt + 1,
+                    type(exc).__name__,
+                    exc,
+                )
+
+            if data and sniff_image(data):
+                return data
+            if attempt == 0:
+                time.sleep(2)
     return None
 
 
