@@ -8,6 +8,7 @@
 """
 
 import base64
+import copy
 import hashlib
 import json
 import logging
@@ -17,6 +18,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from dataclasses import replace
 from pathlib import Path
 
 from .images import sniff_image
@@ -34,14 +36,18 @@ STYLE_SUFFIX = (
 # 鲸鱼娘（DeepSeek 社区角色，"吃白饭的蓝色大肥鱼"）的固定外观。
 # 她画自己的时候必须带上这一串，否则每次长得都不一样。
 CHARACTER = (
-    "an anime whale-themed mascot character with 2.5-head chibi proportions,"
-    " long wavy hair graded from deep navy at the roots to bright cyan at the tips,"
-    " straight bangs with long side locks, one big curved ahoge,"
-    " large bright-blue anime eyes with watery highlights,"
-    " navy whale-fin ears with a tiny bow at the base,"
-    " wearing a navy maid dress with a white lace apron printed with a small whale,"
-    " a navy bow tie at the collar, a white frilled headband,"
-    " and a thick navy-to-cyan whale tail ending in a split fin"
+    "an anime whale-themed character with two-head chibi proportions,"
+    " a round soft body with slim limbs,"
+    " long wavy hair graded from deep navy to light cyan with lighter tips,"
+    " straight bangs and one ahoge on top,"
+    " whale-fin shaped animal ears with a blue bow,"
+    " a white frilled maid headband,"
+    " a navy maid dress with a white frilled apron printed with a small whale"
+    " and a big white bow at the back,"
+    " white lace ankle socks and navy shoes,"
+    " a huge thick round navy whale tail,"
+    " big clear blue eyes and a gentle cute expression,"
+    " flat cel shading, low saturation"
 )
 
 PROMPT_SYSTEM = (
@@ -82,11 +88,23 @@ def soften(prompt: str) -> str:
 
 # 国内接口（智谱等）中文提示词明显更准：直接用中文写，不要再翻成英文
 CHARACTER_ZH = (
-    "Q版蓝鲸娘：深蓝色到浅蓝色渐变的长卷发，齐刘海，头顶一根弯弯的呆毛，亮蓝色大眼睛，"
-    "蓝色的鳍状耳朵且耳根系小蝴蝶结，穿深蓝色女仆裙配白色蕾丝围裙（围裙上绣一只小鲸鱼），"
-    "身后一条粗壮的蓝鲸尾巴、尾鳍分叉"
+    "Q版蓝鲸娘，两头身，身体圆润但四肢纤细。深蓝渐变浅蓝的长卷发，齐刘海，"
+    "头顶一根呆毛，鲸鱼鳍形状的兽耳，蓝色蝴蝶结发饰，白色荷叶边女仆发箍。"
+    "深蓝色女仆连衣裙，白色荷叶边围裙，围裙上印小鲸鱼，后腰一个白色大蝴蝶结。"
+    "白色蕾丝短袜，深蓝色小皮鞋。身后一条巨大肥厚圆润的深蓝色鲸鱼尾巴。"
+    "蓝色通透的大眼睛，呆萌柔和的表情。日系二次元平涂，干净清晰的黑色轮廓线，"
+    "柔和阴影，低饱和度，赛璐璐上色"
 )
 MAX_PROMPT_CHARS_ZH = 400
+# 她不该出现的样子（用户给的负面词）。智谱会忽略，但硅基流动这类支持 negative_prompt。
+NEGATIVE = (
+    "(worst quality, low quality:1.4), blurry, ugly, deformed, disfigured,"
+    " extra limbs, bad anatomy, thick legs, fat legs, muscular legs, realistic, 3d,"
+    " render, photo, messy background, watermark, text clutter, multiple girls, gore,"
+    " dark, heavy shading, over saturated, big hands, long torso, normal proportion,"
+    " 4头身以上"
+)
+
 
 SELF_HINTS = ("我", "自己", "鲸鱼娘", "大肥鱼")
 
@@ -145,8 +163,23 @@ def _openai_compatible(prompt: str, size: int, timeout: float, settings) -> byte
         headers["Authorization"] = f"Bearer {settings.draw_api_key}"
     endpoint = settings.draw_base_url.rstrip("/") + "/images/generations"
 
-    # 各家对 response_format 的支持不一致（智谱就不认），400 时去掉再试一次
-    variants = [{**payload, "response_format": "b64_json"}, payload]
+    # 各家支持不一致：response_format 智谱不认、negative_prompt 有的也不认，
+    # 400 时依次退化成更"朴素"的请求体再试。
+    full = dict(payload)
+    negative = getattr(settings, "draw_negative", "") or ""
+    if negative:
+        full["negative_prompt"] = negative
+    full["response_format"] = "b64_json"
+    variants = [
+        full,
+        {k: v for k, v in full.items() if k != "response_format"},
+        {k: v for k, v in full.items() if k not in ("response_format", "negative_prompt")},
+    ]
+    seen = []
+    for body in variants:
+        if body not in seen:
+            seen.append(body)
+    variants = seen
     result = None
     for body in variants:
         request = urllib.request.Request(
@@ -166,8 +199,8 @@ def _openai_compatible(prompt: str, size: int, timeout: float, settings) -> byte
                 pass
             if "contentFilter" in detail or "敏感" in detail:
                 raise ContentFiltered(detail[:200]) from exc
-            if exc.code == 400 and "response_format" in body:
-                log.info("画图接口不认 response_format，去掉重试")
+            if exc.code == 400 and ("response_format" in body or "negative_prompt" in body):
+                log.info("画图接口不认可选字段，退化成朴素请求再试")
                 continue
             raise
 
@@ -185,6 +218,16 @@ def _openai_compatible(prompt: str, size: int, timeout: float, settings) -> byte
     request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return response.read()
+
+
+def _with_model(settings, model: str):
+    """复制一份设置只改模型名。settings 是 frozen dataclass，用 replace 最省事。"""
+    try:
+        return replace(settings, draw_model=model)
+    except Exception:  # noqa: BLE001 - 测试里可能是普通对象
+        clone = copy.copy(settings)
+        setattr(clone, "draw_model", model)
+        return clone
 
 
 def build_prompt(settings, llm: LLMClient | None, text: str) -> str:
@@ -216,26 +259,33 @@ def generate(settings, llm: LLMClient | None, text: str) -> bytes | None:
     if not prompt:
         return None
 
-    # 自己的 key 挂了还能退回免费版：有图总比没有强
-    providers = [settings.draw_provider]
+    # 先用配置的模型，不行再退到便宜的备用模型，最后才退回免费版：有图总比没有强
+    attempts = []
     if settings.draw_provider == "openai":
-        providers.append("pollinations")
+        attempts.append(("openai", None))
+        fallback_model = getattr(settings, "draw_fallback_model", "")
+        if fallback_model:
+            attempts.append(("openai", fallback_model))
+        attempts.append(("pollinations", None))
+    else:
+        attempts.append(("pollinations", None))
     softened = False
 
-    for provider in providers:
+    for provider, model in attempts:
+        use = settings if model is None else _with_model(settings, model)
         for attempt in range(2):
             data = None
             try:
                 if provider == "openai":
                     data = _openai_compatible(
-                        prompt, settings.draw_size, settings.draw_timeout, settings
+                        prompt, use.draw_size, use.draw_timeout, use
                     )
                 else:
                     data = _pollinations(
                         prompt,
-                        settings.draw_size,
-                        settings.draw_timeout,
-                        settings.draw_model or "flux",
+                        use.draw_size,
+                        use.draw_timeout,
+                        use.draw_model or "flux",
                     )
             except ContentFiltered as exc:
                 if not softened:

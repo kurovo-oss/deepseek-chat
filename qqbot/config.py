@@ -176,6 +176,8 @@ class Settings:
     draw_base_url: str = ""
     draw_api_key: str = ""
     draw_model: str = ""
+    draw_fallback_model: str = ""
+    draw_negative: str = ""
     draw_size: int = 1024
     draw_timeout: float = 90.0
     draw_dir: Path = Path("data/drawn")
@@ -313,6 +315,8 @@ class Settings:
             draw_base_url=env.get("DRAW_BASE_URL", "").strip(),
             draw_api_key=env.get("DRAW_API_KEY", "").strip(),
             draw_model=env.get("DRAW_MODEL", "").strip(),
+            draw_fallback_model=env.get("DRAW_FALLBACK_MODEL", "").strip(),
+            draw_negative=env.get("DRAW_NEGATIVE", "").strip(),
             draw_size=_int(env, "DRAW_SIZE", 1024, minimum=256),
             draw_timeout=_float(env, "DRAW_TIMEOUT", 90.0),
             draw_dir=base_dir / env.get("DRAW_DIR", "data/drawn").strip(),

@@ -259,3 +259,64 @@ def test_build_prompt_keeps_english_for_free_provider():
     prompt = draw_mod.build_prompt(Settings(), None, "我坐在窗台上")
     assert "no watermark" in prompt
     assert draw_mod.CHARACTER[:30] in prompt
+
+def test_negative_prompt_is_sent(monkeypatch):
+    bodies = []
+
+    class Response:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def read(self):
+            return json.dumps(self.payload).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def fake_urlopen(request, timeout=0):
+        bodies.append(json.loads(request.data.decode()))
+        return Response({"data": [{"b64_json": base64.b64encode(PNG).decode()}]})
+
+    monkeypatch.setattr(draw_mod.urllib.request, "urlopen", fake_urlopen)
+
+    class Settings:
+        draw_provider = "openai"
+        draw_base_url = "https://example.invalid/v4"
+        draw_api_key = "k"
+        draw_model = "cogview-4"
+        draw_fallback_model = ""
+        draw_negative = "blurry, thick legs"
+        draw_size = 512
+        draw_timeout = 1.0
+
+    assert draw_mod.generate(Settings(), None, "a cat") == PNG
+    assert bodies[0]["negative_prompt"] == "blurry, thick legs"
+
+
+def test_falls_back_to_cheaper_model(monkeypatch):
+    used = []
+
+    def fake_openai(prompt, size, timeout, settings):
+        used.append(settings.draw_model)
+        return None if settings.draw_model == "cogview-4" else PNG
+
+    monkeypatch.setattr(draw_mod, "_openai_compatible", fake_openai)
+    monkeypatch.setattr(draw_mod, "_pollinations", lambda *a, **k: None)
+    monkeypatch.setattr(draw_mod, "time", types.SimpleNamespace(sleep=lambda _: None))
+
+    class Settings:
+        draw_provider = "openai"
+        draw_base_url = "https://example.invalid/v4"
+        draw_api_key = "k"
+        draw_model = "cogview-4"
+        draw_fallback_model = "cogview-3-flash"
+        draw_negative = ""
+        draw_size = 512
+        draw_timeout = 1.0
+
+    assert draw_mod.generate(Settings(), None, "a cat") == PNG
+    assert used[0] == "cogview-4"
+    assert "cogview-3-flash" in used
