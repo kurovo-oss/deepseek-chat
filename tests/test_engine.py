@@ -1,25 +1,31 @@
+import time
 import types
 
 import pytest
 
+import qqbot.engine as engine_mod
 from qqbot.config import Settings
 from qqbot.engine import FALLBACK_REPLIES, Engine, fallback_reply
 from qqbot.llm import ChatResult, LLMError
-from qqbot.onebot import IncomingMessage
+from qqbot.onebot import IncomingImage, IncomingMessage
 from qqbot.store import Store
+
+PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"0" * 64
 
 
 class FakeLLM:
-    def __init__(self, text="好呀。", error=None):
+    def __init__(self, text="好呀。", error=None, shots=None):
         self.text = text
         self.error = error
+        self.shots = list(shots or [])
         self.calls = []
 
     def chat(self, messages, **kwargs):
         self.calls.append(messages)
         if self.error is not None:
             raise self.error
-        return ChatResult(self.text, 12, 34, "fake-model")
+        text = self.shots.pop(0) if self.shots else self.text
+        return ChatResult(text, 12, 34, "fake-model")
 
 
 class FakeSender:
@@ -66,6 +72,11 @@ def build_env(tmp_path, **overrides):
         digest_dir=tmp_path / "daily",
         digest_prompt_file=tmp_path / "digest.md",
         export_dir=tmp_path / "exports",
+        # 测试默认离线：看图/画图会真的发网络请求
+        vision_enabled=False,
+        draw_enabled=False,
+        inbox_dir=tmp_path / "inbox",
+        draw_dir=tmp_path / "drawn",
     )
     kwargs.update(overrides)
     settings = Settings(**kwargs)
@@ -507,3 +518,80 @@ def test_image_send_failure_marks_message_failed(tmp_path):
 
 def test_handle_payload_ignores_non_private():
     assert Engine.handle_payload is not None  # 结构性占位断言，真实分支由 test_onebot 覆盖
+
+
+def test_image_message_is_described_and_fed_to_context(tmp_path):
+    """他自己发的图，她得"看见"，而不是只回一句"存下来了"。"""
+    env = build_env(tmp_path, vision_enabled=True)
+    env.llm.shots = ["一只趴在窗台上的胖猫，很困", "猫猫好可爱。"]
+    env.engine._fetch_image = lambda image: PNG_BYTES
+
+    message = IncomingMessage(
+        user_id=100,
+        message_id="img1",
+        text="",
+        raw={},
+        images=(IncomingImage(url="http://example.invalid/x.png"),),
+    )
+    env.engine.handle_message(message)
+
+    rows = env.store.recent_messages("100", 2)
+    assert "胖猫" in rows[0]["content"]
+    assert "图片" in rows[0]["content"]
+    assert env.sender.sent  # 她回应了画面，而不是走收藏话术
+
+
+def test_sticker_image_is_described_as_sticker(tmp_path):
+    env = build_env(tmp_path, vision_enabled=True)
+    env.llm.shots = ["一个人捂脸笑，表示无语", "哈哈你这个。"]
+    env.engine._fetch_image = lambda image: PNG_BYTES
+
+    message = IncomingMessage(
+        user_id=100,
+        message_id="img2",
+        text="",
+        raw={},
+        images=(IncomingImage(url="http://example.invalid/x.png", sub_type=1),),
+    )
+    env.engine.handle_message(message)
+
+    rows = env.store.recent_messages("100", 2)
+    assert "表情包" in rows[0]["content"]
+
+
+def test_draw_tag_sends_a_real_image(tmp_path, monkeypatch):
+    env = build_env(tmp_path, draw_enabled=True, draw_min_interval_seconds=0)
+    env.llm.text = "画好啦{{draw:一只趴在窗台上的猫}}"
+    monkeypatch.setattr(
+        engine_mod.draw_mod, "generate", lambda settings, llm, text: PNG_BYTES
+    )
+
+    env.engine.handle_message(make_message("画个猫给我看看"))
+
+    for _ in range(100):
+        if env.sender.images:
+            break
+        time.sleep(0.02)
+
+    assert env.sender.images, "画好的图没发出去"
+    assert "{{draw" not in "".join(text for _, text in env.sender.sent)
+
+
+def test_draw_respects_interval(tmp_path, monkeypatch):
+    env = build_env(tmp_path, draw_enabled=True, draw_min_interval_seconds=3600)
+    env.llm.text = "等一下{{draw:一只猫}}"
+    calls = []
+    monkeypatch.setattr(
+        engine_mod.draw_mod,
+        "generate",
+        lambda settings, llm, text: calls.append(text) or PNG_BYTES,
+    )
+
+    env.engine.handle_message(make_message("画个猫"))
+    time.sleep(0.3)
+    assert len(calls) == 1  # 第一张照画
+
+    env.engine.handle_message(make_message("再画一个猫", mid="m2"))
+    time.sleep(0.3)
+
+    assert len(calls) == 1  # 间隔没到，第二次不画

@@ -6,19 +6,30 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import random
 import re
 import threading
 import time
+import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from . import digest as digest_mod
+from . import draw as draw_mod
+from . import vision as vision_mod
 from .config import Settings
 from .export import export_all
-from .formatting import extract_image_tags, split_bubbles, split_message, strip_markdown
+from .formatting import (
+    extract_draw_tags,
+    extract_image_tags,
+    split_bubbles,
+    split_message,
+    strip_markdown,
+)
+from .images import sniff_image
 from .llm import LLMError
 from .memory import KIND_LABEL, card_weight
 from .onebot import IncomingMessage, Sender, parse_event
@@ -98,6 +109,9 @@ class Engine:
         # 不加锁就会出现"她的话被劈成两半插进另一条回复中间"
         self._send_lock = threading.Lock()
         self._sleep = sleep
+        # 画图是异步的：她说完"我画了"，图过几秒才到
+        self._draw_lock = threading.Lock()
+        self._last_draw_at = 0.0
 
     # ---------------- 入口 ----------------
     def handle_payload(self, payload: Any) -> bool:
@@ -141,14 +155,21 @@ class Engine:
         # 顺序很关键——必须在任何网络 IO（下载表情包、调模型）之前完成。
         # 否则"查重 → 下载 → 写入"之间有个几秒的窗口，NapCat 超时重推就会
         # 让同一条消息被处理两遍（2026-10-29 审查发现的竞态）。
-        if (
-            self.store.save_message(
-                session, "user", text or "[表情]", qq_msg_id=message.message_id or None
-            )
-            is None
-        ):
+        record_id = self.store.save_message(
+            session, "user", text or "[表情]", qq_msg_id=message.message_id or None
+        )
+        if record_id is None:
             log.info("重复消息，跳过：qq_msg_id=%s", message.message_id)
             return
+
+        # 看图要花几秒（下载 + 多模态），必须在幂等占位之后做：
+        # 否则 NapCat 超时重推会让同一张图被识别两遍、缓存也白做。
+        note = ""
+        if message.images and self.settings.vision_enabled:
+            note = self._describe_images(message)
+            if note:
+                enriched = f"{text}\n{note}".strip() if text else note
+                self.store.update_message_content(record_id, enriched)
 
         if self.mood is not None:
             try:
@@ -170,7 +191,7 @@ class Engine:
 
         log.info("收到来自 %s 的消息：%s", message.user_id, text[:60] or "[表情]")
 
-        if not text:
+        if not text and not note:
             self._send_reply(message.user_id, session, self._sticker_ack(collected))
             return
 
@@ -725,18 +746,19 @@ class Engine:
             # 指令回复：只去首尾空白，编号和格式原样保留
             cleaned = (raw_text or "").strip()
         cleaned, tags = extract_image_tags(cleaned)
+        cleaned, drawings = extract_draw_tags(cleaned)
 
         image_path = self._pick_image(session, tags)
         parts = split_bubbles(
             cleaned, self.settings.reply_max_chars, self.settings.reply_max_bubbles
         )
-        if not parts and image_path is None:
+        if not parts and image_path is None and not drawings:
             log.warning(
                 "回复内容为空（原文 %r，图片标记 %s），改用兜底话术", raw_text[:80], tags
             )
             parts = [fallback_reply()]
 
-        content = cleaned if cleaned else ("[图片]" if image_path else " ".join(parts))
+        content = cleaned if cleaned else ("[图片]" if image_path else " ".join(parts) or "[画的图]")
         record_id = self.store.save_message(
             session,
             "assistant",
@@ -765,7 +787,100 @@ class Engine:
 
         if record_id is not None:
             self.store.update_send_state(record_id, "sent" if all_ok else "failed")
+        for prompt in drawings[:1]:
+            self._schedule_draw(user_id, session, prompt)
         return all_ok
+
+    # ---------------- 画图 ----------------
+    def _schedule_draw(self, user_id: int, session: str, prompt: str) -> None:
+        """排队画一张图。太频繁就跳过——她说"我画了"不该变成批量出图。"""
+        if not self.settings.draw_enabled:
+            return
+        now = time.time()
+        with self._draw_lock:
+            if now - self._last_draw_at < self.settings.draw_min_interval_seconds:
+                log.info("画图太频繁，这次跳过：%s", prompt[:40])
+                return
+            self._last_draw_at = now
+        threading.Thread(
+            target=self._draw_and_send,
+            args=(user_id, session, prompt),
+            daemon=True,
+        ).start()
+
+    def _draw_and_send(self, user_id: int, session: str, prompt: str) -> None:
+        try:
+            data = draw_mod.generate(self.settings, self.llm, prompt)
+            if not data:
+                log.info("画图没成功：%s", prompt[:40])
+                return
+            path = draw_mod.save(self.settings.draw_dir, data)
+            if path is None:
+                return
+            ok = self.sender.send_private_image(
+                user_id, path, self.settings.image_send_mode
+            )
+            self.store.save_message(
+                session,
+                "assistant",
+                "[图画好了]" if ok else "[图没发出去]",
+                image_tags=[path.name],
+                origin="draw",
+            )
+            log.info("画好一张图：%s", path.name)
+        except Exception:  # noqa: BLE001 - 画图挂了不能影响聊天
+            log.exception("画图异常")
+
+    # ---------------- 看图 ----------------
+    def _describe_images(self, message: IncomingMessage) -> str:
+        """把这次消息里的图看明白，拼成一句话塞进上下文。"""
+        parts: list[str] = []
+        for image in message.images[:3]:
+            try:
+                data = self._fetch_image(image)
+            except Exception:  # noqa: BLE001 - 下载失败就跳过这张
+                log.exception("下载图片失败")
+                data = b""
+            if not data or len(data) > self.settings.image_max_bytes:
+                continue
+            self._save_inbox(data)
+            sticker = image.sub_type == 1
+            try:
+                note = vision_mod.note_for(self.store, self.llm, data, sticker=sticker)
+            except Exception:  # noqa: BLE001 - 看图失败不能拖垮对话
+                log.exception("看图失败")
+                note = ""
+            if note:
+                parts.append(vision_mod.sentence(note, sticker=sticker))
+        return "\n".join(parts)
+
+    def _fetch_image(self, image: Any) -> bytes:
+        url = (getattr(image, "url", "") or "").strip()
+        if url.startswith(("http://", "https://")):
+            request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(request, timeout=20) as response:
+                return response.read(self.settings.image_max_bytes + 1)
+        local = Path(getattr(image, "file", "") or "")
+        if local.is_file():
+            return local.read_bytes()[: self.settings.image_max_bytes + 1]
+        return b""
+
+    def _save_inbox(self, data: bytes) -> Path | None:
+        """收件箱：他发来的图留一份，方便回看（也占用自己的盘，不进 C 盘）。"""
+        sniffed = sniff_image(data)
+        if not sniffed:
+            return None
+        digest = hashlib.sha256(data).hexdigest()
+        day = time.strftime("%Y-%m-%d", time.localtime())
+        target = self.settings.inbox_dir / day / f"{digest[:16]}.{sniffed[1]}"
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if not target.exists():
+                target.write_bytes(data)
+        except OSError:
+            log.exception("写入收件箱失败")
+            return None
+        return target
 
     # ---------------- 主动消息 ----------------
     def send_proactive(self, session: str, text: str) -> bool:

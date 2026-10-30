@@ -49,6 +49,9 @@ def make_settings(tmp_path, **overrides):
         image_dir=tmp_path / "images",
         segment_delay_ms=0,
         reply_max_chars=100,
+        # 测试默认离线：看图/画图会真的发网络请求
+        vision_enabled=False,
+        draw_enabled=False,
     )
     kwargs.update(overrides)
     return Settings(**kwargs)

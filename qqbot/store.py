@@ -89,6 +89,12 @@ CREATE TABLE IF NOT EXISTS dream_log (
   note           TEXT NOT NULL DEFAULT ''
 );
 
+CREATE TABLE IF NOT EXISTS image_notes (
+  sha256      TEXT PRIMARY KEY,
+  note        TEXT NOT NULL,
+  created_at  INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS images (
   id            INTEGER PRIMARY KEY,
   sha256        TEXT NOT NULL UNIQUE,
@@ -403,6 +409,29 @@ class Store:
         with self._lock:
             self._conn.execute(
                 "UPDATE messages SET send_state = ? WHERE id = ?", (state, message_id)
+            )
+            self._conn.commit()
+
+    def update_message_content(self, message_id: int, content: str) -> None:
+        """补写消息内容：图片描述是收到之后才知道的，得回填同一行。"""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE messages SET content = ? WHERE id = ?", (content, message_id)
+            )
+            self._conn.commit()
+
+    def get_image_note(self, sha256: str) -> str:
+        row = self._conn.execute(
+            "SELECT note FROM image_notes WHERE sha256 = ?", (sha256,)
+        ).fetchone()
+        return str(row["note"]) if row else ""
+
+    def save_image_note(self, sha256: str, note: str, now: int | None = None) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO image_notes (sha256, note, created_at)"
+                " VALUES (?, ?, ?)",
+                (sha256, note, int(now if now is not None else time.time())),
             )
             self._conn.commit()
 

@@ -66,6 +66,26 @@ def strip_markdown(text: str) -> str:
     return out.strip()
 
 
+_DRAW_RE = re.compile(r"\{\{\s*draw\s*:\s*([^{}]{1,200})\}\}", re.IGNORECASE)
+
+
+def extract_draw_tags(text: str) -> tuple[str, list[str]]:
+    """取出 `{{draw:画什么}}`，返回 (清理后的文本, 提示词列表)。
+
+    这是"她自己画一张"的入口：文字照常发，图稍后单独发过来。
+    """
+    prompts: list[str] = []
+
+    def _take(match: "re.Match[str]") -> str:
+        prompt = " ".join(match.group(1).split())
+        if prompt:
+            prompts.append(prompt)
+        return ""
+
+    cleaned = _DRAW_RE.sub(_take, text or "")
+    return cleaned.strip(), prompts
+
+
 def split_message(text: str, limit: int = 300) -> list[str]:
     """按长度切分，优先在句末标点断开。
 

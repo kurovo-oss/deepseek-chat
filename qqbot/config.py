@@ -167,6 +167,19 @@ class Settings:
     image_send_mode: str = "path"
     image_max_bytes: int = 5 * 1024 * 1024
     tag_prompt_file: Path = Path("prompts/tag.md")
+    # ---- 看图 / 画图 ----
+    vision_enabled: bool = True
+    inbox_dir: Path = Path("data/inbox")
+    inbox_max_files: int = 300
+    draw_enabled: bool = True
+    draw_provider: str = "pollinations"
+    draw_base_url: str = ""
+    draw_api_key: str = ""
+    draw_model: str = ""
+    draw_size: int = 768
+    draw_timeout: float = 90.0
+    draw_dir: Path = Path("data/drawn")
+    draw_min_interval_seconds: int = 300
     # ---- 长期记忆（M2）----
     memory_enabled: bool = True
     extract_enabled: bool = True
@@ -247,7 +260,7 @@ class Settings:
             listen_host=env.get("LISTEN_HOST", "127.0.0.1").strip(),
             listen_port=_int(env, "LISTEN_PORT", 8080),
             reply_max_chars=_int(env, "REPLY_MAX_CHARS", 300, minimum=40),
-    reply_max_bubbles=_int(env, "REPLY_MAX_BUBBLES", 5, minimum=1),
+            reply_max_bubbles=_int(env, "REPLY_MAX_BUBBLES", 5, minimum=1),
             segment_delay_ms=_int(env, "SEGMENT_DELAY_MS", 1500, minimum=0),
             request_timeout=_float(env, "REQUEST_TIMEOUT", 60.0),
             network_wait_seconds=_float(env, "NETWORK_WAIT_SECONDS", 30.0),
@@ -290,6 +303,22 @@ class Settings:
             image_cooldown_messages=_int(env, "IMAGE_COOLDOWN_MESSAGES", 10, minimum=0),
             image_send_mode=_choice(env, "IMAGE_SEND_MODE", "path", {"path", "base64"}),
             image_max_bytes=_int(env, "IMAGE_MAX_BYTES", 5 * 1024 * 1024),
+            vision_enabled=_bool(env, "VISION_ENABLED", True),
+            inbox_dir=base_dir / env.get("INBOX_DIR", "data/inbox").strip(),
+            inbox_max_files=_int(env, "INBOX_MAX_FILES", 300, minimum=10),
+            draw_enabled=_bool(env, "DRAW_ENABLED", True),
+            draw_provider=_choice(
+                env, "DRAW_PROVIDER", "pollinations", {"pollinations", "openai"}
+            ),
+            draw_base_url=env.get("DRAW_BASE_URL", "").strip(),
+            draw_api_key=env.get("DRAW_API_KEY", "").strip(),
+            draw_model=env.get("DRAW_MODEL", "").strip(),
+            draw_size=_int(env, "DRAW_SIZE", 768, minimum=256),
+            draw_timeout=_float(env, "DRAW_TIMEOUT", 90.0),
+            draw_dir=base_dir / env.get("DRAW_DIR", "data/drawn").strip(),
+            draw_min_interval_seconds=_int(
+                env, "DRAW_MIN_INTERVAL_SECONDS", 300, minimum=0
+            ),
             memory_enabled=_bool(env, "MEMORY_ENABLED", True),
             extract_enabled=_bool(env, "EXTRACT_ENABLED", True),
             decay_half_life_days=half_life,
