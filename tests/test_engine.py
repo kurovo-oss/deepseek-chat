@@ -82,6 +82,7 @@ def build_env(tmp_path, **overrides):
         sticker_chance=0.0,
         reply_reshape=False,
         presence_enabled=False,
+        catchup_enabled=False,
         life_dir=tmp_path / "life",
     )
     kwargs.update(overrides)
@@ -926,3 +927,58 @@ def test_no_busy_note_when_only_one_message(tmp_path):
     env.store.save_message("100", "user", "在吗")
 
     assert env.engine._busy_note("100") == ""
+
+
+def test_busy_message_is_answered_later(tmp_path):
+    """忙的时候不回，但收工了要补上——不是永远不理。"""
+    env = build_env(tmp_path, presence_enabled=True, catchup_enabled=True)
+    make_busy(env)
+    env.engine._rng = FixedRng(0.1)
+
+    env.engine.handle_message(make_message("在吗", mid="late1"))
+    assert env.sender.sent == []
+
+    later = time.time() + env.settings.busy_reply_after_seconds + 1
+    assert env.engine.catchup_tick(later) == 1
+    assert env.sender.sent
+
+
+def test_catchup_waits_before_answering(tmp_path):
+    env = build_env(tmp_path, presence_enabled=True, catchup_enabled=True)
+    make_busy(env)
+    env.engine._rng = FixedRng(0.1)
+    env.engine.handle_message(make_message("在吗", mid="late2"))
+
+    assert env.engine.catchup_tick(time.time() + 5) == 0
+    assert env.sender.sent == []
+
+
+def test_catchup_does_not_answer_twice(tmp_path):
+    env = build_env(tmp_path, presence_enabled=True, catchup_enabled=True)
+    make_busy(env)
+    env.engine._rng = FixedRng(0.1)
+    env.engine.handle_message(make_message("在吗", mid="late3"))
+
+    later = time.time() + env.settings.busy_reply_after_seconds + 1
+    env.engine.catchup_tick(later)
+    env.engine.catchup_tick(later + 60)
+
+    assert len(env.sender.sent) == 1
+
+
+def test_catchup_ignores_sessions_without_pending(tmp_path):
+    env = build_env(tmp_path, presence_enabled=True, catchup_enabled=True)
+
+    assert env.engine.catchup_tick(time.time() + 10_000) == 0
+
+
+def test_old_pending_message_is_not_chased(tmp_path):
+    """半小时以前的话不追着回，那不叫没看见。"""
+    env = build_env(tmp_path, presence_enabled=True, catchup_enabled=True)
+    make_busy(env)
+    env.engine._rng = FixedRng(0.1)
+    env.engine.handle_message(make_message("在吗", mid="old1"))
+
+    way_later = time.time() + env.settings.catchup_max_age_seconds + 60
+
+    assert env.engine.catchup_tick(way_later) == 0

@@ -133,6 +133,9 @@ class Engine:
         self._watch_started = 0.0
         self._watch_lines = 0
         self._rng = random
+        self._pending_sessions: set[str] = set()
+        self._replying: set[str] = set()
+        self._catchup_lock = threading.Lock()
 
     # ---------------- 入口 ----------------
     def handle_payload(self, payload: Any) -> bool:
@@ -237,13 +240,19 @@ class Engine:
         # 她不是客服：在打游戏、在刷抖音的时候，几条才回一条是正常的
         if not self._should_reply_now(session):
             log.info(
-                "她这会儿%s，这条先不回（他还没等到回应）",
+                "她这会儿%s，这条先不回（忙完补）",
                 presence_mod.describe(self._presence_state()),
             )
+            self._pending_sessions.add(session)
             return
 
-        reply = self._chat(session)
-        self._send_reply(message.user_id, session, reply, origin="chat")
+        self._replying.add(session)
+        try:
+            reply = self._chat(session)
+            self._send_reply(message.user_id, session, reply, origin="chat")
+        finally:
+            self._replying.discard(session)
+            self._pending_sessions.discard(session)
         if self.memory is not None and reply not in FALLBACK_REPLIES:
             # 抽取与压缩发生在回复发出之后，不拖慢响应。
             # 兜底话术不喂给抽取：那不是她说的话，抽出来的卡片全是垃圾。
@@ -690,6 +699,62 @@ class Engine:
         return f"好，我记住了：{moment:%m-%d %H:%M} {remainder}"
 
     # ---------------- 对话 ----------------
+    # ---------------- 忙完补回 ----------------
+    def catchup_tick(self, now: float | None = None) -> int:
+        """她收工了：把晾着的那几条补回。返回补了几条。"""
+        if not (self.settings.presence_enabled and self.settings.catchup_enabled):
+            return 0
+        stamp = time.time() if now is None else now
+        replayed = 0
+        with self._catchup_lock:
+            for session in list(self._pending_sessions):
+                if session in self._replying:
+                    continue
+                if self._pending_count(session) == 0:
+                    self._pending_sessions.discard(session)
+                    continue
+                last = next(
+                    (row for row in reversed(self.store.recent_messages(session, 4))
+                     if row["role"] == "user"),
+                    None,
+                )
+                if last is None:
+                    self._pending_sessions.discard(session)
+                    continue
+                age = stamp - int(last.get("created_at") or stamp)
+                if age > self.settings.catchup_max_age_seconds:
+                    # 太久以前的话就不追着回了，那已经不是"没看见"
+                    self._pending_sessions.discard(session)
+                    continue
+                if age < self.settings.busy_reply_after_seconds:
+                    continue
+                self._replying.add(session)
+                try:
+                    reply = self._chat(session)
+                    self._send_reply(int(session), session, reply, origin="chat")
+                    if self.memory is not None and reply not in FALLBACK_REPLIES:
+                        self.memory.note_reply(session, str(last.get("content") or ""))
+                    replayed += 1
+                except Exception:  # noqa: BLE001 - 补回失败不能让线程死
+                    log.exception("忙完补回失败")
+                finally:
+                    self._replying.discard(session)
+                    self._pending_sessions.discard(session)
+        if replayed:
+            log.info("忙完补回了 %d 条", replayed)
+        return replayed
+
+    def catchup_loop(self, stop_event: threading.Event) -> None:
+        # 重启后先把线索引出来：上次进程里没来得及补的那几条，这次接着补
+        self._pending_sessions.add(str(self.settings.allow_user_id))
+        while not stop_event.is_set():
+            try:
+                self.catchup_tick()
+            except Exception:  # noqa: BLE001 - 补回线程不能死
+                log.exception("补回线程异常")
+            if stop_event.wait(self.settings.catchup_interval_seconds):
+                break
+
     # ---------------- 她的状态 ----------------
     def _presence_state(self) -> dict:
         return presence_mod.current(
