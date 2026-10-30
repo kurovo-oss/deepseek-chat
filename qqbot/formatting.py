@@ -161,6 +161,42 @@ def split_bubbles(text: str, limit: int = 300, max_bubbles: int = 5) -> list[str
         bubbles[-1] = bubbles[-1] + "\n" + tail
     return bubbles
 
+def _cut_in_two(text: str, rng) -> tuple[str, str] | None:
+    """在逗号附近切一刀，切点别太偏。"""
+    middle = len(text) // 2
+    candidates = [i for i, ch in enumerate(text) if ch in "，,、…" and 0.2 < i / len(text) < 0.8]
+    if not candidates:
+        if len(text) < 18:
+            return None
+        return text[:middle], text[middle:]
+    cut = min(candidates, key=lambda i: abs(i - middle))
+    return text[: cut + 1], text[cut + 1 :]
+
+
+def reshape_bubbles(bubbles, rng, max_merge_chars: int = 180) -> list[str]:
+    """偶尔改一下发送条数：真人不总是发同样多的消息。
+
+    - 有时把几条并成一条长的（"一口气说完"）
+    - 有时把一条切成两条（想到什么发什么）
+    - 其余时候不动
+    """
+    items = [b for b in (bubbles or []) if b]
+    if not items:
+        return []
+    roll = rng.random()
+    if roll < 0.30 and len(items) > 1:
+        merged = "，".join(items)
+        if len(merged) <= max_merge_chars:
+            return [merged]
+    if roll < 0.50:
+        target = max(items, key=len)
+        pieces = _cut_in_two(target, rng)
+        if pieces:
+            index = items.index(target)
+            return items[:index] + list(pieces) + items[index + 1 :]
+    return items
+
+
 # 旧人设留下过"爸爸"这种称呼，日摘要/记忆本里带着它，回灌 prompt 后模型会照着叫。
 # 注入前统一换掉——这比在 prompt 里解释"以前叫爸爸"有效得多。
 _ADDRESS_MAP = {"爸爸": "你", "爹地": "你", "爸": "你"}

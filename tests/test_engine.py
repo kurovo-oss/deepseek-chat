@@ -186,8 +186,10 @@ def test_blank_lines_are_collapsed(env):
     assert texts == ["我还在画呢。", "那个头发又画歪了。"]
 
 
-def test_multiline_reply_is_sent_as_separate_messages(env):
+def test_multiline_reply_is_sent_as_separate_messages(env, monkeypatch):
     """正常 QQ 聊天是一条一条发，不是一条里塞换行。"""
+    # 条数随机化是另一条测试的事，这里只验证"按行拆开"
+    monkeypatch.setattr(engine_mod, "reshape_bubbles", lambda parts, rng: parts)
     env.llm.text = "画画\n又画歪了\n烦"
 
     env.engine.handle_message(make_message("在干嘛"))
@@ -807,3 +809,13 @@ def test_watch_respects_switch(tmp_path):
     env = build_env(tmp_path, watch_enabled=False)
 
     assert "关着" in env.engine._handle_command("/watch", "100")
+
+
+def test_merged_bubbles_send_as_one_message(tmp_path, monkeypatch):
+    env = build_env(tmp_path)
+    env.llm.text = "骂你啥啦\n不是，他凭什么骂你呀"
+    monkeypatch.setattr(engine_mod, "reshape_bubbles", lambda parts, rng: ["骂你啥啦，不是，他凭什么骂你呀"])
+
+    env.engine.handle_message(make_message("我被骂了"))
+
+    assert [text for _, text in env.sender.sent] == ["骂你啥啦，不是，他凭什么骂你呀"]

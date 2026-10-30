@@ -125,3 +125,43 @@ def test_fix_address_replaces_old_terms():
 
     assert fix_address("我问爸爸心情好点没") == "我问你心情好点没"
     assert fix_address("") == ""
+
+
+class FakeRng:
+    def __init__(self, value):
+        self.value = value
+
+    def random(self):
+        return self.value
+
+
+def test_reshape_merges_bubbles_sometimes():
+    from qqbot.formatting import reshape_bubbles
+
+    out = reshape_bubbles(["骂你啥啦", "不是，他凭什么骂你呀"], FakeRng(0.1))
+
+    assert len(out) == 1
+    assert "骂你啥啦" in out[0] and "凭什么" in out[0]
+
+
+def test_reshape_splits_a_long_bubble():
+    from qqbot.formatting import reshape_bubbles
+
+    out = reshape_bubbles(
+        ["我今天出门忘带钥匙了，在楼下站了快半小时，最后还是房东来给我开的门"], FakeRng(0.3)
+    )
+
+    assert len(out) == 2
+    assert out[0].endswith("，") or out[1].startswith("在")
+
+
+def test_reshape_usually_leaves_it_alone():
+    from qqbot.formatting import reshape_bubbles
+
+    assert reshape_bubbles(["好呀", "那你呢"], FakeRng(0.9)) == ["好呀", "那你呢"]
+
+
+def test_reshape_handles_empty():
+    from qqbot.formatting import reshape_bubbles
+
+    assert reshape_bubbles([], FakeRng(0.1)) == []

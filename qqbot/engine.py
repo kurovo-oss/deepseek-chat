@@ -29,6 +29,7 @@ from .formatting import (
     extract_draw_tags,
     fix_address,
     extract_image_tags,
+    reshape_bubbles,
     split_bubbles,
     split_message,
     strip_markdown,
@@ -220,7 +221,7 @@ class Engine:
             # 指令回复是我们自己写的，不能当模型输出做 Markdown 清洗：
             # 否则 "/img list" 的编号（"7. ..."）会被当成有序列表剥掉
             self._send_reply(
-                message.user_id, session, command_reply, sanitize=False
+                message.user_id, session, command_reply, sanitize=False, origin="command"
             )
             # /reset 的游标要在"回复本身"落库之后再定，否则重置后的
             # 第一条消息会把 /reset 的应答也带进上下文
@@ -230,7 +231,7 @@ class Engine:
             return
 
         reply = self._chat(session)
-        self._send_reply(message.user_id, session, reply)
+        self._send_reply(message.user_id, session, reply, origin="chat")
         if self.memory is not None and reply not in FALLBACK_REPLIES:
             # 抽取与压缩发生在回复发出之后，不拖慢响应。
             # 兜底话术不喂给抽取：那不是她说的话，抽出来的卡片全是垃圾。
@@ -819,6 +820,9 @@ class Engine:
         parts = split_bubbles(
             cleaned, self.settings.reply_max_chars, self.settings.reply_max_bubbles
         )
+        if origin in ("chat", "proactive") and cleaned not in FALLBACK_REPLIES:
+            # 只对"她自己说的话"随机改条数：指令回复是结构化输出，兜底话术改了就认不出来
+            parts = reshape_bubbles(parts, random)
         if not parts and image_path is None and not drawings:
             log.warning(
                 "回复内容为空（原文 %r，图片标记 %s），改用兜底话术", raw_text[:80], tags
@@ -1195,8 +1199,11 @@ class Engine:
         只补文本、不补图片：历史行里只存了文件名，拼路径容易发错图，
         宁可少一张图，也不能把别人的图发出去。
         """
-        parts = split_bubbles(
-            text, self.settings.reply_max_chars, self.settings.reply_max_bubbles
+        parts = reshape_bubbles(
+            split_bubbles(
+                text, self.settings.reply_max_chars, self.settings.reply_max_bubbles
+            ),
+            random,
         ) or [text]
         with self._send_lock:
             for index, part in enumerate(parts):
