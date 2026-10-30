@@ -1043,6 +1043,27 @@ class Store:
             ).fetchone()
         return self._image_row(row) if row else None
 
+    def update_image_tags(self, image_id: int, tags: list[str]) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE images SET tags = ? WHERE id = ?",
+                (
+                    json.dumps(sorted({t for t in tags if t}), ensure_ascii=False),
+                    int(image_id),
+                ),
+            )
+            self._conn.commit()
+
+    def list_untagged_images(self, limit: int = 20) -> list[dict]:
+        """图库里还没有标签的（老收藏多半是这种），给 `/img retag` 补标用。"""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM images WHERE status = 'active' AND manual = 0"
+                " AND (tags = '[]' OR tags = '') ORDER BY id ASC LIMIT ?",
+                (int(limit),),
+            ).fetchall()
+        return [self._image_row(row) for row in rows]
+
     def list_images(self, status: str = "active", tag: str | None = None, limit: int = 500) -> list[dict]:
         with self._lock:
             rows = self._conn.execute(

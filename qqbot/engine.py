@@ -71,6 +71,7 @@ HELP_TEXT = (
     "/tag 名字 给刚存的表情包打标\n"
     "/img list 看看图库\n"
     "/img clean 清掉回收来的旧图\n"
+    "/img retag 给没标签的表情包补标\n"
     "/proactive 让她主动说一句\n"
     "/events 看她记下的事\n"
     "/event 2026-11-04 09:00 面试 记一件事\n"
@@ -511,7 +512,20 @@ class Engine:
             self.store.tag_image(image_id, tags)
             return f"好，第 {image_id} 张标成「{'、'.join(tags)}」了。"
 
-        return "图库指令：/img list [tag]、/img tag 编号 名字、/img rm 编号、/img clean"
+        if sub in {"retag", "补标"}:
+            if self.collector is None or not self.settings.vision_enabled:
+                return "现在看不到图（看图关着），补标做不了。"
+            checked, tagged, failed = self.collector.retag_all(
+                self.settings.image_dir, limit=20
+            )
+            if not checked:
+                return "图库里没有没标签的图，都标过了。"
+            return f"看了 {checked} 张，补上 {tagged} 张标签，{failed} 张没把握。"
+
+        return (
+            "图库指令：/img list [tag]、/img tag 编号 名字、/img rm 编号、"
+            "/img clean、/img retag（给没标签的补标）"
+        )
 
     def _clean_archived_images(self) -> tuple[int, int]:
         """把已归档图片的文件和记录真正删掉，返回 (张数, 释放字节)。

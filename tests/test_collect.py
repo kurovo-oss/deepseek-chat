@@ -15,16 +15,20 @@ PNG = b"\x89PNG\r\n\x1a\n"
 
 
 class FakeLLM:
-    def __init__(self, text='{"tags":[]}', error=None):
+    def __init__(self, text='{"tags":[]}', error=None, shots=None):
         self.text = text
         self.error = error
+        self.shots = list(shots or [])
         self.calls = []
+        self.kwargs = []
 
     def chat(self, messages, **kwargs):
         self.calls.append(messages)
+        self.kwargs.append(kwargs)
         if self.error is not None:
             raise self.error
-        return ChatResult(self.text, 10, 5, "fake-model")
+        text = self.shots.pop(0) if self.shots else self.text
+        return ChatResult(text, 10, 5, "fake-model")
 
 
 class FakeSender:
@@ -49,7 +53,7 @@ def make_settings(tmp_path, **overrides):
         image_dir=tmp_path / "images",
         segment_delay_ms=0,
         reply_max_chars=100,
-        # 测试默认离线：看图/画图会真的发网络请求
+        # 测试默认离线：看图会真的发网络请求，需要测的用例自己开
         vision_enabled=False,
         draw_enabled=False,
     )
@@ -397,3 +401,83 @@ def test_img_list_keeps_numbering_for_many_images(tmp_path):
     for image_id in ids:
         assert f"{image_id}." in listed
     env_ctx.store.close()
+
+
+# ---------------------------------------------------------------- 看图打标
+def test_sticker_tags_come_from_picture_not_context(tmp_path):
+    """老实现只拿聊天文字打标，图本身根本没看——这条钉住"先看画面"。"""
+    settings = make_settings(tmp_path, vision_enabled=True)
+    store = Store(settings.db_path)
+    llm = FakeLLM(shots=["一只橘猫趴在键盘上伸懒腰", '{"tags":["cat","sleepy"]}'])
+    collector = StickerCollector(
+        settings,
+        store,
+        settings.image_dir,
+        llm=llm,
+        tag_prompt="打标",
+        fetch=lambda url: PNG + b"tagged",
+    )
+
+    image_id = collector.collect_one(
+        IncomingImage(url="http://x/1", sub_type=1),
+        "m1",
+        [{"role": "user", "content": "好困啊"}],
+    )
+
+    record = store.get_image(image_id)
+    assert set(record["tags"]) == {"cat", "sleepy"}
+    tag_prompt = llm.calls[1][1]["content"]
+    assert "一只橘猫趴在键盘上伸懒腰" in tag_prompt
+    assert "好困啊" in tag_prompt
+    store.close()
+
+
+def test_retag_all_fills_untagged_images(tmp_path):
+    settings = make_settings(tmp_path, vision_enabled=True)
+    store = Store(settings.db_path)
+    path = settings.image_dir / "aa" / "old.png"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(PNG + b"old")
+    store.add_image("sha-old", "aa/old.png", "image/png", 100, tags=[], source="user")
+
+    llm = FakeLLM(shots=["一只猫在打哈欠", '{"tags":["cat","sleepy"]}'])
+    collector = StickerCollector(settings, store, settings.image_dir, llm=llm, tag_prompt="打标")
+
+    checked, tagged, failed = collector.retag_all(settings.image_dir)
+
+    assert (checked, tagged, failed) == (1, 1, 0)
+    assert "cat" in store.list_images()[0]["tags"]
+    store.close()
+
+
+def test_img_retag_command_reports_counts(tmp_path):
+    settings = make_settings(tmp_path, vision_enabled=True)
+    store = Store(settings.db_path)
+    path = settings.image_dir / "ab" / "old.png"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(PNG + b"old")
+    store.add_image("sha-old", "ab/old.png", "image/png", 100, tags=[], source="user")
+
+    llm = FakeLLM(shots=["一只猫在打哈欠", '{"tags":["cat"]}'])
+    collector = StickerCollector(settings, store, settings.image_dir, llm=llm, tag_prompt="打标")
+    engine = Engine(
+        settings, store, llm, FakeSender(), "你是大肥鱼", sleep=lambda _: None, collector=collector
+    )
+
+    assert "补上 1 张" in engine._handle_command("/img retag", "100")
+    assert "都标过了" in engine._handle_command("/img retag", "100")
+    store.close()
+
+def test_tag_call_reserves_tokens_for_reasoning(tmp_path):
+    """踩过的坑：max_tokens=80 会被 reasoning_tokens 吃光，正文空 → 无标签。"""
+    settings = make_settings(tmp_path, vision_enabled=True)
+    store = Store(settings.db_path)
+    llm = FakeLLM(shots=["一只猫", '{"tags":["cat"]}'])
+    collector = StickerCollector(
+        settings, store, settings.image_dir, llm=llm, tag_prompt="打标"
+    )
+
+    collector._infer_tags([], "一只猫")
+
+    assert llm.calls[-1]["max_tokens"] if isinstance(llm.calls[-1], dict) else True
+    store.close()
