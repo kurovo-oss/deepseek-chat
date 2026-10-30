@@ -66,3 +66,22 @@ def test_shrink_returns_small_jpeg(tmp_path):
     with Image.open(BytesIO(data)) as img:
         assert max(img.size) <= 400
     assert len(data) < big.stat().st_size
+
+
+def test_frame_hash_is_stable():
+    from io import BytesIO
+
+    from PIL import Image
+
+    buf = BytesIO()
+    Image.new("RGB", (64, 64), "gray").save(buf, format="PNG")
+    data = buf.getvalue()
+
+    assert pc.frame_hash(data) == pc.frame_hash(data)
+    assert len(pc.frame_hash(data)) == 256
+
+
+def test_changed_detects_difference():
+    assert pc.changed("0" * 256, "0" * 256) is False
+    assert pc.changed("0" * 256, "1" * 256) is True
+    assert pc.changed("", "1" * 256) is True

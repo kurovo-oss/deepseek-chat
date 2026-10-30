@@ -716,6 +716,15 @@ class FakePC:
     def describe(self, data):
         return "CPU 占用 9%"
 
+    hash_value = "1010101010101010" * 16
+    change_always = True
+
+    def frame_hash(self, data, size=16):
+        return self.hash_value
+
+    def changed(self, before, after, threshold=12):
+        return self.change_always or before != after
+
 
 def test_screen_command_sends_a_picture(tmp_path, monkeypatch):
     env = build_env(tmp_path)
@@ -749,3 +758,52 @@ def test_pc_command_detail_prints_raw(tmp_path, monkeypatch):
     monkeypatch.setattr(engine_mod, "pc_mod", FakePC(tmp_path))
 
     assert "CPU 占用 9%" in env.engine._handle_command("/pc 详细", "100")
+
+
+def test_watch_starts_and_says_one_line(tmp_path, monkeypatch):
+    env = build_env(
+        tmp_path,
+        watch_interval_seconds=0,
+        watch_max_lines=1,
+        watch_minutes=1,
+        vision_enabled=True,
+    )
+    monkeypatch.setattr(engine_mod, "pc_mod", FakePC(tmp_path))
+    monkeypatch.setattr(engine_mod.vision_mod, "note_for", lambda *a, **k: "屏幕上是游戏画面")
+
+    reply = env.engine._handle_command("/watch", "100")
+    env.engine._watch_thread.join(timeout=10)
+
+    assert "小板凳" in reply
+    assert [text for _, text in env.sender.sent] == ["好呀。"]
+    assert env.store.recent_messages("100", 1)[0]["origin"] == "watch"
+
+
+def test_watch_skips_unchanged_screen(tmp_path, monkeypatch):
+    env = build_env(tmp_path, vision_enabled=True)
+    fake = FakePC(tmp_path)
+    fake.change_always = False
+    monkeypatch.setattr(engine_mod, "pc_mod", fake)
+    monkeypatch.setattr(engine_mod.vision_mod, "note_for", lambda *a, **k: "屏幕上是游戏画面")
+
+    assert env.engine._watch_tick("100", [], fake.hash_value) is None
+
+
+def test_watch_stop(tmp_path, monkeypatch):
+    env = build_env(tmp_path, watch_interval_seconds=600, vision_enabled=True)
+    monkeypatch.setattr(engine_mod, "pc_mod", FakePC(tmp_path))
+    monkeypatch.setattr(engine_mod.vision_mod, "note_for", lambda *a, **k: "屏幕上是游戏画面")
+
+    env.engine._handle_command("/watch", "100")
+    reply = env.engine._handle_command("/watch 停", "100")
+    env.engine._watch_stop.set()
+    env.engine._watch_thread.join(timeout=10)
+
+    assert "不看了" in reply
+    assert not env.engine._watch_thread.is_alive()
+
+
+def test_watch_respects_switch(tmp_path):
+    env = build_env(tmp_path, watch_enabled=False)
+
+    assert "关着" in env.engine._handle_command("/watch", "100")

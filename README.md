@@ -165,6 +165,7 @@ python scripts/get_napcat.py             # 实际下载
 | `/life` | 看她今天在干嘛（`/life 换` 重新生成） |
 | `/screen` | 让她看一眼你的屏幕（截图 + 她说一句） |
 | `/pc` | 让她看看你电脑的状态（`/pc 详细` 看原始数据） |
+| `/watch` | 陪玩：隔一会儿看一眼屏幕说一句（`/watch 停` 结束，`/watch 状态` 看剩多久） |
 | `/digest [昨天\|周]` | 看那一天的流水摘要 |
 | `/export` | 把聊天和记忆导成一份 Markdown |
 | `/help` | 指令列表 |

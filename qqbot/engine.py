@@ -73,6 +73,7 @@ HELP_TEXT = (
     "/life 看她今天在干嘛（/life 换 重新生成）\n"
     "/screen 让她看一眼你的屏幕\n"
     "/pc 让她看看你电脑的状态（/pc 详细 看原始数据）\n"
+    "/watch 让她坐旁边看你打游戏（/watch 停 结束）\n"
     "/digest 看今天/昨天/这周留下了什么\n"
     "/export 把聊天和记忆导成一个文件\n"
     "/tag 名字 给刚存的表情包打标\n"
@@ -123,6 +124,11 @@ class Engine:
         self._last_draw_at = 0.0
         self._life_lock = threading.Lock()
         self._life_day = ""
+        # 陪玩：看她看他打游戏
+        self._watch_stop = threading.Event()
+        self._watch_thread: threading.Thread | None = None
+        self._watch_started = 0.0
+        self._watch_lines = 0
 
     # ---------------- 入口 ----------------
     def handle_payload(self, payload: Any) -> bool:
@@ -275,6 +281,9 @@ class Engine:
 
         if head == "/export":
             return self._export_command()
+
+        if head == "/watch":
+            return self._watch_command(rest, session)
 
         if head == "/screen":
             return self._screen_command(session)
@@ -884,6 +893,91 @@ class Engine:
             log.exception("评论电脑状态失败")
             return ""
         return (result.text or "").strip()
+
+    def _watch_command(self, rest: str, session: str) -> str:
+        """陪玩：隔一会儿看一眼屏幕，随口说一句。"""
+        if not self.settings.watch_enabled:
+            return "陪玩这块关着（WATCH_ENABLED=false）。"
+        action = rest.strip()
+        alive = self._watch_thread is not None and self._watch_thread.is_alive()
+        if action in ("停", "停吧", "不看了", "关", "结束"):
+            if not alive:
+                return "本来就没在看。"
+            self._watch_stop.set()
+            return "行，不看了。"
+        if action in ("状态", "?", "？"):
+            if not alive:
+                return "没在看。"
+            left = max(0, int(self.settings.watch_minutes * 60 - (time.time() - self._watch_started)))
+            return f"看着呢，还剩 {left // 60} 分钟，已经念叨 {self._watch_lines} 句了。"
+        if alive:
+            return "已经在看着了，专心打你的。"
+        self._watch_stop.clear()
+        self._watch_started = time.time()
+        self._watch_lines = 0
+        self._watch_thread = threading.Thread(
+            target=self._watch_loop, args=(int(session),), daemon=True
+        )
+        self._watch_thread.start()
+        return "好，我搬个小板凳坐你旁边了。"
+
+    def _watch_say(self, user_id: int, session: str, text: str) -> None:
+        with self._send_lock:
+            ok = self.sender.send_private(user_id, text)
+        self.store.save_message(session, "assistant", text, send_state="sent" if ok else "failed",
+                                origin="watch")
+
+    def _watch_tick(self, session: str, said: list[str], last_hash: str) -> tuple[str, str] | None:
+        """看一眼，说一句。画面跟上次差不多就不吭声。"""
+        path = pc_mod.screenshot(self.settings.screen_dir)
+        pc_mod.prune(self.settings.screen_dir, self.settings.screen_keep)
+        data = pc_mod.shrink(path)
+        digest = pc_mod.frame_hash(data)
+        if not pc_mod.changed(last_hash, digest):
+            return None
+        if not self.settings.vision_enabled:
+            return None
+        note = vision_mod.note_for(self.store, self.llm, data)
+        if not note:
+            return None
+        fact = (
+            f"你正坐在他旁边看他玩电脑游戏，屏幕上：{note}。"
+            "说一句你此刻的想法，像女朋友坐旁边随口说的：可以吐槽、可以心疼他、可以看热闹，"
+            "也可以突然讲一句你自己的事。20 字以内，别问问题，别说「看不懂」。"
+        )
+        if said:
+            fact += "你刚才已经说过：" + "；".join(said[-3:]) + "。换一句新的，别重复。"
+        line = self._react_to(fact, limit=22)
+        if not line:
+            return None
+        if line in said:
+            return None
+        return line, digest
+
+    def _watch_loop(self, user_id: int) -> None:
+        session = str(user_id)
+        said: list[str] = []
+        last_hash = ""
+        deadline = time.time() + self.settings.watch_minutes * 60
+        try:
+            while not self._watch_stop.is_set():
+                if time.time() >= deadline or self._watch_lines >= self.settings.watch_max_lines:
+                    break
+                try:
+                    result = self._watch_tick(session, said, last_hash)
+                except Exception:  # noqa: BLE001 - 看一眼失败不能让整个陪玩停下
+                    log.exception("陪玩看一眼失败")
+                    result = None
+                if result is not None:
+                    line, last_hash = result
+                    self._watch_lines += 1
+                    said.append(line)
+                    self._watch_say(user_id, session, line)
+                wait = self.settings.watch_interval_seconds * random.uniform(0.8, 1.25)
+                if self._watch_stop.wait(wait):
+                    break
+        finally:
+            log.info("陪玩结束：说了 %s 句", self._watch_lines)
 
     def _screen_command(self, session: str) -> str:
         """截一张屏：先发给他，再让她说一句。"""

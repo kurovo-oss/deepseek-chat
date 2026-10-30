@@ -178,3 +178,23 @@ def shrink(path: Path | str, max_side: int = 1000) -> bytes:
     except Exception:  # noqa: BLE001 - 缩图失败就发原图，别让命令挂掉
         log.exception("缩图失败，发原图")
         return raw
+
+
+def frame_hash(data: bytes, size: int = 16) -> str:
+    """把画面压成 256 位指纹，用来判断两帧像不像。"""
+    from io import BytesIO
+
+    from PIL import Image
+
+    with Image.open(BytesIO(data)) as img:
+        small = img.convert("L").resize((size, size))
+        pixels = list(small.getdata())
+    average = sum(pixels) / len(pixels)
+    return "".join("1" if value > average else "0" for value in pixels)
+
+
+def changed(before: str, after: str, threshold: int = 12) -> bool:
+    """两帧差多少位才算"画面变了"。默认 256 位里差 12 位以上。"""
+    if not before or not after or len(before) != len(after):
+        return True
+    return sum(1 for a, b in zip(before, after) if a != b) > threshold

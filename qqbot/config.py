@@ -194,6 +194,11 @@ class Settings:
     screen_enabled: bool = True
     screen_dir: Path = Path("data/screen")
     screen_keep: int = 20
+    # ---- 陪玩：她坐旁边看你打游戏 ----
+    watch_enabled: bool = True
+    watch_interval_seconds: int = 75
+    watch_minutes: int = 30
+    watch_max_lines: int = 20
     # ---- 长期记忆（M2）----
     memory_enabled: bool = True
     extract_enabled: bool = True
@@ -344,6 +349,10 @@ class Settings:
             screen_enabled=_bool(env, "SCREEN_ENABLED", True),
             screen_dir=base_dir / env.get("SCREEN_DIR", "data/screen").strip(),
             screen_keep=_int(env, "SCREEN_KEEP", 20, minimum=1),
+            watch_enabled=_bool(env, "WATCH_ENABLED", True),
+            watch_interval_seconds=_int(env, "WATCH_INTERVAL_SECONDS", 75, minimum=10),
+            watch_minutes=_int(env, "WATCH_MINUTES", 30, minimum=1),
+            watch_max_lines=_int(env, "WATCH_MAX_LINES", 20, minimum=1),
             memory_enabled=_bool(env, "MEMORY_ENABLED", True),
             extract_enabled=_bool(env, "EXTRACT_ENABLED", True),
             decay_half_life_days=half_life,
