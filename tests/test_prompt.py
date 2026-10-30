@@ -81,3 +81,13 @@ def test_extract_prompt_documents_all_kinds():
 
     for kind in KIND_ORDER:
         assert kind in text, f"extract.md 没有提到 kind={kind}"
+
+
+def test_prompt_teaches_feminine_register():
+    from pathlib import Path
+
+    text = Path("prompts/system.md").read_text(encoding="utf-8")
+
+    assert "女生的说法" in text
+    assert "骂你啥啦" in text
+    assert "句尾" in text

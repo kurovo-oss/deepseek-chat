@@ -51,9 +51,28 @@ ITEMS: tuple[tuple[str, str, str], ...] = (
     ("懂了但没完全懂", "懂了，但没完全懂", "半懂"),
     ("哈基米", "哈基米哈基米", "看到可爱的小东西（猫、小孩）"),
     ("建议报警", "建议报警", "夸张吐槽"),
+    ("好耶", "好耶！", "答应他、开心的时候"),
+    ("贴贴", "贴贴", "想亲近又不想说太直"),
+    ("抱抱", "抱抱", "他难受的时候"),
+    ("呜呜", "呜呜", "撒娇式地委屈"),
+    ("救命", "救命，这也太可爱了", "看到可爱的"),
+    ("我裂开", "我裂开了", "事情太离谱"),
+    ("笑不活了", "笑不活了", "笑到不行"),
+    ("好萌", "好萌啊", "看到小动物、小孩"),
+    ("emo", "有点emo", "情绪低的时候"),
+    ("碎了", "我心碎了", "夸张地失落"),
+    ("嗷", "嗷呜", "被人揉头的反应"),
 )
 
-FILLERS: tuple[str, ...] = ("就是说", "反正", "属于是", "不是", "啊对", "诶", "就", "行吧")
+FILLERS: tuple[str, ...] = ("就是说", "反正", "不是", "啊对", "诶", "就", "行吧")
+
+# 这些梗本身没错，但偏"男生互怼"，她一说就像哥们儿，直接排除
+MALE_CODED: frozenset[str] = frozenset(
+    {
+        "6", "典", "急了", "就这？", "建议报警", "泰裤辣", "上强度", "拿捏",
+        "属于是", "显眼包", "脆皮", "摸鱼", "偷感很重", "麻了",
+    }
+)
 
 # 已经过时、说出来像中年人的，明确禁掉
 BANNED: tuple[str, ...] = (
@@ -77,7 +96,7 @@ def pick(day: date | None = None, count: int = 10) -> list[tuple[str, str, str]]
     today = day or date.today()
     seed = today.year * 10000 + today.month * 100 + today.day
     rng = random.Random(seed)
-    items = list(ITEMS)
+    items = [item for item in ITEMS if item[0] not in MALE_CODED]
     rng.shuffle(items)
     return items[: max(1, min(count, len(items)))]
 
@@ -88,5 +107,6 @@ def block(day: date | None = None, count: int = 10) -> str:
     for word, example, when in pick(day, count):
         lines.append(f"- {word}：「{example}」——{when}")
     lines.append("插话用的词：" + "、".join(FILLERS) + "（自然带出来，不要每句都加）")
+    lines.append("句尾语气词：呀、啦、嘛、哦、诶、叭、哼——挑一个带上，别每句都带")
     lines.append("这些别说，过时了：" + "、".join(BANNED))
     return "\n".join(lines)

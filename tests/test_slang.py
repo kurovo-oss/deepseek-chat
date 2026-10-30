@@ -18,7 +18,8 @@ def test_pick_changes_between_days():
 
 def test_pick_respects_count_and_bounds():
     assert len(slang.pick(date(2026, 10, 30), count=3)) == 3
-    assert len(slang.pick(date(2026, 10, 30), count=999)) == len(slang.ITEMS)
+    usable = len(slang.ITEMS) - len(slang.MALE_CODED)
+    assert len(slang.pick(date(2026, 10, 30), count=999)) == usable
 
 
 def test_block_has_usage_rules():
@@ -39,3 +40,15 @@ def test_block_marks_banned_words_as_banned():
     body = text.split("这些别说", 1)[0]
     for word in slang.BANNED:
         assert word not in body
+
+
+def test_male_coded_words_are_not_recommended():
+    text = slang.block(date(2026, 10, 30))
+    body = text.split("这些别说", 1)[0]
+    for word in slang.MALE_CODED:
+        assert f"- {word}：" not in body
+
+
+def test_block_mentions_feminine_particles():
+    text = slang.block(date(2026, 10, 30))
+    assert "语气词" in text
