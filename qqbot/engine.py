@@ -190,7 +190,8 @@ class Engine:
         if message.images and self.settings.vision_enabled:
             note = self._describe_images(message)
             if note:
-                enriched = f"{text}\n{note}".strip() if text else note
+                hint = self._image_context_hint(session, record_id)
+                enriched = f"{text}\n{note}\n{hint}".strip() if text else f"{note}\n{hint}"
                 self.store.update_message_content(record_id, enriched)
 
         if self.mood is not None:
@@ -1143,6 +1144,24 @@ class Engine:
             log.info("画好一张图：%s", path.name)
         except Exception:  # noqa: BLE001 - 画图挂了不能影响聊天
             log.exception("画图异常")
+
+    def _image_context_hint(self, session: str, record_id: int) -> str:
+        """图片的说明后面跟一句上下文提示：图是接话的，不是让她描述画面。"""
+        rows = [
+            row for row in self.store.recent_messages(session, 6) if row.get("id") != record_id
+        ]
+        tail: list[str] = []
+        for row in rows:
+            content = (row.get("content") or "").strip().replace("\n", " ")
+            # 跳过图片本身的说明和占位符：把它们拼进上下文会变成自己引用自己
+            if not content or content.startswith("（他发来一张") or content.startswith("[表情]"):
+                continue
+            who = "他" if row["role"] == "user" else "你"
+            tail.append(f"{who}：{content[:50]}")
+        hint = "（他在接上文，别只描述画面，直接接话）"
+        if tail:
+            hint += "刚才：" + "；".join(tail[-2:])
+        return hint
 
     # ---------------- 看图 ----------------
     def _describe_images(self, message: IncomingMessage) -> str:

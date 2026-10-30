@@ -100,3 +100,12 @@ def test_prompt_teaches_pronoun_resolution():
 
     assert "他说\"这个\"\"那个\"" in text
     assert "这个\"功能\"就是刷抖音" in text
+
+
+def test_prompt_says_pictures_follow_context():
+    from pathlib import Path
+
+    text = Path("prompts/system.md").read_text(encoding="utf-8")
+
+    assert "他发图片或表情包，先接上一两句的话" in text
+    assert "别复述「图上有什么」" in text or "别复述" in text

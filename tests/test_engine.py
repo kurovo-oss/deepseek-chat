@@ -832,3 +832,25 @@ def test_meme_glossary_goes_into_prompt(tmp_path):
 
     assert "【他可能会用的网络用语】" in content
     assert "已老实=认输" in content
+
+
+def test_image_hint_carries_previous_context(tmp_path):
+    env = build_env(tmp_path)
+    env.store.save_message("100", "user", "今天被领导说了两句")
+    env.store.save_message("100", "assistant", "啊……\n说你啥了呀")
+    rid = env.store.save_message("100", "user", "[表情]")
+
+    hint = env.engine._image_context_hint("100", rid)
+
+    assert "说你啥了呀" in hint
+    assert "[表情]" not in hint
+
+
+def test_image_hint_skips_other_image_notes(tmp_path):
+    env = build_env(tmp_path)
+    env.store.save_message("100", "user", "（他发来一张表情包：一只猫在笑）")
+    rid = env.store.save_message("100", "user", "[表情]")
+
+    hint = env.engine._image_context_hint("100", rid)
+
+    assert "一只猫在笑" not in hint
