@@ -199,6 +199,8 @@ class Settings:
     watch_interval_seconds: int = 75
     watch_minutes: int = 30
     watch_max_lines: int = 20
+    # 随机改发送条数（合并/切分），让格式别太固定
+    reply_reshape: bool = True
     # ---- 长期记忆（M2）----
     memory_enabled: bool = True
     extract_enabled: bool = True
@@ -353,6 +355,7 @@ class Settings:
             watch_interval_seconds=_int(env, "WATCH_INTERVAL_SECONDS", 75, minimum=10),
             watch_minutes=_int(env, "WATCH_MINUTES", 30, minimum=1),
             watch_max_lines=_int(env, "WATCH_MAX_LINES", 20, minimum=1),
+            reply_reshape=_bool(env, "REPLY_RESHAPE", True),
             memory_enabled=_bool(env, "MEMORY_ENABLED", True),
             extract_enabled=_bool(env, "EXTRACT_ENABLED", True),
             decay_half_life_days=half_life,

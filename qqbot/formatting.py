@@ -170,7 +170,11 @@ def _cut_in_two(text: str, rng) -> tuple[str, str] | None:
             return None
         return text[:middle], text[middle:]
     cut = min(candidates, key=lambda i: abs(i - middle))
-    return text[: cut + 1], text[cut + 1 :]
+    head = text[: cut + 1].rstrip("，,、")
+    tail = text[cut + 1 :].lstrip("，,、")
+    if not head or not tail:
+        return None
+    return head, tail
 
 
 def reshape_bubbles(bubbles, rng, max_merge_chars: int = 180) -> list[str]:
@@ -185,7 +189,10 @@ def reshape_bubbles(bubbles, rng, max_merge_chars: int = 180) -> list[str]:
         return []
     roll = rng.random()
     if roll < 0.30 and len(items) > 1:
-        merged = "，".join(items)
+        merged = items[0]
+        for item in items[1:]:
+            # 上一条已经以标点收尾就别再加逗号，否则会出现"诶？，啥功能呀"
+            merged += item if merged[-1] in "，。！？…、~～,?!." else "，" + item
         if len(merged) <= max_merge_chars:
             return [merged]
     if roll < 0.50:

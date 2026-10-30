@@ -820,7 +820,11 @@ class Engine:
         parts = split_bubbles(
             cleaned, self.settings.reply_max_chars, self.settings.reply_max_bubbles
         )
-        if origin in ("chat", "proactive") and cleaned not in FALLBACK_REPLIES:
+        if (
+            origin in ("chat", "proactive")
+            and self.settings.reply_reshape
+            and cleaned not in FALLBACK_REPLIES
+        ):
             # 只对"她自己说的话"随机改条数：指令回复是结构化输出，兜底话术改了就认不出来
             parts = reshape_bubbles(parts, random)
         if not parts and image_path is None and not drawings:

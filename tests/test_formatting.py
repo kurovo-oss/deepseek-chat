@@ -147,12 +147,12 @@ def test_reshape_merges_bubbles_sometimes():
 def test_reshape_splits_a_long_bubble():
     from qqbot.formatting import reshape_bubbles
 
-    out = reshape_bubbles(
-        ["我今天出门忘带钥匙了，在楼下站了快半小时，最后还是房东来给我开的门"], FakeRng(0.3)
-    )
+    text = "我今天出门忘带钥匙了，在楼下站了快半小时，最后还是房东来给我开的门"
+    out = reshape_bubbles([text], FakeRng(0.3))
 
     assert len(out) == 2
-    assert out[0].endswith("，") or out[1].startswith("在")
+    assert text.startswith(out[0]) and text.endswith(out[1])
+    assert not out[0].endswith("，")  # 切开时不留半个逗号
 
 
 def test_reshape_usually_leaves_it_alone():
@@ -165,3 +165,11 @@ def test_reshape_handles_empty():
     from qqbot.formatting import reshape_bubbles
 
     assert reshape_bubbles([], FakeRng(0.1)) == []
+
+
+def test_merge_does_not_double_punctuate():
+    from qqbot.formatting import reshape_bubbles
+
+    out = reshape_bubbles(["诶？", "啥功能呀", "你说清楚点嘛"], FakeRng(0.1))
+
+    assert out == ["诶？啥功能呀，你说清楚点嘛"]

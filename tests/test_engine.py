@@ -81,6 +81,7 @@ def build_env(tmp_path, **overrides):
         life_enabled=False,
         slang_enabled=False,
         sticker_chance=0.0,
+        reply_reshape=False,
         life_dir=tmp_path / "life",
     )
     kwargs.update(overrides)
@@ -812,7 +813,7 @@ def test_watch_respects_switch(tmp_path):
 
 
 def test_merged_bubbles_send_as_one_message(tmp_path, monkeypatch):
-    env = build_env(tmp_path)
+    env = build_env(tmp_path, reply_reshape=True)
     env.llm.text = "骂你啥啦\n不是，他凭什么骂你呀"
     monkeypatch.setattr(engine_mod, "reshape_bubbles", lambda parts, rng: ["骂你啥啦，不是，他凭什么骂你呀"])
 
