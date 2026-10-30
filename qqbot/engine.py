@@ -20,6 +20,7 @@ from typing import Any
 from . import digest as digest_mod
 from . import draw as draw_mod
 from . import life as life_mod
+from . import pc as pc_mod
 from . import slang as slang_mod
 from . import vision as vision_mod
 from .config import Settings
@@ -70,6 +71,8 @@ HELP_TEXT = (
     "/dream 手动整理一次记忆\n"
     "/mood 看看我现在的心情\n"
     "/life 看她今天在干嘛（/life 换 重新生成）\n"
+    "/screen 让她看一眼你的屏幕\n"
+    "/pc 让她看看你电脑的状态（/pc 详细 看原始数据）\n"
     "/digest 看今天/昨天/这周留下了什么\n"
     "/export 把聊天和记忆导成一个文件\n"
     "/tag 名字 给刚存的表情包打标\n"
@@ -272,6 +275,12 @@ class Engine:
 
         if head == "/export":
             return self._export_command()
+
+        if head == "/screen":
+            return self._screen_command(session)
+
+        if head == "/pc":
+            return self._pc_command(rest)
 
         if head == "/life":
             return self._life_command(rest)
@@ -855,6 +864,71 @@ class Engine:
         for prompt in drawings[:1]:
             self._schedule_draw(user_id, session, prompt)
         return all_ok
+
+    def _react_to(self, fact: str, limit: int = 30) -> str:
+        """让"她"对一件系统事实说一句话。不是他说的，所以单独走一次模型。"""
+        messages = [
+            {"role": "system", "content": self.system_prompt},
+            {
+                "role": "user",
+                "content": (
+                    f"（系统提示，这不是他说的话：{fact}。"
+                    f"你就顺着这个说一句，口语，{limit} 字以内，"
+                    "别复述数字，别解释，别问他问题。）"
+                ),
+            },
+        ]
+        try:
+            result = self.llm.chat(messages, temperature=0.85, max_tokens=500)
+        except Exception:  # noqa: BLE001 - 她说不出来也别把命令搞挂
+            log.exception("评论电脑状态失败")
+            return ""
+        return (result.text or "").strip()
+
+    def _screen_command(self, session: str) -> str:
+        """截一张屏：先发给他，再让她说一句。"""
+        if not self.settings.screen_enabled:
+            return "看屏幕这块关着（SCREEN_ENABLED=false）。"
+        try:
+            path = pc_mod.screenshot(self.settings.screen_dir)
+        except Exception as exc:  # noqa: BLE001 - 截屏失败原因要原样告诉他
+            log.exception("截屏失败")
+            return f"截不了屏：{exc}"
+        pc_mod.prune(self.settings.screen_dir, self.settings.screen_keep)
+
+        comment = ""
+        if self.settings.vision_enabled:
+            try:
+                data = pc_mod.shrink(path)
+                note = vision_mod.note_for(self.store, self.llm, data)
+                if note:
+                    comment = self._react_to(f"你刚瞄了一眼他的电脑屏幕，上面是：{note}")
+            except Exception:  # noqa: BLE001 - 看图失败也要把图发出去
+                log.exception("看她截的屏失败")
+
+        try:
+            ok = self.sender.send_private_image(
+                int(session), path, self.settings.image_send_mode
+            )
+            if not ok:
+                log.warning("截图没发出去：%s", path)
+        except Exception:  # noqa: BLE001
+            log.exception("发截图失败")
+
+        return comment or "看到了。"
+
+    def _pc_command(self, rest: str) -> str:
+        """电脑状态：默认让她说一句，`/pc 详细` 给原始数据。"""
+        try:
+            data = pc_mod.status()
+        except Exception as exc:  # noqa: BLE001
+            log.exception("读电脑状态失败")
+            return f"看不到你的电脑：{exc}"
+        summary = pc_mod.describe(data)
+        if rest.strip() in ("详细", "数据", "全"):
+            return summary or "什么都没读到。"
+        comment = self._react_to(f"你刚看了一眼他的电脑状态：{summary}，他这会儿在电脑前")
+        return comment or summary or "看不到。"
 
     def _maybe_sticker(self, session: str) -> Path | None:
         """随手甩个表情包。概率很低，且刚发过图就不发。"""

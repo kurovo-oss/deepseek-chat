@@ -258,6 +258,16 @@ API 挂掉那阵它连着发了四次一模一样的话。
 - **取材说明**：本想抓公开梗列表，但这台机器的 DNS 把域名解析到 198.18.x.x（只放行模型 API），
   网页全抓不到，只拿到搜索标题；梗表是人工筛的，来源记在 `prompts/slang.md`。
 
+
+**2026-10-30 看电脑（/screen、/pc）**：用户问"她怎么访问我的电脑"，做了命令触发式的只读访问。
+
+- `qqbot/pc.py`：截图走 PowerShell + `System.Drawing.CopyFromScreen`（VirtualScreen，多屏一起），
+  状态走 `Get-CimInstance` + `GetForegroundWindow`（前台窗口标题）；缩图用 Pillow（156KB → 68KB JPEG）。
+- `/screen`：截图 → 发给他 → 让她看着说一句（`_react_to` 单独调用，不进历史）。
+- `/pc`：CPU/内存/C 盘/开机时长/电量/前台窗口/内存 top3，让她就着说一句；`/pc 详细` 回原始数据。
+- 边界写在 `docs/PC_ACCESS.md`：不自动截、不留超过 20 张、不做任意命令执行。
+- 实测这台机器：CPU 9%、内存 91%（15GB 剩 1GB）、C 盘剩 3.5GB —— C 盘确实快满了。
+
 ## 七、主动消息（M4）
 
 **做了什么**：她会先开口——两种情形。

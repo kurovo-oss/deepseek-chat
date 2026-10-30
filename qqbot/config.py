@@ -190,6 +190,10 @@ class Settings:
     slang_enabled: bool = True
     sticker_chance: float = 0.12
     sticker_tags: str = "happy,cute,hmm,thinking,sleepy,tired,ok"
+    # ---- 看电脑（只在命令触发时跑）----
+    screen_enabled: bool = True
+    screen_dir: Path = Path("data/screen")
+    screen_keep: int = 20
     # ---- 长期记忆（M2）----
     memory_enabled: bool = True
     extract_enabled: bool = True
@@ -337,6 +341,9 @@ class Settings:
             slang_enabled=_bool(env, "SLANG_ENABLED", True),
             sticker_chance=_float(env, "STICKER_CHANCE", 0.12),
             sticker_tags=env.get("STICKER_TAGS", "happy,cute,hmm,thinking,sleepy,tired,ok").strip(),
+            screen_enabled=_bool(env, "SCREEN_ENABLED", True),
+            screen_dir=base_dir / env.get("SCREEN_DIR", "data/screen").strip(),
+            screen_keep=_int(env, "SCREEN_KEEP", 20, minimum=1),
             memory_enabled=_bool(env, "MEMORY_ENABLED", True),
             extract_enabled=_bool(env, "EXTRACT_ENABLED", True),
             decay_half_life_days=half_life,

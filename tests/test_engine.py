@@ -691,3 +691,61 @@ def test_sticker_disabled_by_zero_chance(tmp_path):
     env.engine.handle_message(make_message("你好"))
 
     assert env.sender.images == []
+
+
+class FakePC:
+    def __init__(self, tmp_path):
+        self.folder = tmp_path / "screen"
+        self.folder.mkdir(parents=True, exist_ok=True)
+
+    def screenshot(self, dest):
+        path = Path(dest) / "shot.png"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 32)
+        return path
+
+    def prune(self, dest, keep=20):
+        return 0
+
+    def shrink(self, path, max_side=1000):
+        return PNG_BYTES
+
+    def status(self):
+        return {"cpu": 9, "mem_total_mb": 16384, "mem_free_mb": 1024, "window": "编辑器"}
+
+    def describe(self, data):
+        return "CPU 占用 9%"
+
+
+def test_screen_command_sends_a_picture(tmp_path, monkeypatch):
+    env = build_env(tmp_path)
+    monkeypatch.setattr(engine_mod, "pc_mod", FakePC(tmp_path))
+    monkeypatch.setattr(engine_mod.vision_mod, "note_for", lambda *a, **k: "屏幕上是一堆代码")
+
+    reply = env.engine._handle_command("/screen", "100")
+
+    assert reply
+    assert len(env.sender.images) == 1
+    assert env.sender.images[0][1].endswith("shot.png")
+
+
+def test_screen_command_respects_switch(tmp_path):
+    env = build_env(tmp_path, screen_enabled=False)
+
+    assert "关着" in env.engine._handle_command("/screen", "100")
+
+
+def test_pc_command_comments_on_state(tmp_path, monkeypatch):
+    env = build_env(tmp_path)
+    monkeypatch.setattr(engine_mod, "pc_mod", FakePC(tmp_path))
+
+    reply = env.engine._handle_command("/pc", "100")
+
+    assert reply
+
+
+def test_pc_command_detail_prints_raw(tmp_path, monkeypatch):
+    env = build_env(tmp_path)
+    monkeypatch.setattr(engine_mod, "pc_mod", FakePC(tmp_path))
+
+    assert "CPU 占用 9%" in env.engine._handle_command("/pc 详细", "100")
