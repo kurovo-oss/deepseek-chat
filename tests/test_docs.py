@@ -70,3 +70,12 @@ def test_mvp_memory_section_points_to_new_design():
 
 def test_persona_doc_exists():
     assert (ROOT / "docs" / "persona" / "dafeiyu.md").exists()
+
+
+def test_license_is_mit_and_linked_from_readme():
+    """仓库公开后别人得知道能不能用：LICENSE 在、是 MIT、README 指得到。"""
+    assert (ROOT / "LICENSE").exists()
+    license_text = read("LICENSE")
+    assert "MIT License" in license_text
+    assert "Copyright (c) 2026" in license_text
+    assert "LICENSE" in read("README.md")
