@@ -34,11 +34,14 @@ STYLE_SUFFIX = (
 # 鲸鱼娘（DeepSeek 社区角色，"吃白饭的蓝色大肥鱼"）的固定外观。
 # 她画自己的时候必须带上这一串，否则每次长得都不一样。
 CHARACTER = (
-    "an anime whale-themed mascot character with long wavy hair graded from deep navy"
-    " at the roots to bright cyan at the tips, one curved ahoge, big deep-blue eyes,"
-    " white feathery fin-like ears instead of human ears,"
-    " a plain white long-sleeved bodysuit,"
-    " and a thick blue whale tail with a white underside and a light-blue split fin"
+    "an anime whale-themed mascot character with 2.5-head chibi proportions,"
+    " long wavy hair graded from deep navy at the roots to bright cyan at the tips,"
+    " straight bangs with long side locks, one big curved ahoge,"
+    " large bright-blue anime eyes with watery highlights,"
+    " navy whale-fin ears with a tiny bow at the base,"
+    " wearing a navy maid dress with a white lace apron printed with a small whale,"
+    " a navy bow tie at the collar, a white frilled headband,"
+    " and a thick navy-to-cyan whale tail ending in a split fin"
 )
 
 PROMPT_SYSTEM = (
@@ -75,6 +78,22 @@ def soften(prompt: str) -> str:
     for word, replacement in SOFTEN_MAP.items():
         text = re.sub(rf"\b{re.escape(word)}\b", replacement, text, flags=re.IGNORECASE)
     return " ".join(text.split())
+
+
+# 国内接口（智谱等）中文提示词明显更准：直接用中文写，不要再翻成英文
+CHARACTER_ZH = (
+    "Q版蓝鲸娘：深蓝色到浅蓝色渐变的长卷发，齐刘海，头顶一根弯弯的呆毛，亮蓝色大眼睛，"
+    "蓝色的鳍状耳朵且耳根系小蝴蝶结，穿深蓝色女仆裙配白色蕾丝围裙（围裙上绣一只小鲸鱼），"
+    "身后一条粗壮的蓝鲸尾巴、尾鳍分叉"
+)
+MAX_PROMPT_CHARS_ZH = 400
+
+SELF_HINTS = ("我", "自己", "鲸鱼娘", "大肥鱼")
+
+
+def is_self_portrait(text: str) -> bool:
+    """这句话是不是在画她自己。她写"我"基本就是指自己。"""
+    return any(hint in (text or "") for hint in SELF_HINTS)
 
 
 def translate(llm: LLMClient, text: str) -> str:
@@ -168,14 +187,34 @@ def _openai_compatible(prompt: str, size: int, timeout: float, settings) -> byte
         return response.read()
 
 
-def generate(settings, llm: LLMClient | None, text: str) -> bytes | None:
-    """她写的中文 → 一张图（bytes）。任何一步失败都返回 None，不抛异常。"""
+def build_prompt(settings, llm: LLMClient | None, text: str) -> str:
+    """把她的中文描述变成真正发出去的提示词。
+
+    国内接口吃中文：直接拼中文设定，省一次翻译、也更贴合；免费 flux 吃英文。
+    """
+    text = (text or "").strip()
+    if settings.draw_provider == "openai":
+        parts = [text]
+        if is_self_portrait(text):
+            parts.append(CHARACTER_ZH)
+            parts.append("全身，尾巴露出画面")
+        parts.append("干净背景，不要文字，不要水印")
+        return "。".join(part for part in parts if part)[:MAX_PROMPT_CHARS_ZH]
+
     prompt = translate(llm, text) if llm is not None else text
     prompt = " ".join((prompt or "").split())
-    if not prompt:
-        return None
+    if is_self_portrait(text) and CHARACTER[:30] not in prompt:
+        prompt += ", full body shot with her whale tail visible, " + CHARACTER
     if "no watermark" not in prompt.lower():
         prompt += STYLE_SUFFIX
+    return prompt
+
+
+def generate(settings, llm: LLMClient | None, text: str) -> bytes | None:
+    """她写的中文 → 一张图（bytes）。任何一步失败都返回 None，不抛异常。"""
+    prompt = build_prompt(settings, llm, text)
+    if not prompt:
+        return None
 
     # 自己的 key 挂了还能退回免费版：有图总比没有强
     providers = [settings.draw_provider]

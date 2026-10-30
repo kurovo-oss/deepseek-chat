@@ -239,3 +239,23 @@ def test_content_filter_retries_with_softened_prompt(monkeypatch):
     assert len(prompts) == 2
     assert "chibi" in prompts[0].lower()
     assert "chibi" not in prompts[1].lower()
+
+def test_build_prompt_uses_chinese_for_domestic_provider():
+    class Settings:
+        draw_provider = "openai"
+
+    self_prompt = draw_mod.build_prompt(Settings(), None, "我坐在窗台上")
+    other_prompt = draw_mod.build_prompt(Settings(), None, "一只趴在窗台上的猫")
+
+    assert draw_mod.CHARACTER_ZH in self_prompt
+    assert draw_mod.CHARACTER_ZH not in other_prompt
+    assert "干净背景" in other_prompt
+
+
+def test_build_prompt_keeps_english_for_free_provider():
+    class Settings:
+        draw_provider = "pollinations"
+
+    prompt = draw_mod.build_prompt(Settings(), None, "我坐在窗台上")
+    assert "no watermark" in prompt
+    assert draw_mod.CHARACTER[:30] in prompt
