@@ -822,3 +822,13 @@ def test_abilities_go_into_prompt(tmp_path):
 
     assert "【你会的】" in messages[0]["content"]
     assert "刷抖音" in messages[0]["content"]
+
+
+def test_meme_glossary_goes_into_prompt(tmp_path):
+    env = build_env(tmp_path)
+    env.store.save_message("100", "user", "在吗")
+
+    content = env.engine._build_messages("100")[0]["content"]
+
+    assert "【他可能会用的网络用语】" in content
+    assert "已老实=认输" in content

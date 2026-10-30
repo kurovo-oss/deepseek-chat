@@ -21,6 +21,7 @@ from . import digest as digest_mod
 from . import draw as draw_mod
 from . import abilities as abilities_mod
 from . import life as life_mod
+from . import memes as memes_mod
 from . import pc as pc_mod
 from . import vision as vision_mod
 from .config import Settings
@@ -734,6 +735,9 @@ class Engine:
         # 她会什么、不会什么——他问"你有没有这个功能"时，她得有事实可依
         system = f"{system}\n\n{abilities_mod.block()}"
 
+        # 网络用语只给意思，不给"怎么用"：听得懂，但自己不说
+        system = f"{system}\n\n{memes_mod.block()}"
+
         if self.mood is not None:
             state = self.mood.describe()
             if state:
@@ -1203,11 +1207,9 @@ class Engine:
         只补文本、不补图片：历史行里只存了文件名，拼路径容易发错图，
         宁可少一张图，也不能把别人的图发出去。
         """
-        parts = reshape_bubbles(
-            split_bubbles(
-                text, self.settings.reply_max_chars, self.settings.reply_max_bubbles
-            ),
-            random,
+        # 补发不参与随机并条/切分：存下来是什么样就补什么样，不然条数对不上
+        parts = split_bubbles(
+            text, self.settings.reply_max_chars, self.settings.reply_max_bubbles
         ) or [text]
         with self._send_lock:
             for index, part in enumerate(parts):
