@@ -47,7 +47,7 @@ def test_pairs_teach_that_silence_is_allowed():
 def test_pairs_include_her_own_day():
     joined = "".join(answered for _, answered in samples.SAMPLES[: samples.DEFAULT_PAIRS])
 
-    assert "画到一半" in joined  # 她会主动说自己手上的事
+    assert "拼到一半" in joined  # 她会主动说自己手上的事
 
 
 def test_pairs_keep_her_close_to_him():
@@ -56,3 +56,10 @@ def test_pairs_keep_her_close_to_him():
     answers = [answered for _, answered in frontline]
 
     assert any("不忙" in item or "我刚好在想你" in item for item in answers)
+
+
+def test_samples_do_not_mention_drawing():
+    """画画只能是"他让她画"时的事，不能是她的日常人设。"""
+    joined = "".join(asked + answered for asked, answered in samples.SAMPLES)
+
+    assert "画画" not in joined

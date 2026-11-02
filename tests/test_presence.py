@@ -49,10 +49,11 @@ def test_expired_state_is_regenerated(tmp_path):
     assert later["until"] > first["until"]
 
 
-def test_drawing_is_not_the_whole_life():
-    """她自己有日子过，画画只是其中一件——别把角色写成一个只会画画的人。"""
+def test_drawing_is_not_a_daily_activity():
+    """他被"天天画画"烦过一次了：这条线里彻底不要画画。"""
+    names = [name for name, _ in presence.ACTIVITIES]
     weights = dict(presence.ACTIVITIES)
 
-    assert weights["在画画"] <= 0.15
+    assert not any("画" in name for name in names)
     assert len(weights) >= 8
     assert abs(sum(weights.values()) - 1.0) < 0.001
