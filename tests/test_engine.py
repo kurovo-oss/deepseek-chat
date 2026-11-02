@@ -36,9 +36,13 @@ class FakeSender:
         self.images = []
         self.events = []
         self.quoted = ""  # get_message 的返回值，引用回复测试用
+        self.quoted_images = ()
 
     def get_message(self, message_id):
         return self.quoted
+
+    def get_message_detail(self, message_id):
+        return {"text": self.quoted, "images": self.quoted_images}
 
     def send_private(self, user_id, text):
         self.sent.append((user_id, text))
@@ -1198,3 +1202,78 @@ def test_ratio_tightens_the_budget(tmp_path, monkeypatch):
 
     # 实际是估算的两倍，预算就得按两倍收紧：内容只会更短
     assert len(tight) <= len(loose)
+
+
+# ------------------------------------------------ 备用通道
+def test_switches_to_the_backup_channel(tmp_path, monkeypatch):
+    from qqbot import engine as engine_mod
+    from qqbot.llm import ChatResult, LLMError
+
+    class Backup:
+        def __init__(self, **kwargs):
+            self.model = kwargs.get("model")
+
+        def chat(self, messages, temperature=0.8, max_tokens=800):
+            return ChatResult("备用说的话。", 10, 5, self.model or "backup")
+
+    monkeypatch.setattr(engine_mod, "LLMClient", Backup)
+    env = build_env(tmp_path, fallback_model_id="backup-model")
+    env.llm.error = LLMError("主通道挂了")
+
+    env.engine.handle_message(make_message("在吗", mid="f1"))
+
+    assert env.sender.sent
+    assert "备用说的话" in "".join(text for _, text in env.sender.sent)
+
+
+def test_both_channels_down_says_something_human(tmp_path, monkeypatch):
+    from qqbot import engine as engine_mod
+    from qqbot.llm import LLMError
+
+    class Backup:
+        def __init__(self, **kwargs):
+            pass
+
+        def chat(self, messages, temperature=0.8, max_tokens=800):
+            raise LLMError("备用也挂了")
+
+    monkeypatch.setattr(engine_mod, "LLMClient", Backup)
+    env = build_env(tmp_path, fallback_model_id="backup-model")
+    env.llm.error = LLMError("主通道挂了")
+
+    env.engine.handle_message(make_message("在吗", mid="f2"))
+
+    text = "".join(item for _, item in env.sender.sent)
+    assert text in engine_mod.FALLBACK_REPLIES
+
+
+def test_no_backup_configured_uses_fallback_line(tmp_path):
+    from qqbot import engine as engine_mod
+    from qqbot.llm import LLMError
+
+    env = build_env(tmp_path)
+    env.llm.error = LLMError("主通道挂了")
+
+    env.engine.handle_message(make_message("在吗", mid="f3"))
+
+    text = "".join(item for _, item in env.sender.sent)
+    assert text in engine_mod.FALLBACK_REPLIES
+
+
+def test_quoted_image_is_described(tmp_path, monkeypatch):
+    """他引用一张图问"这个呢"——她得看得见那张图。"""
+    from qqbot.onebot import IncomingImage
+
+    env = build_env(tmp_path, vision_enabled=True, quote_enabled=True)
+    env.sender.quoted = "看这个"
+    env.sender.quoted_images = (IncomingImage(url="http://x/a.jpg", sub_type=0),)
+    monkeypatch.setattr(env.engine, "_describe_images", lambda message: "一只白猫趴在窗台上")
+    message = IncomingMessage(
+        user_id=100, message_id="qi1", text="这个可爱吗", raw={}, reply_id="42"
+    )
+
+    env.engine.handle_message(message)
+
+    content = env.store.recent_messages("100", 2)[0]["content"]
+    assert "看这个" in content
+    assert "一只白猫" in content

@@ -19,6 +19,7 @@ from . import samples as samples_mod
 from . import talkstate as talkstate_mod
 from . import usage as usage_mod
 from .formatting import fix_address
+from .onebot import IncomingMessage
 from .sayings import RECALL_TITLE
 
 log = logging.getLogger("qqbot")
@@ -176,18 +177,37 @@ class ContextMixin:
         return "\n".join(lines)
 
     def _quoted_text(self, message_id: str) -> str:
-        """取被引用那条消息的文本。取不到就当没引用，别让整条回复失败。"""
+        """取被引用那条消息的文本（有图就顺手看一眼）。取不到就当没引用。"""
         if not self.settings.quote_enabled or not message_id:
             return ""
         getter = getattr(self.sender, "get_message", None)
         if getter is None:
             return ""
+        text = ""
+        detail: dict = {}
         try:
-            text = getter(str(message_id)) or ""
+            text = str(getter(str(message_id)) or "")
+            if self.settings.vision_enabled:
+                richer = getattr(self.sender, "get_message_detail", None)
+                detail = richer(str(message_id)) if richer is not None else {}
         except Exception:  # noqa: BLE001 - 引用是加分项，失败不影响对话
             log.exception("取引用消息失败：%s", message_id)
             return ""
-        return talkstate_mod.phrase(str(text), limit=60)
+        note = ""
+        images = (detail or {}).get("images") or ()
+        if images:
+            # 引用的图只看一张：看多了又慢又贵，他多半也只在指那一张
+            quoted = IncomingMessage(
+                user_id=0, message_id=str(message_id), text="", raw={}, images=tuple(images[:1])
+            )
+            try:
+                note = self._describe_images(quoted)
+            except Exception:  # noqa: BLE001 - 看图失败就当没图
+                log.exception("看引用的图失败")
+        text = talkstate_mod.phrase(str(text), limit=60)
+        if note:
+            return f"{text}（图：{note}）" if text else f"（图：{note}）"
+        return text
 
     def _image_context_hint(self, session: str, record_id: int) -> str:
         """图片的说明后面跟一句上下文提示：图是接话的，不是让她描述画面。"""

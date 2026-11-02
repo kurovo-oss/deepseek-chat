@@ -202,6 +202,10 @@ class Settings:
     reply_reshape: bool = True
     # 引用回复：把他引用的那句取出来喂进上下文
     quote_enabled: bool = True
+    # 备用模型通道：主通道连不上时切过去，都没戏才说兜底话术
+    fallback_model_id: str = ""
+    fallback_base_url: str = ""
+    fallback_api_key: str = ""
     # 前情摘要：窗口外的旧话压成两三句留着
     recap_enabled: bool = False
     # 开场样品组数（0 = 不要）
@@ -375,6 +379,9 @@ class Settings:
             watch_max_lines=_int(env, "WATCH_MAX_LINES", 20, minimum=1),
             reply_reshape=_bool(env, "REPLY_RESHAPE", True),
             quote_enabled=_bool(env, "QUOTE_ENABLED", True),
+            fallback_model_id=env.get("FALLBACK_MODEL_ID", ""),
+            fallback_base_url=env.get("FALLBACK_BASE_URL", ""),
+            fallback_api_key=env.get("FALLBACK_API_KEY", ""),
             recap_enabled=_bool(env, "RECAP_ENABLED", True),
             sample_pairs=_int(env, "SAMPLE_PAIRS", 8, minimum=0),
             context_token_budget=_int(env, "CONTEXT_TOKEN_BUDGET", 9000, minimum=1500),

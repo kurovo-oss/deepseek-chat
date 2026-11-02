@@ -136,3 +136,30 @@ def test_quote_only_message_is_parsed():
     assert incoming is not None
     assert incoming.reply_id == "777"
     assert incoming.text == ""
+
+
+def test_get_message_detail_returns_images(monkeypatch):
+    sender = HttpSender("http://127.0.0.1:3001")
+    payload = {
+        "data": {
+            "message": [
+                {"type": "text", "data": {"text": "看这个"}},
+                {"type": "image", "data": {"file": "a.jpg", "url": "http://x/a.jpg"}},
+            ]
+        }
+    }
+    monkeypatch.setattr(sender, "_request", lambda action, body: (True, payload))
+
+    detail = sender.get_message_detail("1")
+
+    assert detail["text"] == "看这个"
+    assert len(detail["images"]) == 1
+    assert detail["images"][0].url.endswith("a.jpg")
+
+
+def test_get_message_returns_text_only(monkeypatch):
+    sender = HttpSender("http://127.0.0.1:3001")
+    payload = {"data": {"message": [{"type": "text", "data": {"text": "嗯"}}]}}
+    monkeypatch.setattr(sender, "_request", lambda action, body: (True, payload))
+
+    assert sender.get_message("1") == "嗯"

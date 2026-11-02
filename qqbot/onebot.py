@@ -48,6 +48,8 @@ class Sender(Protocol):
 
     def get_message(self, message_id: str) -> str: ...
 
+    def get_message_detail(self, message_id: str) -> dict[str, Any]: ...
+
 
 def extract_text(message: Any) -> str:
     """从 OneBot 消息段中取出文本。"""
@@ -155,15 +157,19 @@ class HttpSender:
             cq = f"[CQ:image,file={Path(image).as_uri()}]"
         return self._call("send_private_msg", {"user_id": user_id, "message": cq})
 
-    def get_message(self, message_id: str) -> str:
-        """取一条历史消息的文本（引用回复要用）。取不到返回空串。"""
+    def get_message_detail(self, message_id: str) -> dict[str, Any]:
+        """取一条历史消息的文本和图片（引用回复要用）。取不到返回空。"""
         ok, data = self._request("get_msg", {"message_id": message_id})
         if not ok:
-            return ""
+            return {"text": "", "images": ()}
         message = data.get("data")
         if isinstance(message, dict):
             message = message.get("message")
-        return extract_text(message).strip()
+        return {"text": extract_text(message).strip(), "images": extract_images(message)}
+
+    def get_message(self, message_id: str) -> str:
+        """只要文本的老接口：引用内容里没图时够用了。"""
+        return str(self.get_message_detail(message_id).get("text") or "")
 
     def login_info(self) -> dict[str, Any] | None:
         """调 get_login_info，确认协议端在线且已登录。不可达返回 None。"""

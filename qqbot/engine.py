@@ -43,7 +43,7 @@ from .formatting import (
     strip_markdown,
 )
 from .images import sniff_image
-from .llm import LLMError
+from .llm import LLMClient, LLMError
 from .memory import KIND_LABEL, card_weight
 from .onebot import IncomingMessage, Sender, parse_event
 from .store import Store
@@ -111,6 +111,7 @@ class Engine(ContextMixin, CommandsMixin):
         self._pending_sessions: set[str] = set()
         self._replying: set[str] = set()
         self._catchup_lock = threading.Lock()
+        self._fallback_llm: LLMClient | None = None
 
     # ---------------- 入口 ----------------
     def handle_payload(self, payload: Any) -> bool:
@@ -388,13 +389,44 @@ class Engine(ContextMixin, CommandsMixin):
         return self._rng.random() >= self.settings.busy_skip_chance
 
 
+    def _fallback_client(self) -> LLMClient | None:
+        """备用通道。没配模型就不建，省得白占内存。"""
+        if not self.settings.fallback_model_id:
+            return None
+        if self._fallback_llm is None:
+            self._fallback_llm = LLMClient(
+                base_url=self.settings.fallback_base_url or self.settings.model_base_url,
+                api_key=self.settings.fallback_api_key or self.settings.model_api_key,
+                model=self.settings.fallback_model_id,
+                timeout=self.settings.request_timeout,
+                retries=1,
+                sleep=self._sleep,
+            )
+        return self._fallback_llm
+
+    def _complete(self, messages: list[dict]):
+        """主通道 → 备用通道 → None。None 表示"这轮真的说不了话"。"""
+        try:
+            return self.llm.chat(messages)
+        except LLMError as exc:
+            log.warning("主通道失败：%s", exc)
+        backup = self._fallback_client()
+        if backup is None:
+            self.store.log_usage(self.settings.model_id, 0, 0, "chat", ok=False)
+            return None
+        try:
+            result = backup.chat(messages)
+        except LLMError as exc:
+            log.warning("备用通道也失败：%s", exc)
+            self.store.log_usage(self.settings.model_id, 0, 0, "chat", ok=False)
+            return None
+        log.info("切到备用通道：%s", result.model)
+        return result
+
     def _chat(self, session: str) -> str:
         messages = self._build_messages(session)
-        try:
-            result = self.llm.chat(messages)
-        except LLMError as exc:
-            log.warning("对话失败，改用兜底话术：%s", exc)
-            self.store.log_usage(self.settings.model_id, 0, 0, "chat", ok=False)
+        result = self._complete(messages)
+        if result is None:
             return fallback_reply()
         self.store.log_usage(result.model, result.tokens_in, result.tokens_out, "chat", True)
         # 顺手校准：估了多少、接口报了多少，攒样本给预算用
