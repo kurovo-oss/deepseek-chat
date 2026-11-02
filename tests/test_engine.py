@@ -1167,3 +1167,34 @@ def test_empty_summary_does_not_advance_the_marker(tmp_path):
     env.engine.catchup_tick()
 
     assert recap_mod.get(env.settings, "100").upto_id == 0
+
+
+# ------------------------------------------------ token 校准
+def test_chat_records_a_token_sample(tmp_path, monkeypatch):
+    from qqbot import usage as usage_mod
+
+    seen = []
+    monkeypatch.setattr(
+        usage_mod, "record", lambda settings, est, actual: seen.append((est, actual)) or 1.0
+    )
+    env = build_env(tmp_path)
+    env.engine.handle_message(make_message("在吗", mid="t1"))
+
+    assert seen, "一次对话之后应该记一个校准样本"
+    estimated, actual = seen[0]
+    assert estimated > 0 and actual > 0
+
+
+def test_ratio_tightens_the_budget(tmp_path, monkeypatch):
+    from qqbot import usage as usage_mod
+
+    env = build_env(tmp_path, context_token_budget=1000)
+    for index in range(6):
+        env.store.save_message("100", "user", f"第{index}句话")
+    loose = env.engine._build_messages("100")[0]["content"]
+
+    monkeypatch.setattr(usage_mod, "ratio", lambda settings: 2.0)
+    tight = env.engine._build_messages("100")[0]["content"]
+
+    # 实际是估算的两倍，预算就得按两倍收紧：内容只会更短
+    assert len(tight) <= len(loose)

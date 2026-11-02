@@ -18,6 +18,7 @@ from . import life as life_mod
 from .export import export_all
 from .memory import KIND_LABEL, card_weight
 from .sayings import HELP_TEXT
+from . import usage as usage_mod
 
 log = logging.getLogger("qqbot")
 
@@ -42,7 +43,8 @@ class CommandsMixin:
                 f"模型：{self.settings.model_id}\n"
                 f"消息：{self.store.count_messages(session)} 条\n"
                 f"卡片：{self.store.count_cards()} 张\n"
-                f"tokens：{tokens_in} in / {tokens_out} out"
+                f"tokens：{tokens_in} in / {tokens_out} out\n"
+                f"上下文：{usage_mod.describe(self.settings)}（预算 {self.settings.context_token_budget}）"
             )
 
         if head == "/memory":

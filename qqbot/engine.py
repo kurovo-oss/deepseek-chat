@@ -26,6 +26,7 @@ from . import memes as memes_mod
 from . import presence as presence_mod
 from . import recap as recap_mod
 from . import talkstate as talkstate_mod
+from . import usage as usage_mod
 from . import pc as pc_mod
 from . import vision as vision_mod
 from .commands import CommandsMixin
@@ -396,6 +397,11 @@ class Engine(ContextMixin, CommandsMixin):
             self.store.log_usage(self.settings.model_id, 0, 0, "chat", ok=False)
             return fallback_reply()
         self.store.log_usage(result.model, result.tokens_in, result.tokens_out, "chat", True)
+        # 顺手校准：估了多少、接口报了多少，攒样本给预算用
+        estimated = sum(
+            budget_mod.estimate_tokens(str(item.get("content") or "")) for item in messages
+        )
+        usage_mod.record(self.settings, estimated, result.tokens_in)
         if not result.text:
             log.warning("模型返回空内容，改用兜底话术")
             return fallback_reply()

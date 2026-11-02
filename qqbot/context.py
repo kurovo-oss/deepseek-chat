@@ -17,6 +17,7 @@ from . import presence as presence_mod
 from . import recap as recap_mod
 from . import samples as samples_mod
 from . import talkstate as talkstate_mod
+from . import usage as usage_mod
 from .formatting import fix_address
 from .sayings import RECALL_TITLE
 
@@ -106,7 +107,10 @@ class ContextMixin:
             if talk_note:
                 sections.append(budget_mod.Section("对话状态", talk_note, priority=90, quota=220))
 
-        fitted = budget_mod.fit(sections, self.settings.context_token_budget)
+        # 估算有偏差时按真实比例收紧预算：估 1000 实际 1300，那预算也得按 1300 算
+        ratio = usage_mod.ratio(self.settings)
+        token_budget = int(self.settings.context_token_budget / ratio)
+        fitted = budget_mod.fit(sections, token_budget)
         if fitted.trimmed or fitted.dropped:
             log.info(
                 "上下文压缩：%d tokens；压缩 %s；丢弃 %s",
@@ -117,7 +121,7 @@ class ContextMixin:
         system = fitted.text
 
         # 历史也按 token 算：system 占完剩下的才是它的
-        cap = budget_mod.history_budget(self.settings.context_token_budget, fitted.tokens)
+        cap = budget_mod.history_budget(token_budget, fitted.tokens)
 
         # 开场样品排在历史前面，占的也是历史的额度；额度不够就整段不要
         samples = samples_mod.messages(self.settings.sample_pairs)
