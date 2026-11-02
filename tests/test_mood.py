@@ -105,7 +105,8 @@ def test_note_talk_cools_miss_and_warms(mood):
     values = mood.note_talk(at(12) + 60)
 
     assert values["miss"] == pytest.approx(0.15)
-    assert values["warmth"] == pytest.approx(0.38, abs=0.01)
+    # 涨得越接近顶越慢：0.3 往上一次只涨 0.08*(1-0.3)
+    assert values["warmth"] == pytest.approx(0.356, abs=0.01)
 
 
 def test_snapshot_is_stable_without_events(mood):
@@ -266,3 +267,18 @@ def test_tired_hint_stops_the_caretaking(mood):
     text = mood.describe(at(12))
 
     assert "不想照顾谁" in text
+
+
+def test_warmth_does_not_saturate(mood):
+    """亲近值不能聊一天就焊死在 1.00，不然"心情好"成了永久状态。"""
+    for index in range(60):
+        mood.note_talk(at(12) + index * 60)
+
+    assert mood.snapshot(at(12) + 60 * 60)["warmth"] <= 0.92
+    assert mood.snapshot(at(12) + 60 * 60)["warmth"] > 0.5
+
+
+def test_stored_warmth_is_capped_on_read(mood):
+    mood.save({"miss": 0.2, "warmth": 1.0, "tired": 0.2}, at(12))
+
+    assert mood.snapshot(at(12))["warmth"] <= 0.92

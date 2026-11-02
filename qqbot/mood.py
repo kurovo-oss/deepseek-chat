@@ -165,6 +165,8 @@ class Mood:
             current, updated = stored.get(name, (want[name], stamp))
             elapsed = max(0, stamp - updated)
             values[name] = drift(current, want[name], HALF_LIFE[name], elapsed)
+        # 上限也管读：库里存着旧的 0.99，不夹一下要几小时才降下来
+        values["warmth"] = min(values["warmth"], 0.92)
         return values
 
     def save(self, values: dict[str, float], now: int | None = None) -> None:
@@ -178,7 +180,11 @@ class Mood:
         stamp = int(now if now is not None else self._clock())
         values = self.snapshot(stamp)
         values["miss"] = min(values["miss"], 0.15)
-        values["warmth"] = _clamp01(values["warmth"] + 0.08)
+        # 涨得越接近顶越慢：不加这个，聊一整天就顶死在 1.00，
+        # "心情好"变成常态、情绪就没有起伏了（真机日志里亲近一直是 0.99）
+        values["warmth"] = min(
+            0.92, _clamp01(values["warmth"] + 0.08 * (1.0 - values["warmth"]))
+        )
         self.save(values, stamp)
         return values
 
