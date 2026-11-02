@@ -593,3 +593,35 @@ def test_short_silence_still_blocks_when_calm(tmp_path):
 
     assert kind is None
     assert "静默" in reason
+
+
+def test_proactive_prompt_carries_her_mood(tmp_path):
+    """主动开口的语气要跟着情绪走，不只是闸门不同。"""
+    env = build(tmp_path)
+    attach_mood(env, miss=0.9)
+
+    messages = env.scheduler.build_messages("followup", ts(10, 28, 14))
+
+    joined = "".join(str(item.get("content") or "") for item in messages)
+    assert "# 此刻的你" in joined  # 背景里的情绪段
+    assert "很想他" in joined  # 贴在指令后面那句
+
+
+def test_proactive_prompt_is_plain_when_she_is_calm(tmp_path):
+    env = build(tmp_path)
+    attach_mood(env)
+
+    messages = env.scheduler.build_messages("followup", ts(10, 28, 14))
+    instruction = str(messages[-1]["content"])
+
+    assert "很想他" not in instruction
+    assert "很累" not in instruction
+
+
+def test_tired_promise_still_gets_a_low_key_tone(tmp_path):
+    env = build(tmp_path)
+    attach_mood(env, tired=0.9)
+
+    messages = env.scheduler.build_messages("scheduled", ts(10, 28, 14), event="面试")
+
+    assert "很累" in str(messages[-1]["content"])

@@ -164,8 +164,28 @@ class ProactiveScheduler:
                 "{time}", stamp
             )
 
+        mood_hint = self._mood_hint(now)
+        if mood_hint:
+            # 系统提示里已经有一段"此刻的你"，但那是背景；这句贴在指令后面，
+            # 直接决定她开口的语气
+            instruction = instruction + "\n" + mood_hint
+
         messages.append({"role": "system", "content": instruction})
         return messages
+
+    def _mood_hint(self, now: int) -> str:
+        """主动开口时的语气提示：她现在是什么心情，就怎么开这个头。"""
+        mood = getattr(self.engine, "mood", None)
+        if mood is None:
+            return ""
+        values = mood.snapshot(now)
+        if values["tired"] >= TIRED_LIMIT:
+            return "你这会儿很累，别撑着说漂亮话。一句话就够，说完就算。"
+        if values["miss"] >= MISS_LIMIT:
+            return "你很想他。可以直说想他了，别绕弯子。"
+        if values["warmth"] >= 0.6:
+            return "你现在心情不错，说话可以松快点。"
+        return ""
 
     def compose(self, kind: str, now: int, event: str = "") -> str | None:
         try:

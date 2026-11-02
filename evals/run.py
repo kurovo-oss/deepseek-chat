@@ -49,7 +49,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--compare", default="", help="和旧的 JSON 结果对比")
     parser.add_argument("--strict", action="store_true", help="有失败就返回非零退出码")
     parser.add_argument(
-        "--repeat", type=int, default=2, help="每个场景最多试几次（模型有随机性，默认 2）"
+        "--repeat",
+        type=int,
+        default=3,
+        help="每个场景跑几次，过半数算过（模型有随机性，默认 3）",
     )
     args = parser.parse_args(argv)
 
@@ -67,16 +70,25 @@ def main(argv: list[str] | None = None) -> int:
     with tempfile.TemporaryDirectory() as tmp:
         for case in selected:
             attempts = max(1, args.repeat)
+            need = attempts // 2 + 1  # 过半数就算过：一次抽风不该判死刑
+            runs = []
             for attempt in range(1, attempts + 1):
-                result = run_case(case, base, llm, Path(tmp))
-                if result.ok or attempt == attempts:
+                runs.append(run_case(case, base, llm, Path(tmp)))
+                if sum(1 for item in runs if item.ok) >= need:
                     break
+            wins = sum(1 for item in runs if item.ok)
+            passed_case = wins >= need
+            result = next(
+                (item for item in runs if item.ok), runs[-1]
+            ) if passed_case else runs[-1]
             results.append(result)
-            print(("✓ " if result.ok else "✗ ") + case.name)
+            mark = "✓" if passed_case else "✗"
+            print(f"{mark} {case.name}（{wins}/{len(runs)}）")
             for reply in result.text.splitlines():
                 print(f"    她：{reply}")
-            for failure in result.failures:
-                print(f"    ! {failure}")
+            if not passed_case:
+                for failure in result.failures:
+                    print(f"    ! {failure}")
 
     passed = sum(1 for result in results if result.ok)
     print(f"\n{passed}/{len(results)} 通过")

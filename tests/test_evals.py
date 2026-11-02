@@ -100,3 +100,37 @@ def test_evaluate_counts_forbidden_hits():
     failures = evaluate(case, turns)
 
     assert any("出现" in item and "> 1" in item for item in failures)
+
+
+def _fake_result(case, ok):
+    from evals.harness import CaseResult
+
+    return CaseResult(case=case, turns=[], failures=[] if ok else ["没过"])
+
+
+def test_majority_vote_lets_one_bad_draw_slide(monkeypatch, capsys):
+    """模型偶尔抽风不该判死刑：三局两胜。"""
+    from evals import run
+    from evals.cases import CASES
+
+    case = CASES[0]
+    sequence = [_fake_result(case, False), _fake_result(case, True), _fake_result(case, True)]
+    monkeypatch.setattr(run, "run_case", lambda *a, **k: sequence.pop(0))
+
+    code = run.main(["--only", case.name[:2]])
+
+    assert code == 0
+    assert "✓" in capsys.readouterr().out
+
+
+def test_two_bad_draws_still_fail(monkeypatch, capsys):
+    from evals import run
+    from evals.cases import CASES
+
+    case = CASES[0]
+    sequence = [_fake_result(case, True), _fake_result(case, False), _fake_result(case, False)]
+    monkeypatch.setattr(run, "run_case", lambda *a, **k: sequence.pop(0))
+
+    run.main(["--only", case.name[:2]])
+
+    assert "✗" in capsys.readouterr().out
