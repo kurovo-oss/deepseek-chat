@@ -21,6 +21,7 @@ class FakeLLM:
 def make_settings(tmp_path, **overrides):
     base = dict(
         life_enabled=True,
+        base_dir=tmp_path,
         life_dir=tmp_path / "life",
         life_keep_days=3,
     )
@@ -127,3 +128,111 @@ def test_recent_days_feed_back(tmp_path, monkeypatch):
     text = life.recent(settings, date(2026, 11, 2), days=1)
 
     assert "昨天在收拾屋子" in text
+
+
+def _decision(**overrides):
+    import json
+
+    data = {
+        "action": "advance",
+        "project": "学做红烧肉",
+        "note": "第三次终于成了，就是有点咸",
+        "reason": "前两天都失败了，今天想再试一次",
+        "today": [
+            "在厨房站了一下午，锅里终于不糊了",
+            "盐放多了，喝了两杯水",
+            "手边还摆着那本菜谱",
+            "下次做给你尝尝",
+        ],
+    }
+    data.update(overrides)
+    return json.dumps(data, ensure_ascii=False)
+
+
+def test_today_records_her_own_choice(tmp_path):
+    """她自己挑的事要写进今天，而且说得出为什么。"""
+    from qqbot import projects
+
+    settings = make_settings(tmp_path)
+    text = life.today(settings, FakeLLM(_decision()))
+
+    assert "今天挑的是：学做红烧肉" in text
+    assert "前两天都失败了" in text
+    assert "在厨房站了一下午" in text
+
+
+def test_her_choice_is_saved_for_tomorrow(tmp_path):
+    from qqbot import projects
+
+    settings = make_settings(tmp_path)
+    life.today(settings, FakeLLM(_decision(action="start", project="学做红烧肉")))
+
+    items = projects.load(settings)
+    assert items[0]["title"] == "学做红烧肉"
+    assert items[0]["attempts"] == 1
+
+
+def test_starting_something_new_is_recorded(tmp_path):
+    from qqbot import projects
+
+    settings = make_settings(tmp_path)
+    life.today(
+        settings,
+        FakeLLM(_decision(action="start", project="研究怎么冲咖啡", reason="想学着喝苦的")),
+    )
+
+    text = life._read(life._day_path(settings, __import__("datetime").date.today()))
+    assert "今天开了件新事：研究怎么冲咖啡" in text
+    assert projects.load(settings)[0]["title"] == "研究怎么冲咖啡"
+
+
+def test_a_day_without_projects_is_allowed(tmp_path):
+    from qqbot import projects
+
+    settings = make_settings(tmp_path)
+    life.today(settings, FakeLLM(_decision(action="none", project="", reason="")))
+
+    assert "今天没特意推进手上的事" in life.snippet(settings)
+    assert projects.load(settings) == []
+
+
+def test_plain_prose_falls_back_without_touching_projects(tmp_path):
+    from qqbot import projects
+
+    settings = make_settings(tmp_path)
+    text = life.today(settings, FakeLLM())
+
+    assert "洗了窗帘" in text
+    assert projects.load(settings) == []
+
+
+def test_broken_json_falls_back_to_prose(tmp_path):
+    settings = make_settings(tmp_path)
+    text = life.today(settings, FakeLLM('{"action": "advance", 坏的\n洗了窗帘\n笔找不到'))
+
+    assert "洗了窗帘" in text  # 解析失败也不丢一天
+
+
+def test_life_call_has_enough_tokens(tmp_path):
+    """推理 token 也占额度：给少了会偶发空回复，一天的日子就白丢了。"""
+    settings = make_settings(tmp_path)
+    llm = FakeLLM(_decision())
+
+    life.today(settings, llm)
+
+    assert llm.calls[0][1]["max_tokens"] >= 1500
+
+
+def test_truncated_json_is_salvaged(tmp_path):
+    """模型偶尔把 JSON 截断——不能因为少个括号就丢掉一整天。"""
+    settings = make_settings(tmp_path)
+    llm = FakeLLM(
+        '{"action": "done", "project": "番茄牛腩", "note": "终于成了", '
+        '"reason": "炖了三回", "today": ["肉终于烂了", "汤还是有点咸"'
+    )
+
+    text = life.today(settings, llm)
+
+    assert "肉终于烂了" in text
+    assert "今天把" not in text  # 标题要按 done 的说法来
+    assert "番茄牛腩" in text

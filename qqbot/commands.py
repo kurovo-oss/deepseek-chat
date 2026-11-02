@@ -15,6 +15,7 @@ from pathlib import Path
 from . import digest as digest_mod
 from . import images as images_mod
 from . import life as life_mod
+from . import projects as projects_mod
 from .export import export_all
 from .memory import KIND_LABEL, card_weight
 from .sayings import HELP_TEXT
@@ -446,4 +447,5 @@ class CommandsMixin:
             text = life_mod.today(self.settings, self.llm)
             return ("今天改成这样了：\n" + text) if text else "没写出来，回头再试。"
         text = life_mod.snippet(self.settings)
-        return text or "今天还没写呢。"
+        hand = projects_mod.describe(projects_mod.load(self.settings))
+        return (text or "今天还没写呢。") + "\n\n" + hand
