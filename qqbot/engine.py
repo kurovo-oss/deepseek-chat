@@ -27,6 +27,7 @@ from . import presence as presence_mod
 from . import recap as recap_mod
 from . import talkstate as talkstate_mod
 from . import backup as backup_mod
+from . import recall_guard
 from . import usage as usage_mod
 from . import mood as mood_mod
 from . import pc as pc_mod
@@ -448,7 +449,14 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin):
             log.warning("模型返回空内容，改用兜底话术")
             return fallback_reply()
         # 真人不在聊天框里空行；模型爱用它分段，压成单换行
-        return re.sub(r"\n{2,}", "\n", result.text)
+        text = re.sub(r"\n{2,}", "\n", result.text)
+        # 她说"你之前说过…"时，拿这一轮真正喂进去的上下文核一遍，别顺着编
+        evidence = "\n".join(
+            str(item.get("content") or "")
+            for item in messages
+            if item.get("role") in ("system", "user")
+        )
+        return recall_guard.soften(text, evidence)
 
 
 
