@@ -130,3 +130,19 @@ def test_persona_is_centered_on_him():
 
     assert "# 你有自己的看法" not in prompt
     assert "围着他过的" in prompt
+
+
+def test_persona_allows_a_little_emoji():
+    """一点表情是真人味；每句都带就成了客服模板。"""
+    prompt = (Path(__file__).resolve().parents[1] / "prompts" / "system.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "表情可以带一点" in prompt
+    assert "每三四条里有一条" in prompt
+
+
+def test_emoji_survive_formatting():
+    from qqbot.formatting import strip_markdown
+
+    assert strip_markdown("好呀 🥺") == "好呀 🥺"
