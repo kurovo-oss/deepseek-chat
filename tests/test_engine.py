@@ -1100,3 +1100,70 @@ def test_samples_are_dropped_when_budget_is_tight(tmp_path):
     messages = env.engine._build_messages("100")
 
     assert [item["role"] for item in messages] == ["system", "user"]
+
+
+# ------------------------------------------------ 前情摘要
+def test_recap_note_goes_into_prompt(tmp_path):
+    from qqbot import recap as recap_mod
+
+    env = build_env(tmp_path, recap_enabled=True)
+    recap_mod.put(
+        env.settings, "100", recap_mod.Recap(upto_id=1, text="约好周六去看那家店", at=time.time())
+    )
+    env.store.save_message("100", "user", "在吗")
+
+    content = env.engine._build_messages("100")[0]["content"]
+
+    assert "前面聊过的" in content
+    assert "周六" in content
+
+
+def test_catchup_tick_summarizes_old_history(tmp_path):
+    from qqbot import recap as recap_mod
+
+    env = build_env(tmp_path, recap_enabled=True)
+    env.llm.text = "他这周连着加班，约好周六去看那家店。"
+    for index in range(60):
+        env.store.save_message(
+            "100", "user" if index % 2 == 0 else "assistant", f"第{index}句"
+        )
+
+    env.engine.catchup_tick()
+
+    saved = recap_mod.get(env.settings, "100")
+    assert "周六" in saved.text
+    assert saved.upto_id > 0
+
+
+def test_catchup_tick_does_not_repeat_the_summary(tmp_path):
+    from qqbot import recap as recap_mod
+
+    env = build_env(tmp_path, recap_enabled=True)
+    env.llm.text = "他在加班。"
+    for index in range(60):
+        env.store.save_message(
+            "100", "user" if index % 2 == 0 else "assistant", f"第{index}句"
+        )
+
+    env.engine.catchup_tick()
+    first = recap_mod.get(env.settings, "100").text
+    env.engine.catchup_tick()
+
+    assert recap_mod.get(env.settings, "100").text == first
+    assert len(env.llm.calls) == 1
+
+
+def test_empty_summary_does_not_advance_the_marker(tmp_path):
+    """模型一个字没写出来时别记账，不然那一段就永远没人总结了。"""
+    from qqbot import recap as recap_mod
+
+    env = build_env(tmp_path, recap_enabled=True)
+    env.llm.text = ""
+    for index in range(60):
+        env.store.save_message(
+            "100", "user" if index % 2 == 0 else "assistant", f"第{index}句"
+        )
+
+    env.engine.catchup_tick()
+
+    assert recap_mod.get(env.settings, "100").upto_id == 0

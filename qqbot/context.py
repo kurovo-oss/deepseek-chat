@@ -14,6 +14,7 @@ from . import digest as digest_mod
 from . import life as life_mod
 from . import memes as memes_mod
 from . import presence as presence_mod
+from . import recap as recap_mod
 from . import samples as samples_mod
 from . import talkstate as talkstate_mod
 from .formatting import fix_address
@@ -69,6 +70,11 @@ class ContextMixin:
         digest = digest_mod.recent_text(self.settings)
         if digest:
             sections.append(budget_mod.Section("摘要", digest, priority=50, quota=350))
+
+        if self.settings.recap_enabled:
+            recap_note = recap_mod.note(self.settings, session)
+            if recap_note:
+                sections.append(budget_mod.Section("前情", recap_note, priority=65, quota=220))
 
         if self.settings.life_enabled:
             life_note = life_mod.snippet(self.settings)

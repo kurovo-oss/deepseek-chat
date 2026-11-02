@@ -384,7 +384,7 @@ def main(argv: list[str] | None = None) -> int:
         start_watchdog(engine.sender, settings.adapter_watchdog_seconds, stop_event)
 
     start_replayer(engine, engine.store, settings, stop_event)
-    if settings.catchup_enabled:
+    if settings.catchup_enabled or settings.recap_enabled:
         threading.Thread(
             target=engine.catchup_loop, args=(stop_event,), name="catchup", daemon=True
         ).start()

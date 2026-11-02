@@ -24,6 +24,7 @@ from . import budget as budget_mod
 from . import life as life_mod
 from . import memes as memes_mod
 from . import presence as presence_mod
+from . import recap as recap_mod
 from . import talkstate as talkstate_mod
 from . import pc as pc_mod
 from . import vision as vision_mod
@@ -297,9 +298,17 @@ class Engine(ContextMixin, CommandsMixin):
     # ---------------- 忙完补回 ----------------
     def catchup_tick(self, now: float | None = None) -> int:
         """她收工了：把晾着的那几条补回。返回补了几条。"""
+        stamp = time.time() if now is None else now
+        # 前情摘要要调模型，只在后台线程里做；失败也不影响补回。
+        # 放在"忙闲"判断之前：补回可以关，但记忆不该因此断档。
+        if self.settings.recap_enabled:
+            try:
+                recap_mod.tick(self, str(self.settings.allow_user_id), now=stamp)
+            except Exception:  # noqa: BLE001 - 摘要坏了不能拖累补回
+                log.exception("前情摘要异常")
+
         if not (self.settings.presence_enabled and self.settings.catchup_enabled):
             return 0
-        stamp = time.time() if now is None else now
         replayed = 0
         with self._catchup_lock:
             for session in list(self._pending_sessions):
