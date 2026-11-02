@@ -184,8 +184,17 @@ class Engine:
         # 顺序很关键——必须在任何网络 IO（下载表情包、调模型）之前完成。
         # 否则"查重 → 下载 → 写入"之间有个几秒的窗口，NapCat 超时重推就会
         # 让同一条消息被处理两遍（2026-10-29 审查发现的竞态）。
+        # 引用回复：被引用的那句话不在消息段里，得单独去协议端取
+        extras: list[str] = []
+        if message.reply_id:
+            quoted = self._quoted_text(message.reply_id)
+            if quoted:
+                extras.append(f"（他引用了这句：{quoted}）")
+        # 引用在前、他的话在后：读起来是"接着这句说的"
+        content = "\n".join(part for part in [*extras, text] if part).strip()
+
         record_id = self.store.save_message(
-            session, "user", text or "[表情]", qq_msg_id=message.message_id or None
+            session, "user", content or "[表情]", qq_msg_id=message.message_id or None
         )
         if record_id is None:
             log.info("重复消息，跳过：qq_msg_id=%s", message.message_id)
@@ -198,8 +207,10 @@ class Engine:
             note = self._describe_images(message)
             if note:
                 hint = self._image_context_hint(session, record_id)
-                enriched = f"{text}\n{note}\n{hint}".strip() if text else f"{note}\n{hint}"
-                self.store.update_message_content(record_id, enriched)
+                parts = [*extras, text, note, hint]
+                self.store.update_message_content(
+                    record_id, "\n".join(part for part in parts if part).strip()
+                )
 
         if self.mood is not None:
             try:
@@ -221,7 +232,7 @@ class Engine:
 
         log.info("收到来自 %s 的消息：%s", message.user_id, text[:60] or "[表情]")
 
-        if not text and not note:
+        if not text and not note and not extras:
             self._send_reply(message.user_id, session, self._sticker_ack(collected))
             return
 
@@ -1292,6 +1303,20 @@ class Engine:
             log.info("画好一张图：%s", path.name)
         except Exception:  # noqa: BLE001 - 画图挂了不能影响聊天
             log.exception("画图异常")
+
+    def _quoted_text(self, message_id: str) -> str:
+        """取被引用那条消息的文本。取不到就当没引用，别让整条回复失败。"""
+        if not self.settings.quote_enabled or not message_id:
+            return ""
+        getter = getattr(self.sender, "get_message", None)
+        if getter is None:
+            return ""
+        try:
+            text = getter(str(message_id)) or ""
+        except Exception:  # noqa: BLE001 - 引用是加分项，失败不影响对话
+            log.exception("取引用消息失败：%s", message_id)
+            return ""
+        return talkstate_mod.phrase(str(text), limit=60)
 
     def _image_context_hint(self, session: str, record_id: int) -> str:
         """图片的说明后面跟一句上下文提示：图是接话的，不是让她描述画面。"""

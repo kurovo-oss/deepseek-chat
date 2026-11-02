@@ -38,12 +38,15 @@ class IncomingMessage:
     text: str
     raw: dict[str, Any]
     images: tuple[IncomingImage, ...] = ()
+    reply_id: str = ""  # 引用回复：被引用那条的消息 id
 
 
 class Sender(Protocol):
     def send_private(self, user_id: int, text: str) -> bool: ...
 
     def send_private_image(self, user_id: int, image: Path, mode: str = "path") -> bool: ...
+
+    def get_message(self, message_id: str) -> str: ...
 
 
 def extract_text(message: Any) -> str:
@@ -61,6 +64,18 @@ def extract_text(message: Any) -> str:
         data = segment.get("data") or {}
         parts.append(str(data.get("text", "")))
     return "".join(parts)
+
+
+def extract_reply_id(message: Any) -> str:
+    """取出引用回复的 message_id；没有就返回空串。"""
+    if not isinstance(message, list):
+        return ""
+    for segment in message:
+        if not isinstance(segment, dict) or segment.get("type") != "reply":
+            continue
+        data = segment.get("data") or {}
+        return str(data.get("id") or "")
+    return ""
 
 
 def extract_images(message: Any) -> tuple[IncomingImage, ...]:
@@ -103,7 +118,8 @@ def parse_event(payload: Any) -> IncomingMessage | None:
 
     text = extract_text(payload.get("message")).strip()
     images = extract_images(payload.get("message"))
-    if not text and not images:
+    reply_id = extract_reply_id(payload.get("message"))
+    if not text and not images and not reply_id:
         return None
 
     return IncomingMessage(
@@ -112,6 +128,7 @@ def parse_event(payload: Any) -> IncomingMessage | None:
         text=text,
         raw=payload,
         images=images,
+        reply_id=reply_id,
     )
 
 
@@ -137,6 +154,16 @@ class HttpSender:
         else:
             cq = f"[CQ:image,file={Path(image).as_uri()}]"
         return self._call("send_private_msg", {"user_id": user_id, "message": cq})
+
+    def get_message(self, message_id: str) -> str:
+        """取一条历史消息的文本（引用回复要用）。取不到返回空串。"""
+        ok, data = self._request("get_msg", {"message_id": message_id})
+        if not ok:
+            return ""
+        message = data.get("data")
+        if isinstance(message, dict):
+            message = message.get("message")
+        return extract_text(message).strip()
 
     def login_info(self) -> dict[str, Any] | None:
         """调 get_login_info，确认协议端在线且已登录。不可达返回 None。"""

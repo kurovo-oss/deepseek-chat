@@ -35,6 +35,10 @@ class FakeSender:
         self.sent = []
         self.images = []
         self.events = []
+        self.quoted = ""  # get_message 的返回值，引用回复测试用
+
+    def get_message(self, message_id):
+        return self.quoted
 
     def send_private(self, user_id, text):
         self.sent.append((user_id, text))
@@ -1019,3 +1023,44 @@ def test_tight_budget_drops_low_priority_sections(tmp_path):
     assert "已老实=认输" not in content
     # 能力表优先级稍高，通常还在
     assert "【你会的】" in content or "刷抖音" in content
+
+
+# ------------------------------------------------ 引用回复
+def test_quoted_message_goes_into_context(tmp_path):
+    """他引用一条消息说"这个呢"，她得看见被引用的那句。"""
+    env = build_env(tmp_path)
+    env.sender.quoted = "我周末要加班，可能去不了"
+    message = IncomingMessage(
+        user_id=100, message_id="q1", text="这个怎么办", raw={}, reply_id="42"
+    )
+
+    env.engine.handle_message(message)
+
+    content = env.store.recent_messages("100", 2)[0]["content"]
+    assert "我周末要加班" in content
+    assert content.index("引用") < content.index("这个怎么办")
+
+
+def test_quote_disabled_ignores_it(tmp_path):
+    env = build_env(tmp_path, quote_enabled=False)
+    env.sender.quoted = "我周末要加班"
+    message = IncomingMessage(
+        user_id=100, message_id="q2", text="这个呢", raw={}, reply_id="42"
+    )
+
+    env.engine.handle_message(message)
+
+    assert "我周末要加班" not in env.store.recent_messages("100", 2)[0]["content"]
+
+
+def test_quote_fetch_failure_is_harmless(tmp_path):
+    env = build_env(tmp_path)
+    env.sender.quoted = ""
+    message = IncomingMessage(
+        user_id=100, message_id="q3", text="这个呢", raw={}, reply_id="42"
+    )
+
+    env.engine.handle_message(message)
+
+    assert env.sender.sent  # 照常回
+    assert "引用" not in env.store.recent_messages("100", 2)[0]["content"]

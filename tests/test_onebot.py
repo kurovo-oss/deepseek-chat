@@ -111,3 +111,28 @@ def test_friend_list_none_when_data_is_not_a_list():
     sender = HttpSender("http://127.0.0.1:1")
     sender._request = lambda action, payload: (True, {"data": None})
     assert sender.friend_list() is None
+
+
+def test_parse_reply_segment():
+    payload = _event(
+        message=[
+            {"type": "reply", "data": {"id": "777"}},
+            {"type": "text", "data": {"text": "这个呢"}},
+        ]
+    )
+
+    incoming = parse_event(payload)
+
+    assert incoming is not None
+    assert incoming.reply_id == "777"
+    assert incoming.text == "这个呢"
+
+
+def test_quote_only_message_is_parsed():
+    payload = _event(message=[{"type": "reply", "data": {"id": "777"}}])
+
+    incoming = parse_event(payload)
+
+    assert incoming is not None
+    assert incoming.reply_id == "777"
+    assert incoming.text == ""
