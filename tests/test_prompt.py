@@ -55,10 +55,11 @@ def test_prompt_forbids_voice_templates():
         assert phrase in text, f"提示词缺少防模板规则：{phrase}"
 
 
-def test_prompt_has_voice_samples():
-    """示例对话是主要信号；没有它，形容词再准也落不了地。"""
+def test_prompt_points_at_message_samples():
+    """样品已经从 system 搬到消息列表了，这里只留一句指路。"""
     text = read_prompt()
-    assert text.count("他：") >= 5
+    assert text.count("他：") == 0, "样品不该再塞回 system prompt"
+    assert "消息列表最前面" in text
     assert "别照抄" in text
 
 

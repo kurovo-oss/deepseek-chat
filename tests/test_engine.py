@@ -244,8 +244,12 @@ def test_reset_clears_window_but_keeps_history(env):
     env.engine.handle_message(make_message("在吗", mid="m3"))
 
     last = env.llm.calls[-1]
-    assert [m["role"] for m in last] == ["system", "user"]
-    assert last[1]["content"] == "在吗"
+    roles = [m["role"] for m in last]
+    # system → 开场样品（user/assistant 交替）→ 他这一句
+    assert roles[0] == "system"
+    assert roles[-1] == "user"
+    assert last[-1]["content"] == "在吗"
+    assert all(role == "user" for role in roles[1::2])
     # 原文不删，只是不再进上下文（2 轮对话 + /reset 一来一回）
     assert env.store.count_messages("100") == 6
 
@@ -1064,3 +1068,35 @@ def test_quote_fetch_failure_is_harmless(tmp_path):
 
     assert env.sender.sent  # 照常回
     assert "引用" not in env.store.recent_messages("100", 2)[0]["content"]
+
+
+def test_samples_go_right_after_system(tmp_path):
+    """样品是消息，不是规则：system 后面紧跟 user/assistant 交替的几组。"""
+    env = build_env(tmp_path)
+    env.store.save_message("100", "user", "在吗")
+
+    messages = env.engine._build_messages("100")
+
+    assert messages[0]["role"] == "system"
+    assert messages[1]["role"] == "user"
+    assert messages[2]["role"] == "assistant"
+    assert messages[-1]["content"] == "在吗"
+
+
+def test_samples_can_be_turned_off(tmp_path):
+    env = build_env(tmp_path, sample_pairs=0)
+    env.store.save_message("100", "user", "在吗")
+
+    messages = env.engine._build_messages("100")
+
+    assert [item["role"] for item in messages] == ["system", "user"]
+
+
+def test_samples_are_dropped_when_budget_is_tight(tmp_path):
+    """预算紧的时候先牺牲样品，保住真实的对话。"""
+    env = build_env(tmp_path, context_token_budget=120)
+    env.store.save_message("100", "user", "在吗")
+
+    messages = env.engine._build_messages("100")
+
+    assert [item["role"] for item in messages] == ["system", "user"]

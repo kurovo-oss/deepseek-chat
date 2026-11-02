@@ -202,6 +202,8 @@ class Settings:
     reply_reshape: bool = True
     # 引用回复：把他引用的那句取出来喂进上下文
     quote_enabled: bool = True
+    # 开场样品组数（0 = 不要）
+    sample_pairs: int = 8
     # 上下文预算（token）：人设固定，其余按优先级分配
     context_token_budget: int = 9000
     # 对话状态：她知道自己上一条问了什么、他答没答
@@ -371,6 +373,7 @@ class Settings:
             watch_max_lines=_int(env, "WATCH_MAX_LINES", 20, minimum=1),
             reply_reshape=_bool(env, "REPLY_RESHAPE", True),
             quote_enabled=_bool(env, "QUOTE_ENABLED", True),
+            sample_pairs=_int(env, "SAMPLE_PAIRS", 8, minimum=0),
             context_token_budget=_int(env, "CONTEXT_TOKEN_BUDGET", 9000, minimum=1500),
             talkstate_enabled=_bool(env, "TALKSTATE_ENABLED", True),
             presence_enabled=_bool(env, "PRESENCE_ENABLED", True),

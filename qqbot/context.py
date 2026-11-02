@@ -14,6 +14,7 @@ from . import digest as digest_mod
 from . import life as life_mod
 from . import memes as memes_mod
 from . import presence as presence_mod
+from . import samples as samples_mod
 from . import talkstate as talkstate_mod
 from .formatting import fix_address
 from .sayings import RECALL_TITLE
@@ -111,12 +112,21 @@ class ContextMixin:
 
         # 历史也按 token 算：system 占完剩下的才是它的
         cap = budget_mod.history_budget(self.settings.context_token_budget, fitted.tokens)
+
+        # 开场样品排在历史前面，占的也是历史的额度；额度不够就整段不要
+        samples = samples_mod.messages(self.settings.sample_pairs)
+        sample_tokens = sum(budget_mod.estimate_tokens(item["content"]) for item in samples)
+        if sample_tokens + 200 > cap:
+            samples = []
+            sample_tokens = 0
+        cap -= sample_tokens
+
         while selected and sum(budget_mod.estimate_tokens(i["content"]) for i in selected) > cap:
             selected.pop(0)
         while selected and selected[0]["role"] != "user":
             selected.pop(0)
 
-        messages = [{"role": "system", "content": system}]
+        messages = [{"role": "system", "content": system}, *samples]
         for item in selected:
             content = item["content"]
             # 她自己说过的旧话里可能还带"爸爸"，改掉再喂回去，否则模型会学着叫

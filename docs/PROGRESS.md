@@ -445,6 +445,19 @@ API 挂掉那阵它连着发了四次一模一样的话。
 - `.github/workflows/ci.yml`：push/PR 自动跑 `pytest`（Windows + Python 3.12 + pytest/Pillow）；
   评测集不进 CI（要 API key，是本地指标不是门槛）
 
+
+**2026-11-02 样品搬出 system prompt（P1）**：对照 AstrBot 的做法——人设的开场对话不该写成
+"他：… 你：…"的文本让她读，而要作为真实消息对拼在消息列表最前面。
+
+- `qqbot/samples.py`：8 组对话（短句、护短、认账、给选择、听不懂就问、委屈不过度），
+  从原来 system.md 里 26 组样品里挑的；`messages(limit)` 拼成 user/assistant 交替
+- `context.py`：样品紧跟 system，占历史额度；额度不够（< 200 tokens 余量）整段不要
+- `prompts/system.md`：删掉 100 行样品块，只留一句指路 → **5246 字降到 4316 字**
+- 实测同一条对话：system 4227 → 3699 tokens（人设 3798 → 3270），样品 8 组 110 tokens，
+  净省约 420 tokens/轮
+- 配置 `SAMPLE_PAIRS=8`（0 = 关）
+- 评测：**19/19**，语气没退化；全量 624 通过
+
 ## 七、主动消息（M4）
 
 **做了什么**：她会先开口——两种情形。
