@@ -15,6 +15,7 @@ from . import life as life_mod
 from . import memes as memes_mod
 from . import presence as presence_mod
 from . import recap as recap_mod
+from . import mood as mood_mod
 from . import samples as samples_mod
 from . import talkstate as talkstate_mod
 from . import usage as usage_mod
@@ -126,6 +127,11 @@ class ContextMixin:
 
         # 开场样品排在历史前面，占的也是历史的额度；额度不够就整段不要
         samples = samples_mod.messages(self.settings.sample_pairs)
+        if self.mood is not None:
+            # 情绪也体现在"样子里"：累的时候多给一组有气无力的，比讲规矩管用
+            for said, answered in mood_mod.style_samples(self.mood.snapshot()):
+                samples.append({"role": "user", "content": said})
+                samples.append({"role": "assistant", "content": answered})
         sample_tokens = sum(budget_mod.estimate_tokens(item["content"]) for item in samples)
         if sample_tokens + 200 > cap:
             samples = []

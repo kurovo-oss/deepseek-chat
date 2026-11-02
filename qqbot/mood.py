@@ -30,6 +30,17 @@ MISS_IDLE_FULL_HOURS = 12.0
 NIGHT_HOURS = (22, 6)  # 22 点到次日 6 点算夜里
 
 TITLE = "# 此刻的你"
+
+# 累的时候少说两句：这是"情绪影响表达"里唯一能拿代码保证的部分，
+# 其余的交给提示句和样品——规定太多会把她写成一个只会短句的机器人。
+TIRED_MAX_BUBBLES = 2
+CALM_MAX_BUBBLES = 3
+
+LOW_SAMPLES: tuple[tuple[str, str], ...] = (("在吗", "在呀\n…刚躺下，有点不想动"),)
+MISS_SAMPLES: tuple[tuple[str, str], ...] = (
+    ("今天忙不忙", "忙你的吧\n我就说说，你别管我"),
+)
+WARM_SAMPLES: tuple[tuple[str, str], ...] = (("今天运气不错", "真的呀\n那我也跟着高兴"),)
 TIRED_LIMIT = 0.7
 MISS_LIMIT = 0.75
 # 他这条消息的情绪，最多"新鲜"半小时：再久就不该左右她现在的语气
@@ -66,6 +77,35 @@ def targets(now: int, last_talk: int | None) -> dict[str, float]:
     # 到不了 0.7 的闸门，"累了不开口"会变成死代码（真机验证时发现的）。
     tired = 0.8 if is_night(now) else 0.2
     return {"miss": miss, "warmth": 0.35, "tired": tired}
+
+
+def style(values: dict[str, float]) -> dict[str, object]:
+    """此刻该怎么说：几条、能不能问、要不要换语气。
+
+    只把"能拿代码保证"的部分留在这里（条数、问句），
+    语气细节交给 describe() 的提示句和 style_samples() 的样品。
+    """
+    tired = float(values.get("tired", 0.0))
+    miss = float(values.get("miss", 0.0))
+    warmth = float(values.get("warmth", 0.0))
+    if tired >= TIRED_LIMIT:
+        return {"max_bubbles": TIRED_MAX_BUBBLES, "ask_ok": False, "label": "累"}
+    if miss >= MISS_LIMIT:
+        return {"max_bubbles": CALM_MAX_BUBBLES, "ask_ok": True, "label": "想他"}
+    if warmth >= 0.6:
+        return {"max_bubbles": CALM_MAX_BUBBLES, "ask_ok": True, "label": "暖"}
+    return {"max_bubbles": CALM_MAX_BUBBLES, "ask_ok": True, "label": "平"}
+
+
+def style_samples(values: dict[str, float]) -> tuple[tuple[str, str], ...]:
+    """按此刻的情绪多给一组样品：学语气比听规矩快。"""
+    if float(values.get("tired", 0.0)) >= TIRED_LIMIT:
+        return LOW_SAMPLES
+    if float(values.get("miss", 0.0)) >= MISS_LIMIT:
+        return MISS_SAMPLES
+    if float(values.get("warmth", 0.0)) >= 0.6:
+        return WARM_SAMPLES
+    return ()
 
 
 def mood_line(values: dict[str, float]) -> str:
@@ -175,22 +215,22 @@ class Mood:
             return ""
         stamp = int(now if now is not None else self._clock())
         values = self.snapshot(stamp)
-        head = (
-            f"{TITLE}\n"
-            f"想念 {values['miss']:.2f}、亲近 {values['warmth']:.2f}、"
-            f"疲惫 {values['tired']:.2f} —— {mood_line(values)}"
-        )
+        # 数字对她没用：0.42 和 0.48 读起来一样。换成三档人话 + 一句具体怎么调
+        head = f"{TITLE}\n{mood_line(values)}。"
         hints = []
         tone_hint = emotion.hint(self.current_tone(stamp))
         if tone_hint:
             hints.append(tone_hint)  # 他这条的情绪最优先，别的都让位
-        if not tone_hint:
-            if values["miss"] >= MISS_LIMIT:
-                hints.append("惦记他，可以主动问一句，但别腻。")
+        else:
             if values["tired"] >= TIRED_LIMIT:
-                hints.append("今天累了，句子短一点，别硬撑热闹。")
-            if values["warmth"] >= 0.6 and not hints:
-                hints.append("心情好，可以稍微活泼一点。")
+                hints.append(
+                    "累了。句子比平时更短，一两条就够，也别问他问题；"
+                    "这时候你不想照顾谁，说说你自己就行。"
+                )
+            elif values["miss"] >= MISS_LIMIT:
+                hints.append("想他想得厉害。可以自己先开口，直接说一句想他，别绕。")
+            elif values["warmth"] >= 0.6:
+                hints.append("心情好，可以稍微闹一点，多用点语气词。")
         return head if not hints else head + "\n" + "".join(hints)
 
     def line(self, now: int | None = None) -> str:

@@ -173,3 +173,21 @@ def test_merge_does_not_double_punctuate():
     out = reshape_bubbles(["诶？", "啥功能呀", "你说清楚点嘛"], FakeRng(0.1))
 
     assert out == ["诶？啥功能呀，你说清楚点嘛"]
+
+
+def test_never_cuts_a_word_in_half():
+    """没有逗号的句子不硬切——"不知道"被劈成"不知/道…"是肉眼可见的假。"""
+    from qqbot.formatting import _cut_in_two
+    import random
+
+    assert _cut_in_two("你们领导是不是不知道你家里有人在等你呀", random.Random(0)) is None
+
+
+def test_still_splits_at_a_comma():
+    from qqbot.formatting import _cut_in_two
+    import random
+
+    pieces = _cut_in_two("你先去吃点东西，我等会儿再找你说话", random.Random(0))
+
+    assert pieces is not None
+    assert len(pieces) == 2

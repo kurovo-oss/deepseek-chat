@@ -170,14 +170,15 @@ def test_mood_line_when_calm():
     assert "刚聊过" in line and "精神还不错" in line
 
 
-def test_describe_includes_numbers_and_limits(mood):
+def test_describe_speaks_human_not_numbers(mood):
     mood.save({"miss": 0.9, "warmth": 0.4, "tired": 0.9}, at(12))
 
     text = mood.describe(at(12))
 
     assert "# 此刻的你" in text
-    assert "想念" in text
-    assert "累了" in text  # 累了要暗示句子短一点
+    assert "很想他" in text
+    assert "0." not in text  # 数字她读不懂，0.42 和 0.48 对她没区别
+    assert "更短" in text  # 累了要说清"短到什么程度"
 
 
 def test_describe_empty_when_disabled(tmp_path):
@@ -235,3 +236,33 @@ def test_no_mood_still_works(store, tmp_path):
     scheduler = ProactiveScheduler(engine, store, settings, clock=lambda: at(12))
 
     assert scheduler.gate(at(12)) == FOLLOWUP
+
+
+def test_style_shrinks_when_tired():
+    from qqbot import mood as mood_mod
+
+    tired = mood_mod.style({"miss": 0.3, "warmth": 0.3, "tired": 0.9})
+    calm = mood_mod.style({"miss": 0.2, "warmth": 0.4, "tired": 0.1})
+
+    assert tired["max_bubbles"] == 2
+    assert tired["ask_ok"] is False
+    assert calm["max_bubbles"] == 3
+    assert calm["ask_ok"] is True
+
+
+def test_style_samples_follow_mood():
+    from qqbot import mood as mood_mod
+
+    assert mood_mod.style_samples({"miss": 0.2, "warmth": 0.3, "tired": 0.9})[0][0] == "在吗"
+    assert mood_mod.style_samples({"miss": 0.9, "warmth": 0.3, "tired": 0.2})[0][0] == "今天忙不忙"
+    assert mood_mod.style_samples({"miss": 0.2, "warmth": 0.8, "tired": 0.2})[0][0] == "今天运气不错"
+    assert mood_mod.style_samples({"miss": 0.2, "warmth": 0.4, "tired": 0.2}) == ()
+
+
+def test_tired_hint_stops_the_caretaking(mood):
+    """累了不是"更温柔地照顾他"，是她自己也没力气应付。"""
+    mood.save({"miss": 0.2, "warmth": 0.3, "tired": 0.95}, at(12))
+
+    text = mood.describe(at(12))
+
+    assert "不想照顾谁" in text

@@ -1277,3 +1277,33 @@ def test_quoted_image_is_described(tmp_path, monkeypatch):
     content = env.store.recent_messages("100", 2)[0]["content"]
     assert "看这个" in content
     assert "一只白猫" in content
+
+
+# ------------------------------------------------ 情绪影响表达
+def _attach_mood(env, **values):
+    """main 会把 Mood 注入引擎；测试里得自己来。"""
+    from qqbot.mood import Mood
+
+    env.engine.mood = Mood(env.store, env.settings)
+    env.engine.mood.save({"tired": 0.1, "miss": 0.1, "warmth": 0.3} | values)
+    return env.engine.mood
+
+
+def test_tired_mood_sends_fewer_bubbles(tmp_path):
+    env = build_env(tmp_path)
+    _attach_mood(env, tired=0.95)
+    env.llm.text = "第一句\n第二句\n第三句"
+
+    env.engine.handle_message(make_message("在吗", mid="m1"))
+
+    assert len(env.sender.sent) == 2
+
+
+def test_tired_mood_adds_a_quieter_sample(tmp_path):
+    env = build_env(tmp_path, sample_pairs=3)
+    _attach_mood(env, tired=0.95)
+
+    messages = env.engine._build_messages("100")
+    joined = "".join(str(item.get("content") or "") for item in messages)
+
+    assert "刚躺下" in joined

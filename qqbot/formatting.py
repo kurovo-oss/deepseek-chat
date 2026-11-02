@@ -166,9 +166,9 @@ def _cut_in_two(text: str, rng) -> tuple[str, str] | None:
     middle = len(text) // 2
     candidates = [i for i, ch in enumerate(text) if ch in "，,、…" and 0.2 < i / len(text) < 0.8]
     if not candidates:
-        if len(text) < 18:
-            return None
-        return text[:middle], text[middle:]
+        # 没有逗号就不切：硬切会把"不知道"劈成"不知"+"道你家里…"，
+        # 发出去像乱码。宁可一条说完。
+        return None
     cut = min(candidates, key=lambda i: abs(i - middle))
     head = text[: cut + 1].rstrip("，,、")
     tail = text[cut + 1 :].lstrip("，,、")

@@ -27,6 +27,7 @@ from . import presence as presence_mod
 from . import recap as recap_mod
 from . import talkstate as talkstate_mod
 from . import usage as usage_mod
+from . import mood as mood_mod
 from . import pc as pc_mod
 from . import vision as vision_mod
 from .commands import CommandsMixin
@@ -443,6 +444,14 @@ class Engine(ContextMixin, CommandsMixin):
 
 
     # ---------------- 发送 ----------------
+    def _bubble_limit(self, origin: str) -> int:
+        """她累的时候少说一句：情绪得真能改掉发出去的样子。"""
+        limit = self.settings.reply_max_bubbles
+        if self.mood is not None and origin in ("chat", "proactive"):
+            style = mood_mod.style(self.mood.snapshot())
+            limit = min(limit, int(style.get("max_bubbles") or limit))
+        return max(1, limit)
+
     def _pick_image(self, session: str, tags: list[str]) -> Path | None:
         """配图策略：冷却窗口内发过图就直接放弃，不找替代，也不提示。"""
         if not tags or self.images is None or not self.settings.image_enabled:
@@ -482,7 +491,7 @@ class Engine(ContextMixin, CommandsMixin):
 
         image_path = self._pick_image(session, tags)
         parts = split_bubbles(
-            cleaned, self.settings.reply_max_chars, self.settings.reply_max_bubbles
+            cleaned, self.settings.reply_max_chars, self._bubble_limit(origin)
         )
         if (
             origin in ("chat", "proactive")
