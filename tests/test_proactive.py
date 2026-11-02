@@ -535,3 +535,61 @@ def test_events_list_empty(tmp_path):
     env = build(tmp_path)
     assert "还没记下" in env.engine._handle_command("/events", "100")
     env.store.close()
+
+
+# ---------------------------------------------------------------- 情绪决定动作
+def attach_mood(env, **values):
+    from qqbot.mood import Mood
+
+    env.engine.mood = Mood(env.store, env.settings, clock=lambda: ts(10, 28, 14))
+    state = {"miss": 0.15, "warmth": 0.35, "tired": 0.2}
+    state.update(values)
+    env.engine.mood.save(state, ts(10, 28, 14))
+    return env.engine.mood
+
+
+def test_tired_blocks_her_own_chatter(tmp_path):
+    """累了她就不主动找人说话——这不是语气问题，是行为。"""
+    env = build(tmp_path)
+    attach_mood(env, tired=0.9)
+    seed_silence(env)
+
+    assert env.scheduler.gate(ts(10, 28, 14)) is None
+    assert env.scheduler._decide(ts(10, 28, 14))[1] == "累了"
+
+
+def test_tired_does_not_cancel_a_promise(tmp_path):
+    """但答应过他的事照说："今天面试"不能因为她累了就没提。"""
+    env = build(tmp_path)
+    attach_mood(env, tired=0.9)
+    seed_silence(env)
+    env.store.add_scheduled_event("今天面试", ts(10, 28, 13))
+
+    assert env.scheduler.gate(ts(10, 28, 14)) == "scheduled"
+
+
+def test_missing_him_lets_her_speak_earlier(tmp_path):
+    env = build(tmp_path)
+    attach_mood(env, miss=0.9)
+    seed_silence(env, hours_ago=3.5)  # 默认要 5 小时，很想他时 3 小时就够
+
+    assert env.scheduler.gate(ts(10, 28, 14)) == "followup"
+
+
+def test_good_mood_shortens_a_little(tmp_path):
+    env = build(tmp_path)
+    attach_mood(env, warmth=0.8)
+    seed_silence(env, hours_ago=4.2)  # 心情好时 4 小时就够
+
+    assert env.scheduler.gate(ts(10, 28, 14)) == "followup"
+
+
+def test_short_silence_still_blocks_when_calm(tmp_path):
+    env = build(tmp_path)
+    attach_mood(env)
+    seed_silence(env, hours_ago=3.5)
+
+    kind, reason = env.scheduler._decide(ts(10, 28, 14))
+
+    assert kind is None
+    assert "静默" in reason

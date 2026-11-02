@@ -130,7 +130,7 @@ class Settings:
     proactive_min_gap_hours: float = 3.0
     proactive_quiet_minutes: int = 30
     proactive_idle_hours: float = 5.0
-    proactive_weekly_max: int = 1
+    proactive_weekly_max: int = 14
     proactive_check_seconds: float = 600.0
     proactive_prompt_file: Path = Path("prompts/proactive.md")
     scheduled_prompt_file: Path = Path("prompts/scheduled.md")
@@ -318,7 +318,7 @@ class Settings:
                 env, "PROACTIVE_QUIET_MINUTES", 30, minimum=0
             ),
             proactive_idle_hours=_float(env, "PROACTIVE_IDLE_HOURS", 5.0),
-            proactive_weekly_max=_int(env, "PROACTIVE_WEEKLY_MAX", 1, minimum=0),
+            proactive_weekly_max=_int(env, "PROACTIVE_WEEKLY_MAX", 14, minimum=0),
             proactive_check_seconds=_float(env, "PROACTIVE_CHECK_SECONDS", 600.0),
             proactive_prompt_file=base_dir
             / env.get("PROACTIVE_PROMPT_FILE", "prompts/proactive.md").strip(),

@@ -64,6 +64,7 @@ class ProactiveScheduler:
         self._clock = clock
         self.prompt = prompt
         self.scheduled_prompt = scheduled_prompt
+        self.last_reason = ""  # /proactive 排查用
 
     @property
     def session(self) -> str:
@@ -79,19 +80,23 @@ class ProactiveScheduler:
 
     def gate(self, now: int) -> str | None:
         """现在能不能主动开口？能就返回 kind，不能返回 None。"""
+        return self._decide(now)[0]
+
+    def _decide(self, now: int) -> tuple[str | None, str]:
+        """返回 (能不能发, 为什么)。原因只写进日志，不给他看。"""
         settings = self.settings
         if not settings.proactive_enabled:
-            return None
+            return None, "关闭"
 
         hour = datetime.fromtimestamp(now).hour
         if not settings.proactive_start_hour <= hour < settings.proactive_end_hour:
-            return None
+            return None, "不在时段"
 
         if (
             self.store.count_proactive_since(self.midnight(now))
             >= settings.proactive_max_per_day
         ):
-            return None
+            return None, "今天说够了"
 
         last_sent = self.store.latest_proactive(status="sent")
         # 间隔对"任何一次尝试"生效：失败后立刻重来一遍，本质就是重试
@@ -99,42 +104,49 @@ class ProactiveScheduler:
         if last_attempt is not None:
             gap = settings.proactive_min_gap_hours * 3600
             if now - int(last_attempt["created_at"]) < gap:
-                return None
+                return None, "刚找过他"
 
         last_user = self.store.last_message_time(self.session, role="user")
         if last_user is not None and now - last_user < settings.proactive_quiet_minutes * 60:
-            return None  # 人就在，别插嘴
+            return None, "他刚说话"
 
         # 到点的未来事件优先——那是他自己说过的事，最该被记住
         if self.store.next_due_event(now) is not None:
-            return SCHEDULED
+            return SCHEDULED, "到点的事"
 
         if last_user is None:
-            return None  # 一句话都还没说过，谈不上"很久没聊"
+            return None, "还没聊过"
 
         # 她上次主动说完，用户还没回 —— 不能连着追
         if last_sent is not None and int(last_sent["created_at"]) > last_user:
-            return None
+            return None, "上次他还没回"
 
         idle_required = settings.proactive_idle_hours * 3600
+        reason = "想他了"
         mood = getattr(self.engine, "mood", None)
         if mood is not None:
             values = mood.snapshot(now)
             if values["tired"] >= TIRED_LIMIT:
-                return None  # 累了就别硬撑着找他
+                # 累了就不主动找人说话。约定好的事（scheduled）已经在上一步放行了，
+                # 那句照说——是答应过他的，不能因为累就不提。
+                return None, "累了"
             if values["miss"] >= MISS_LIMIT:
                 idle_required *= 0.6  # 很想他的时候，早一点开口
+                reason = "很想他"
+            elif values["warmth"] >= 0.6:
+                idle_required *= 0.8  # 心情好，想跟他分享
+                reason = "心情好"
         if now - last_user < idle_required:
-            return None
+            return None, f"还没静默够（要 {idle_required / 3600:.1f} 小时）"
 
         week_ago = now - 7 * 86400
         if (
             self.store.count_proactive_since(week_ago, kind=FOLLOWUP)
             >= settings.proactive_weekly_max
         ):
-            return None
+            return None, "这周说够了"
 
-        return FOLLOWUP
+        return FOLLOWUP, reason
 
     # ---------------- 生成 ----------------
     def build_messages(self, kind: str, now: int, event: str = "") -> list[dict]:
@@ -247,8 +259,10 @@ class ProactiveScheduler:
     def tick(self, now: int | None = None) -> str:
         stamp = int(now if now is not None else self._clock())
         self.expire_stale(stamp)
-        kind = self.gate(stamp)
+        kind, reason = self._decide(stamp)
+        self.last_reason = reason
         if kind is None:
+            log.debug("主动消息没发：%s", reason)
             return "blocked"
         if kind == SCHEDULED:
             return self._fire_scheduled(stamp)
