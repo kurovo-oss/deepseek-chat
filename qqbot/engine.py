@@ -46,6 +46,7 @@ from .formatting import (
 )
 from .images import sniff_image
 from .llm import LLMClient, LLMError
+from .media import MediaMixin
 from .memory import KIND_LABEL, card_weight
 from .onebot import IncomingMessage, Sender, parse_event
 from .store import Store
@@ -68,7 +69,7 @@ def _size_text(size: int) -> str:
 
 
 
-class Engine(ContextMixin, CommandsMixin):
+class Engine(ContextMixin, CommandsMixin, MediaMixin):
     def __init__(
         self,
         settings: Settings,
@@ -460,18 +461,6 @@ class Engine(ContextMixin, CommandsMixin):
             limit = min(limit, int(style.get("max_bubbles") or limit))
         return max(1, limit)
 
-    def _pick_image(self, session: str, tags: list[str]) -> Path | None:
-        """配图策略：冷却窗口内发过图就直接放弃，不找替代，也不提示。"""
-        if not tags or self.images is None or not self.settings.image_enabled:
-            return None
-        if self.store.has_recent_image(session, self.settings.image_cooldown_messages):
-            return None
-        for tag in tags:
-            path = self.images.resolve(tag, max_bytes=self.settings.image_max_bytes)
-            if path is not None:
-                return path
-        return None
-
     def _sticker_ack(self, collected: list[dict]) -> str:
         if not collected:
             return "嗯，我看到啦。"
@@ -712,28 +701,6 @@ class Engine(ContextMixin, CommandsMixin):
             return summary or "什么都没读到。"
         comment = self._react_to(f"你刚看了一眼他的电脑状态：{summary}，他这会儿在电脑前")
         return comment or summary or "看不到。"
-
-    def _maybe_sticker(self, session: str) -> Path | None:
-        """随手甩个表情包。概率很低，且刚发过图就不发。"""
-        chance = float(getattr(self.settings, "sticker_chance", 0.0) or 0.0)
-        if chance <= 0 or self.images is None or not self.settings.image_enabled:
-            return None
-        if random.random() >= chance:
-            return None
-        if self.store.has_recent_image(session, self.settings.image_cooldown_messages):
-            return None
-        tags = [
-            item.strip()
-            for item in str(getattr(self.settings, "sticker_tags", "")).split(",")
-            if item.strip()
-        ]
-        random.shuffle(tags)
-        for tag in tags:
-            path = self.images.resolve(tag, max_bytes=self.settings.image_max_bytes)
-            if path is not None:
-                return path
-        return None
-
 
     # ---------------- 生活线 ----------------
     def _ensure_life(self) -> None:

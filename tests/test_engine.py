@@ -1307,3 +1307,54 @@ def test_tired_mood_adds_a_quieter_sample(tmp_path):
     joined = "".join(str(item.get("content") or "") for item in messages)
 
     assert "刚躺下" in joined
+
+
+# ------------------------------------------------ 情绪影响发图/表情
+class _Images:
+    def __init__(self, path):
+        self.path = path
+
+    def resolve(self, tag, max_bytes=0):
+        return self.path
+
+
+def _fixed_rng(value):
+    import types
+
+    return types.SimpleNamespace(random=lambda: value)
+
+
+def test_tired_mood_skips_most_images(tmp_path):
+    env = build_env(tmp_path)
+    _attach_mood(env, tired=0.95)
+    env.engine.images = _Images(tmp_path / "x.png")
+    env.engine._rng = _fixed_rng(0.1)  # 落在"懒得翻图"的 50% 里
+
+    assert env.engine._pick_image("100", ["胖猫"]) is None
+
+
+def test_calm_mood_still_sends_the_image(tmp_path):
+    env = build_env(tmp_path)
+    _attach_mood(env)
+    env.engine.images = _Images(tmp_path / "x.png")
+    env.engine._rng = _fixed_rng(0.1)
+
+    assert env.engine._pick_image("100", ["胖猫"]) == tmp_path / "x.png"
+
+
+def test_good_mood_makes_stickers_more_likely(tmp_path):
+    env = build_env(tmp_path, sticker_chance=0.5, sticker_tags="胖猫")
+    _attach_mood(env, warmth=0.8)
+    env.engine.images = _Images(tmp_path / "s.png")
+    env.engine._rng = _fixed_rng(0.55)  # 0.5*1.2=0.6 才过，0.55 刚好卡进来
+
+    assert env.engine._maybe_sticker("100") == tmp_path / "s.png"
+
+
+def test_tired_mood_makes_stickers_rarer(tmp_path):
+    env = build_env(tmp_path, sticker_chance=0.5, sticker_tags="胖猫")
+    _attach_mood(env, tired=0.95)
+    env.engine.images = _Images(tmp_path / "s.png")
+    env.engine._rng = _fixed_rng(0.3)  # 0.5*0.4=0.2，0.3 已经超了
+
+    assert env.engine._maybe_sticker("100") is None

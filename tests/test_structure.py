@@ -21,6 +21,8 @@ def test_engine_no_longer_owns_context_or_commands():
     assert "_recall_section" not in engine.Engine.__dict__
     assert "_handle_command" not in engine.Engine.__dict__
     assert "_memory_command" not in engine.Engine.__dict__
+    assert "_pick_image" not in engine.Engine.__dict__
+    assert "_maybe_sticker" not in engine.Engine.__dict__
 
 
 def test_engine_file_stays_small():
