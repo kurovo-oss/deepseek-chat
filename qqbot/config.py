@@ -202,6 +202,10 @@ class Settings:
     reply_reshape: bool = True
     # 引用回复：把他引用的那句取出来喂进上下文
     quote_enabled: bool = True
+    # 数据库每日备份：她记不记得你，全在那个 sqlite 文件里
+    backup_enabled: bool = True
+    backup_dir: Path = Path("backups")
+    backup_keep: int = 7
     # 备用模型通道：主通道连不上时切过去，都没戏才说兜底话术
     fallback_model_id: str = ""
     fallback_base_url: str = ""
@@ -379,6 +383,9 @@ class Settings:
             watch_max_lines=_int(env, "WATCH_MAX_LINES", 20, minimum=1),
             reply_reshape=_bool(env, "REPLY_RESHAPE", True),
             quote_enabled=_bool(env, "QUOTE_ENABLED", True),
+            backup_enabled=_bool(env, "BACKUP_ENABLED", True),
+            backup_dir=base_dir / env.get("BACKUP_DIR", "backups").strip(),
+            backup_keep=_int(env, "BACKUP_KEEP", 7, minimum=1),
             fallback_model_id=env.get("FALLBACK_MODEL_ID", ""),
             fallback_base_url=env.get("FALLBACK_BASE_URL", ""),
             fallback_api_key=env.get("FALLBACK_API_KEY", ""),

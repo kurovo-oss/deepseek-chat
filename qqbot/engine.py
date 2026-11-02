@@ -26,6 +26,7 @@ from . import memes as memes_mod
 from . import presence as presence_mod
 from . import recap as recap_mod
 from . import talkstate as talkstate_mod
+from . import backup as backup_mod
 from . import usage as usage_mod
 from . import mood as mood_mod
 from . import pc as pc_mod
@@ -302,6 +303,13 @@ class Engine(ContextMixin, CommandsMixin):
     def catchup_tick(self, now: float | None = None) -> int:
         """她收工了：把晾着的那几条补回。返回补了几条。"""
         stamp = time.time() if now is None else now
+        # 每天存一份库。放最前面：备份比摘要重要，也不花模型的钱
+        if getattr(self.settings, "backup_enabled", False):
+            try:
+                backup_mod.run(self.settings, now=stamp)
+            except Exception:  # noqa: BLE001 - 备份坏了不能拖累聊天
+                log.exception("数据库备份异常")
+
         # 前情摘要要调模型，只在后台线程里做；失败也不影响补回。
         # 放在"忙闲"判断之前：补回可以关，但记忆不该因此断档。
         if self.settings.recap_enabled:
