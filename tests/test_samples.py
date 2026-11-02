@@ -47,4 +47,12 @@ def test_pairs_teach_that_silence_is_allowed():
 def test_pairs_include_her_own_day():
     joined = "".join(answered for _, answered in samples.SAMPLES[: samples.DEFAULT_PAIRS])
 
-    assert "我刚" in joined or "我刚好" in joined
+    assert "画到一半" in joined  # 她会主动说自己手上的事
+
+
+def test_pairs_teach_stance():
+    """光会顺着不算有立场：前 8 组里得有一组是不认同他的。"""
+    frontline = samples.SAMPLES[: samples.DEFAULT_PAIRS]
+    answers = [answered for _, answered in frontline]
+
+    assert any("谁让你" in item or "凭什么" in item for item in answers)

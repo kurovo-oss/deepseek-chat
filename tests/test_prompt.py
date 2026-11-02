@@ -120,3 +120,13 @@ def test_proactive_prompt_allows_her_own_day():
 
     assert "你今天" in prompt
     assert "在干嘛" in prompt  # 空话仍然被点名禁止
+
+
+def test_persona_has_a_stance():
+    """她得有自己的看法，不是只会顺着他。"""
+    prompt = (Path(__file__).resolve().parents[1] / "prompts" / "system.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "# 你有自己的看法" in prompt
+    assert "我不这么觉得" in prompt
