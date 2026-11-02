@@ -56,6 +56,8 @@ def make_settings(tmp_path, **overrides):
         # 测试默认离线：看图会真的发网络请求，需要测的用例自己开
         vision_enabled=False,
         draw_enabled=False,
+        # 生活线会在后台偷偷调模型，把剧本抢走，测试里必须关
+        life_enabled=False,
     )
     kwargs.update(overrides)
     return Settings(**kwargs)

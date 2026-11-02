@@ -57,6 +57,8 @@ def build(tmp_path, replies=(), with_memory=True, **overrides):
         segment_delay_ms=0,
         reply_max_chars=100,
         journal_file=tmp_path / "journal.md",
+        # 生活线会在后台偷偷调模型，把剧本抢走，测试里必须关
+        life_enabled=False,
     )
     kwargs.update(overrides)
     settings = Settings(**kwargs)
