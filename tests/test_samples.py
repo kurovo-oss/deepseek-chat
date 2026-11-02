@@ -50,9 +50,9 @@ def test_pairs_include_her_own_day():
     assert "画到一半" in joined  # 她会主动说自己手上的事
 
 
-def test_pairs_teach_stance():
-    """光会顺着不算有立场：前 8 组里得有一组是不认同他的。"""
+def test_pairs_keep_her_close_to_him():
+    """以他为中心：他一来，她手头的事就可以放下。"""
     frontline = samples.SAMPLES[: samples.DEFAULT_PAIRS]
     answers = [answered for _, answered in frontline]
 
-    assert any("谁让你" in item or "凭什么" in item for item in answers)
+    assert any("不忙" in item or "我刚好在想你" in item for item in answers)
