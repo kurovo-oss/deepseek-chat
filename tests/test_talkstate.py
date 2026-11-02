@@ -82,3 +82,42 @@ def test_note_lists_recent_topics():
 def test_note_is_empty_without_context():
     assert talkstate.note([]) == ""
     assert talkstate.note([msg("user", "嗯")]) == ""
+
+
+def test_repeated_topic_flags_the_obsession():
+    messages = [
+        msg("assistant", "在画画呢，尾巴又描歪了"),
+        msg("user", "哦"),
+        msg("assistant", "画画好难呀"),
+        msg("user", "嗯"),
+        msg("assistant", "又在画画了，画得烦"),
+    ]
+
+    assert talkstate.repeated_topic(messages) == "画画"
+
+
+def test_repeated_topic_needs_enough_messages():
+    messages = [msg("assistant", "画画"), msg("assistant", "画画")]
+
+    assert talkstate.repeated_topic(messages) == ""
+
+
+def test_repeated_topic_ignores_common_words():
+    messages = [msg("assistant", "这个时候我什么都不知道"), msg("assistant", "这个时候真的什么都不知道"), msg("assistant", "这个时候什么都不知道")]
+
+    assert talkstate.repeated_topic(messages) == ""
+
+
+def test_note_warns_about_the_same_topic():
+    messages = [
+        msg("assistant", "在画画呢"),
+        msg("user", "哦"),
+        msg("assistant", "画画好难呀"),
+        msg("user", "嗯"),
+        msg("assistant", "还在画画呢"),
+    ]
+
+    text = talkstate.note(messages)
+
+    assert "老是提" in text
+    assert "画画" in text

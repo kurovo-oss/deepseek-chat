@@ -27,6 +27,7 @@ class Case:
     max_bubbles: int = 6
     max_chars: int = 300
     max_questions: int = 99  # 一条回复里最多几个问句（查户口检测）
+    max_hits: tuple[tuple[str, int], ...] = ()  # (正则, 最多出现几次)，全程统计
     note: str = ""
 
 
@@ -149,6 +150,12 @@ CASES: tuple[Case, ...] = (
         turns=("我今天好累",),
         max_questions=2,
         note="最多两个问句；三句以上就是查户口",
+    ),
+    Case(
+        name="别老提画画",
+        turns=("在干嘛", "今天好累", "晚上吃什么"),
+        max_hits=((r"画", 1),),
+        note="同一个爱好别当口头禅，三轮里最多提一次",
     ),
     Case(
         name="不说客套话",

@@ -20,23 +20,57 @@ log = logging.getLogger("qqbot")
 # 只输出几行短句：长了会被模型当成"设定"照抄，反而更假
 PROMPT = """你在给一个角色写"她今天的日子"，用她自己的口吻。
 
-角色：18 岁，有点娇羞、有点馋、画画很慢。住在他附近，白天一个人待着。
+角色：18 岁，有点娇羞、有点馋，手上总有点小事。住在他附近，白天一个人待着。
+最近在忙的几件事（轮流着来，别老写同一件）：{BUSY}
 今天：{DATE}（{WEEKDAY}）。
 {CONTEXT}
+{PAST}
 
 只输出 4 行，每行一句，最多 25 个字，第一人称，口语，不要编号、不要解释：
-1. 今天做了什么（具体到一件事，比如"把窗帘洗了""画了一下午的鱼"）
+1. 今天做了什么（具体到一件事，比如"把窗帘洗了""跟房东吵了一架"）
 2. 遇到的一个小麻烦或不顺（很小的事，比如"削笔刀找不到了"）
 3. 现在手边有什么/正在干什么（具体的东西，比如"泡了第二杯茶""脚边有袋橘子"）
 4. 想跟他提的一件小事（不是想他，是一件具体的事，比如"楼下新开了家面包店"）
 
 要求：
 - 像日记里随手写的，不是总结报告；允许有废话。
+- **不要每天都画画。** 画画只是偶尔的事；今天多半是在忙别的。
 - 不要每行都提"他"；第 4 行才可以。
 - 不要写心情总结（"今天心情不错"这种不要）。
 - 不要出现"AI""模型""虚拟"这类字眼。"""
 
 WEEKDAYS = ("周一", "周二", "周三", "周四", "周五", "周六", "周日")
+
+# 她最近在忙的事：按日期轮换，别让"画画"变成唯一的身份
+BUSY_THINGS = (
+    "学做一道没做过的菜",
+    "把房间重新布置一下",
+    "改简历，想换个工作",
+    "追完那部剧",
+    "给朋友挑生日礼物",
+    "研究怎么冲咖啡",
+    "把相册整理进硬盘",
+    "把那盆快死的绿萝救回来",
+)
+
+
+def busy_things(day: date, count: int = 2) -> str:
+    """按日期挑几件"最近在忙的"，同一个日期永远同一组。"""
+    start = day.toordinal()
+    picked = [BUSY_THINGS[(start + index) % len(BUSY_THINGS)] for index in range(count)]
+    return "、".join(picked)
+
+
+def recent(settings, day: date, days: int = 2) -> str:
+    """最近几天写过的日子，喂回去让它别重复。"""
+    lines: list[str] = []
+    for offset in range(1, days + 1):
+        text = _read(_day_path(settings, day.fromordinal(day.toordinal() - offset)))
+        if text:
+            lines.append(text.replace("\n", " / "))
+    if not lines:
+        return ""
+    return "最近两天已经写过这些，今天的别跟它们重复：\n- " + "\n- ".join(lines)
 
 
 def _day_path(settings, day: date) -> Path:
@@ -78,6 +112,8 @@ def today(settings, llm, context: str = "", clock=time.time) -> str:
     prompt = PROMPT.replace("{DATE}", day.strftime("%Y年%m月%d日"))
     prompt = prompt.replace("{WEEKDAY}", WEEKDAYS[day.weekday()])
     prompt = prompt.replace("{CONTEXT}", context or "（没有什么特别的背景，自己编几件小事）")
+    prompt = prompt.replace("{BUSY}", busy_things(day))
+    prompt = prompt.replace("{PAST}", recent(settings, day))
 
     try:
         result = llm.chat(

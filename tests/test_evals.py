@@ -87,3 +87,16 @@ def test_evaluate_flags_too_many_questions():
     failures = evaluate(case, turns)
 
     assert any("查户口" in item for item in failures)
+
+
+def test_evaluate_counts_forbidden_hits():
+    case = next(c for c in CASES if c.name == "别老提画画")
+    turns = [
+        TurnResult(user="在干嘛", replies=["在画画"]),
+        TurnResult(user="今天好累", replies=["画画好烦"]),
+        TurnResult(user="晚上吃什么", replies=["随便呀"]),
+    ]
+
+    failures = evaluate(case, turns)
+
+    assert any("出现" in item and "> 1" in item for item in failures)

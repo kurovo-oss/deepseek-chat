@@ -103,3 +103,27 @@ def test_chat_like_reply_is_rejected(tmp_path):
 
     assert life.today(settings, llm) == ""
     assert not list(Path(settings.life_dir).glob("*.md"))
+
+
+def test_busy_things_rotate_by_day():
+    from datetime import date
+
+    first = life.busy_things(date(2026, 11, 2))
+    again = life.busy_things(date(2026, 11, 2))
+    other = life.busy_things(date(2026, 11, 3))
+
+    assert first == again
+    assert first != other
+    assert len(first.split("、")) == 2
+
+
+def test_recent_days_feed_back(tmp_path, monkeypatch):
+    from datetime import date
+
+    settings = type("S", (), {"life_dir": tmp_path})()
+    (tmp_path / "2026-11-01.md").write_text("昨天在收拾屋子", encoding="utf-8")
+    (tmp_path / "2026-11-02.md").write_text("今天在学做菜", encoding="utf-8")
+
+    text = life.recent(settings, date(2026, 11, 2), days=1)
+
+    assert "昨天在收拾屋子" in text

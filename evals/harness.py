@@ -82,6 +82,11 @@ def evaluate(case: Case, turns: list[TurnResult]) -> list[str]:
     if len(last_text) > case.max_chars:
         failures.append(f"{len(last_text)} 字 > {case.max_chars}")
 
+    for pattern, allowed in case.max_hits:
+        hits = sum(len(re.findall(pattern, " ".join(turn.replies))) for turn in turns)
+        if hits > allowed:
+            failures.append(f"「{pattern}」出现 {hits} 次 > {allowed}")
+
     questions = sum(1 for bubble in last if talkstate.asks_question(bubble))
     if questions > case.max_questions:
         failures.append(f"问了 {questions} 句 > {case.max_questions}（像查户口）")

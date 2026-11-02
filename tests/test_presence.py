@@ -47,3 +47,12 @@ def test_expired_state_is_regenerated(tmp_path):
     later = presence.current(path, 1000.0 + 4000, FakeRng(0.9, 0.9))
 
     assert later["until"] > first["until"]
+
+
+def test_drawing_is_not_the_whole_life():
+    """她自己有日子过，画画只是其中一件——别把角色写成一个只会画画的人。"""
+    weights = dict(presence.ACTIVITIES)
+
+    assert weights["在画画"] <= 0.15
+    assert len(weights) >= 8
+    assert abs(sum(weights.values()) - 1.0) < 0.001
