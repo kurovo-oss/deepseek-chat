@@ -47,7 +47,7 @@ from .formatting import (
 )
 from .images import sniff_image
 from .llm import LLMClient, LLMError
-from .media import MediaMixin
+from .media import MediaMixin, wants_image
 from .memory import KIND_LABEL, card_weight
 from .onebot import IncomingMessage, Sender, parse_event
 from .store import Store
@@ -240,7 +240,13 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin):
         self._replying.add(session)
         try:
             reply = self._chat(session)
-            self._send_reply(message.user_id, session, reply, origin="chat")
+            self._send_reply(
+            message.user_id,
+            session,
+            reply,
+            origin="chat",
+            force_image=wants_image(text),
+        )
         finally:
             self._replying.discard(session)
             self._pending_sessions.discard(session)
@@ -484,6 +490,7 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin):
         raw_text: str,
         sanitize: bool = True,
         origin: str = "reply",
+        force_image: bool = False,
     ) -> bool:
         if sanitize:
             cleaned = strip_markdown(raw_text or "")
@@ -494,7 +501,7 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin):
         cleaned, tags = extract_image_tags(cleaned)
         cleaned, drawings = extract_draw_tags(cleaned)
 
-        image_path = self._pick_image(session, tags)
+        image_path = self._pick_image(session, tags, force=force_image)
         parts = split_bubbles(
             cleaned, self.settings.reply_max_chars, self._bubble_limit(origin)
         )

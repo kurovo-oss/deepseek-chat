@@ -64,6 +64,9 @@ class FakeImages:
         self.resolved.append(tag)
         return self.cat_path if tag == "cat" else None
 
+    def path_of(self, row):
+        return self.cat_path
+
 
 def make_message(text, mid="m1", uid=100):
     return IncomingMessage(user_id=uid, message_id=mid, text=text, raw={})
@@ -1359,3 +1362,67 @@ def test_tired_mood_makes_stickers_rarer(tmp_path):
     env.engine._rng = _fixed_rng(0.3)  # 0.5*0.4=0.2，0.3 已经超了
 
     assert env.engine._maybe_sticker("100") is None
+
+
+# ------------------------------------------------ 他要图就得给
+def test_requested_image_ignores_cooldown(tmp_path):
+    """他说"发个表情包"，冷却和情绪都得让路——不然她说发了，他什么都没收到。"""
+    env = build_env(tmp_path)
+    env.store.save_message("100", "assistant", "[图片]", image_tags=["x.png"])
+    assert env.store.has_recent_image("100", 10)
+
+    env.engine._send_reply("100", "100", "给你 {{img:cat}}", force_image=True)
+
+    assert [path for _, path, _ in env.sender.images] == [str(env.images.cat_path)]
+
+
+def test_random_image_still_respects_cooldown(tmp_path):
+    env = build_env(tmp_path)
+    env.store.save_message("100", "assistant", "[图片]", image_tags=["x.png"])
+
+    env.engine._send_reply("100", "100", "给你 {{img:cat}}")
+
+    assert env.sender.images == []
+
+
+def test_last_tag_sends_the_newest_collected(tmp_path):
+    env = build_env(tmp_path)
+    env.store.add_image("a" * 64, "aa/a.png", "image/png", 10, tags=["cat"], source="user")
+    env.store.add_image("b" * 64, "bb/b.png", "image/png", 10, tags=["cute"], source="user")
+
+    assert env.engine._pick_image("100", ["last"]) == env.images.cat_path
+
+
+def test_wants_image_recognises_requests():
+    from qqbot.media import wants_image
+
+    assert wants_image("把你收藏的表情包发我一个")
+    assert wants_image("刚才那个再来一次")
+    assert wants_image("发张图看看")
+    assert not wants_image("今天好累")
+    assert not wants_image("晚上吃什么")
+
+
+def test_asking_for_a_sticker_actually_sends_one(tmp_path):
+    env = build_env(tmp_path)
+    env.engine.llm.text = "好呀 {{img:cat}}"
+
+    env.engine.handle_message(make_message("把你收藏的表情包发我一个"))
+
+    assert [path for _, path, _ in env.sender.images] == [str(env.images.cat_path)]
+    assert "{{img" not in env.sender.sent[0][1]
+
+
+def test_spoken_last_tag_also_works(tmp_path):
+    """她可能写 {{img:刚才那个}}，不一定会写 last。"""
+    env = build_env(tmp_path)
+    env.store.add_image("a" * 64, "aa/a.png", "image/png", 10, tags=["cat"], source="user")
+
+    assert env.engine._pick_image("100", ["刚才那个"]) == env.images.cat_path
+
+
+def test_request_falls_back_to_latest_when_tag_misses(tmp_path):
+    env = build_env(tmp_path)
+    env.store.add_image("a" * 64, "aa/a.png", "image/png", 10, tags=["cat"], source="user")
+
+    assert env.engine._pick_image("100", ["不存在"], force=True) == env.images.cat_path
