@@ -124,12 +124,12 @@ class Settings:
     network_wait_seconds: float = 30.0
     adapter_watchdog_seconds: float = 300.0
     proactive_enabled: bool = True
-    proactive_max_per_day: int = 3
+    proactive_max_per_day: int = 5
     proactive_start_hour: int = 9
     proactive_end_hour: int = 23
-    proactive_min_gap_hours: float = 4.0
+    proactive_min_gap_hours: float = 3.0
     proactive_quiet_minutes: int = 30
-    proactive_idle_hours: float = 72.0
+    proactive_idle_hours: float = 5.0
     proactive_weekly_max: int = 1
     proactive_check_seconds: float = 600.0
     proactive_prompt_file: Path = Path("prompts/proactive.md")
@@ -310,14 +310,14 @@ class Settings:
             network_wait_seconds=_float(env, "NETWORK_WAIT_SECONDS", 30.0),
             adapter_watchdog_seconds=_float(env, "ADAPTER_WATCHDOG_SECONDS", 300.0),
             proactive_enabled=_bool(env, "PROACTIVE_ENABLED", True),
-            proactive_max_per_day=_int(env, "PROACTIVE_MAX_PER_DAY", 3),
+            proactive_max_per_day=_int(env, "PROACTIVE_MAX_PER_DAY", 5),
             proactive_start_hour=start_hour,
             proactive_end_hour=end_hour,
-            proactive_min_gap_hours=_float(env, "PROACTIVE_MIN_GAP_HOURS", 4.0),
+            proactive_min_gap_hours=_float(env, "PROACTIVE_MIN_GAP_HOURS", 3.0),
             proactive_quiet_minutes=_int(
                 env, "PROACTIVE_QUIET_MINUTES", 30, minimum=0
             ),
-            proactive_idle_hours=_float(env, "PROACTIVE_IDLE_HOURS", 72.0),
+            proactive_idle_hours=_float(env, "PROACTIVE_IDLE_HOURS", 5.0),
             proactive_weekly_max=_int(env, "PROACTIVE_WEEKLY_MAX", 1, minimum=0),
             proactive_check_seconds=_float(env, "PROACTIVE_CHECK_SECONDS", 600.0),
             proactive_prompt_file=base_dir

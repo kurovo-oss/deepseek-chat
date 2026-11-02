@@ -110,3 +110,13 @@ def test_prompt_says_pictures_follow_context():
 
     assert "他发图片或表情包，先接上一两句的话" in text
     assert "别复述「图上有什么」" in text or "别复述" in text
+
+
+def test_proactive_prompt_allows_her_own_day():
+    """主动开口不能只靠回忆审问，她也可以说自己的事。"""
+    prompt = (Path(__file__).resolve().parents[1] / "prompts" / "proactive.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "你今天" in prompt
+    assert "在干嘛" in prompt  # 空话仍然被点名禁止

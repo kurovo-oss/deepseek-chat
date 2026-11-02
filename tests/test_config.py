@@ -110,3 +110,15 @@ def test_system_prompt_reads_file(tmp_path):
         tmp_path,
     )
     assert load_system_prompt(settings) == "自定义人格"
+
+
+def test_she_initiates_more_often_by_default(tmp_path):
+    """她要"更黏"：默认允许一天主动说几句，而不是非等三天。"""
+    from qqbot.config import Settings
+
+    settings = Settings(allow_user_id=1, model_api_key="k", base_dir=tmp_path,
+                        db_path=tmp_path / "d.db", system_prompt_file=tmp_path / "s.md")
+
+    assert settings.proactive_max_per_day >= 4
+    assert settings.proactive_idle_hours <= 8
+    assert settings.proactive_min_gap_hours <= 3.5

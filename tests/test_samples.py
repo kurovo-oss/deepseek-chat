@@ -34,3 +34,17 @@ def test_messages_respect_limit():
 
 def test_empty_limit_is_safe():
     assert samples.messages(-1) == []
+
+
+def test_pairs_teach_that_silence_is_allowed():
+    """样品里得有"说完就停"的样子，不然她会学成每句都反问。"""
+    frontline = samples.SAMPLES[: samples.DEFAULT_PAIRS]
+    quiet = [answered for _, answered in frontline if "？" not in answered and "?" not in answered]
+
+    assert len(quiet) >= 3
+
+
+def test_pairs_include_her_own_day():
+    joined = "".join(answered for _, answered in samples.SAMPLES[: samples.DEFAULT_PAIRS])
+
+    assert "我刚" in joined or "我刚好" in joined

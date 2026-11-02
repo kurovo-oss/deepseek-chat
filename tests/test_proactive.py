@@ -107,8 +107,8 @@ def test_blocks_when_user_talked_recently(tmp_path):
 
 
 def test_blocks_when_silence_not_long_enough(tmp_path):
-    env = build(tmp_path)
-    seed_silence(env, hours_ago=10)  # 才 10 小时
+    env = build(tmp_path, proactive_idle_hours=48)
+    seed_silence(env, hours_ago=10)  # 才 10 小时，离 48 小时远着
     assert env.scheduler.gate(ts(10, 28, 14)) is None
     env.store.close()
 
