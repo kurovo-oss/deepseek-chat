@@ -20,6 +20,7 @@ from typing import Any
 from . import digest as digest_mod
 from . import draw as draw_mod
 from . import abilities as abilities_mod
+from . import budget as budget_mod
 from . import life as life_mod
 from . import memes as memes_mod
 from . import presence as presence_mod
@@ -828,38 +829,41 @@ class Engine:
         while selected and selected[0]["role"] != "user":
             selected.pop(0)
 
-        system = self.system_prompt
+        # system 不再是字符串一路拼：每段声明优先级和配额，由预算统一分配
+        sections: list[budget_mod.Section] = [
+            budget_mod.Section("人设", self.system_prompt, priority=1000, fixed=True)
+        ]
         if self.memory is not None:
             context = self.memory.context()
             if context:
-                system = f"{system}\n\n{context}"
+                sections.append(budget_mod.Section("记忆", context, priority=60, quota=800))
         recall = self._recall_section(selected)
         if recall:
-            system = f"{system}\n\n{recall}"
+            sections.append(budget_mod.Section("回忆", recall, priority=55, quota=450))
 
         digest = digest_mod.recent_text(self.settings)
         if digest:
-            system = f"{system}\n\n{digest}"
+            sections.append(budget_mod.Section("摘要", digest, priority=50, quota=350))
 
         if self.settings.life_enabled:
             life_note = life_mod.snippet(self.settings)
             if life_note:
-                system = f"{system}\n\n{life_note}"
+                sections.append(budget_mod.Section("日子", life_note, priority=70, quota=280))
 
         # 她会什么、不会什么——他问"你有没有这个功能"时，她得有事实可依
-        system = f"{system}\n\n{abilities_mod.block()}"
+        sections.append(budget_mod.Section("能力", abilities_mod.block(), priority=45, quota=300))
 
         # 网络用语只给意思，不给"怎么用"：听得懂，但自己不说
-        system = f"{system}\n\n{memes_mod.block()}"
+        sections.append(budget_mod.Section("梗", memes_mod.block(), priority=40, quota=360))
 
         if self.mood is not None:
             state = self.mood.describe()
             if state:
-                system = f"{system}\n\n{state}"
+                sections.append(budget_mod.Section("情绪", state, priority=80, quota=140))
 
         busy_note = self._busy_note(session)
         if busy_note:
-            system = f"{system}\n\n{busy_note}"
+            sections.append(budget_mod.Section("忙", busy_note, priority=88, quota=120))
 
         if self.settings.talkstate_enabled:
             talk_note = talkstate_mod.note(
@@ -869,7 +873,24 @@ class Engine:
                 ]
             )
             if talk_note:
-                system = f"{system}\n\n{talk_note}"
+                sections.append(budget_mod.Section("对话状态", talk_note, priority=90, quota=220))
+
+        fitted = budget_mod.fit(sections, self.settings.context_token_budget)
+        if fitted.trimmed or fitted.dropped:
+            log.info(
+                "上下文压缩：%d tokens；压缩 %s；丢弃 %s",
+                fitted.tokens,
+                "、".join(fitted.trimmed) or "无",
+                "、".join(fitted.dropped) or "无",
+            )
+        system = fitted.text
+
+        # 历史也按 token 算：system 占完剩下的才是它的
+        cap = budget_mod.history_budget(self.settings.context_token_budget, fitted.tokens)
+        while selected and sum(budget_mod.estimate_tokens(i["content"]) for i in selected) > cap:
+            selected.pop(0)
+        while selected and selected[0]["role"] != "user":
+            selected.pop(0)
 
         messages = [{"role": "system", "content": system}]
         for item in selected:

@@ -48,6 +48,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--save", default="", help="结果存成 JSON，下次用 --compare")
     parser.add_argument("--compare", default="", help="和旧的 JSON 结果对比")
     parser.add_argument("--strict", action="store_true", help="有失败就返回非零退出码")
+    parser.add_argument(
+        "--repeat", type=int, default=2, help="每个场景最多试几次（模型有随机性，默认 2）"
+    )
     args = parser.parse_args(argv)
 
     selected = [case for case in CASES if args.only in case.name]
@@ -63,7 +66,11 @@ def main(argv: list[str] | None = None) -> int:
     results: list[CaseResult] = []
     with tempfile.TemporaryDirectory() as tmp:
         for case in selected:
-            result = run_case(case, base, llm, Path(tmp))
+            attempts = max(1, args.repeat)
+            for attempt in range(1, attempts + 1):
+                result = run_case(case, base, llm, Path(tmp))
+                if result.ok or attempt == attempts:
+                    break
             results.append(result)
             print(("✓ " if result.ok else "✗ ") + case.name)
             for reply in result.text.splitlines():

@@ -994,3 +994,28 @@ def test_talk_state_goes_into_prompt(tmp_path):
 
     assert "【对话状态】" in content
     assert "你上一条问了他" in content
+
+
+def test_prompt_respects_token_budget(tmp_path):
+    """system 再长也不能顶穿预算：人设不动，其余按优先级压。"""
+    from qqbot import budget as budget_mod
+
+    env = build_env(tmp_path, context_token_budget=160)
+    env.store.save_message("100", "user", "他说了很长的一段话" * 10)
+
+    content = env.engine._build_messages("100")[0]["content"]
+
+    assert content.startswith("你是大肥鱼")
+    assert budget_mod.estimate_tokens(content) <= 200
+
+
+def test_tight_budget_drops_low_priority_sections(tmp_path):
+    env = build_env(tmp_path, context_token_budget=120)
+    env.store.save_message("100", "user", "在吗")
+
+    content = env.engine._build_messages("100")[0]["content"]
+
+    # 梗表是优先级最低的，预算紧的时候该被压掉
+    assert "已老实=认输" not in content
+    # 能力表优先级稍高，通常还在
+    assert "【你会的】" in content or "刷抖音" in content

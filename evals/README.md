@@ -10,6 +10,7 @@ tools\python\python.exe -m evals.run                      # 全跑（真模型�
 tools\python\python.exe -m evals.run --only 指代           # 只跑一个
 tools\python\python.exe -m evals.run --save evals/base.json
 tools\python\python.exe -m evals.run --compare evals/base.json   # 看有没有退化
+tools\python\python.exe -m evals.run --repeat 3                   # 每个场景最多试 3 次（默认 2）
 ```
 
 改完 prompt 或引擎后跑一次：分数掉了就是改坏了，别靠肉眼。
