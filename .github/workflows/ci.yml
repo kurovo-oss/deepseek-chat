@@ -1,0 +1,32 @@
+name: ci
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  test:
+    # 跑在 Windows 上：项目按 Windows 使用环境写的（路径、编码、OneBot 本地端口），
+    # 放在 ubuntu 上会冒出一堆跟业务无关的失败，反而没人看 CI 结果。
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 安装依赖
+        # 运行时零第三方依赖；测试需要 pytest，看图/截图相关的用例需要 Pillow
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest pillow
+
+      - name: 单元测试
+        run: python -m pytest -q --no-header
+
+      - name: 说明
+        # 评测集要真调模型（DEEPSEEK_API_KEY），CI 里不跑：
+        # 它测的是"她说话像不像人"，属于本地人工看的指标，不是门槛
+        run: echo "evals/ 需要真实 API key，留给本地跑：python -m evals.run"

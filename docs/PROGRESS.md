@@ -430,6 +430,21 @@ API 挂掉那阵它连着发了四次一模一样的话。
 - 纯引用（只有 reply 段没有文字）现在也会解析，不再被当成空消息丢掉
 - 测试：解析 +2、engine +3（入库、关掉开关、取失败不影响回复），全量 611 通过
 
+
+**2026-11-02 engine 拆分 + CI**：engine.py 1416 行，编排、拼上下文、17 个斜杠指令、
+发图、画图、看屏幕全挤在一个类里——改 prompt 得在 1400 行里找。
+
+- 拆成四个文件（纯搬代码，一行逻辑没动，611 个测试全程绿）：
+  - `qqbot/context.py`（192 行）：`_build_messages`、`_recall_section`、`_busy_note`、
+    `_quoted_text`、`_image_context_hint`、`_window_key`
+  - `qqbot/commands.py`（447 行）：17 个斜杠指令
+  - `qqbot/sayings.py`（49 行）：兜底话术、HELP_TEXT、RECALL_TITLE
+  - `qqbot/engine.py`：**1416 → 820 行**，只剩编排
+- `tests/test_structure.py`：+5 条结构守卫（engine 不许再长回去、方法不许搬回来、
+  老名字 `engine.HELP_TEXT` 仍可用）
+- `.github/workflows/ci.yml`：push/PR 自动跑 `pytest`（Windows + Python 3.12 + pytest/Pillow）；
+  评测集不进 CI（要 API key，是本地指标不是门槛）
+
 ## 七、主动消息（M4）
 
 **做了什么**：她会先开口——两种情形。

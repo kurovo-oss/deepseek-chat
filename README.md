@@ -172,6 +172,10 @@ python scripts/get_napcat.py             # 实际下载
 
 ## 测试
 
+仓库带 GitHub Actions（`.github/workflows/ci.yml`）：推上去自动跑全量 pytest。
+评测集（`evals/`）要真调模型、要 API key，**不进 CI**——它测的是"她说话像不像人"，
+属于本地人工看的指标：`tools\python\python.exe -m evals.run --compare evals/baseline.json`
+
 ```bash
 python -m pytest -q
 ```

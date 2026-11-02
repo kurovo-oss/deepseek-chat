@@ -27,7 +27,9 @@ from . import presence as presence_mod
 from . import talkstate as talkstate_mod
 from . import pc as pc_mod
 from . import vision as vision_mod
+from .commands import CommandsMixin
 from .config import Settings
+from .context import ContextMixin
 from .export import export_all
 from .formatting import (
     extract_draw_tags,
@@ -46,19 +48,13 @@ from .store import Store
 
 log = logging.getLogger("qqbot")
 
-FALLBACK_REPLIES = (
-    "唔…我这会儿脑子有点转不过来，等一下再说好不好？",
-    "等下，刚刚走神了，你再说一遍",
-    "啊…我这边卡了一下，等我一下",
-    "唔，我好像没听清，再说一次嘛",
+from .sayings import (  # noqa: F401
+    FALLBACK_REPLIES,
+    FALLBACK_REPLY,
+    HELP_TEXT,
+    RECALL_TITLE,
+    fallback_reply,
 )
-FALLBACK_REPLY = FALLBACK_REPLIES[0]  # 兼容旧引用
-RECALL_TITLE = "# 他以前说过的原话"
-
-
-def fallback_reply() -> str:
-    """兜底话术也要换着说：同一句连着出现四次，比不说话还像机器人。"""
-    return random.choice(FALLBACK_REPLIES)
 
 
 def _size_text(size: int) -> str:
@@ -66,34 +62,9 @@ def _size_text(size: int) -> str:
         return "%.1f MB" % (size / (1024 * 1024))
     return "%.0f KB" % (size / 1024)
 
-HELP_TEXT = (
-    "我会这些呀：\n"
-    "/reset 清空刚才的对话\n"
-    "/memory 看看我记得什么（add 加一条、edit 改一条、ok 编号 确认）\n"
-    "/forget 编号 忘掉某件事\n"
-    "/pin 编号 把某件事记牢一点\n"
-    "/journal 看看记忆本\n"
-    "/dream 手动整理一次记忆\n"
-    "/mood 看看我现在的心情\n"
-    "/life 看她今天在干嘛（/life 换 重新生成）\n"
-    "/screen 让她看一眼你的屏幕\n"
-    "/pc 让她看看你电脑的状态（/pc 详细 看原始数据）\n"
-    "/watch 让她坐旁边看你打游戏（/watch 停 结束）\n"
-    "/digest 看今天/昨天/这周留下了什么\n"
-    "/export 把聊天和记忆导成一个文件\n"
-    "/tag 名字 给刚存的表情包打标\n"
-    "/img list 看看图库\n"
-    "/img clean 清掉回收来的旧图\n"
-    "/img retag 给没标签的表情包补标\n"
-    "/draw 一只猫 让她画一张（测画图用）\n"
-    "/proactive 让她主动说一句\n"
-    "/events 看她记下的事\n"
-    "/event 2026-11-04 09:00 面试 记一件事\n"
-    "/status 运行状态"
-)
 
 
-class Engine:
+class Engine(ContextMixin, CommandsMixin):
     def __init__(
         self,
         settings: Settings,
@@ -272,335 +243,18 @@ class Engine:
             self.memory.note_reply(session, text)
 
     # ---------------- 指令 ----------------
-    def _handle_command(self, text: str, session: str) -> str | None:
-        if not text.startswith("/"):
-            return None
-
-        head, _, rest = text.partition(" ")
-        head = head.lower()
-        rest = rest.strip()
-
-        if head == "/reset":
-            return "好，我把刚才的对话忘掉啦。\n不过你的事我还是记得的呀。"
-
-        if head == "/status":
-            tokens_in, tokens_out = self.store.usage_total()
-            return (
-                "运行状态\n"
-                f"模型：{self.settings.model_id}\n"
-                f"消息：{self.store.count_messages(session)} 条\n"
-                f"卡片：{self.store.count_cards()} 张\n"
-                f"tokens：{tokens_in} in / {tokens_out} out"
-            )
-
-        if head == "/memory":
-            return self._memory_command(rest)
-
-        if head == "/forget":
-            return self._forget(rest)
-
-        if head in ("/pin", "/unpin"):
-            return self._set_pin(rest, pinned=head == "/pin")
-
-        if head == "/journal":
-            journal = self.memory.journal() if self.memory is not None else ""
-            if not journal:
-                return "我还没整理过记忆呢，夜里做梦的时候会写下来。"
-            return "我记着的这些：\n" + journal
-
-        if head == "/dream":
-            return self._dream_now()
-
-        if head == "/digest":
-            return self._digest_command(rest)
-
-        if head == "/export":
-            return self._export_command()
-
-        if head == "/watch":
-            return self._watch_command(rest, session)
-
-        if head == "/screen":
-            return self._screen_command(session)
-
-        if head == "/pc":
-            return self._pc_command(rest)
-
-        if head == "/life":
-            return self._life_command(rest)
-
-        if head == "/mood":
-            if self.mood is None:
-                return "我现在没什么特别的感觉。"
-            return self.mood.line()
-
-        if head == "/tag":
-            return self._tag_latest(rest)
-
-        if head == "/img":
-            return self._img_command(rest)
-
-        if head == "/draw":
-            prompt = rest.strip()
-            if not prompt:
-                return "格式：/draw 一只猫在窗台上打瞌睡"
-            if not self.settings.draw_enabled:
-                return "画图关着（DRAW_ENABLED=false）。"
-            self._schedule_draw(int(session), session, prompt)
-            return "好，我画一张，画好直接发你。"
-
-        if head == "/proactive":
-            return self._try_proactive()
-
-        if head == "/events":
-            return self._list_events()
-
-        if head == "/event":
-            return self._event_command(rest)
-
-        if head in ("/help", "/?"):
-            return HELP_TEXT
-
-        return "唔…这个指令我不认识呀。\n" + HELP_TEXT
 
     # ---------------- 记忆指令 ----------------
-    def _memory_command(self, rest: str) -> str:
-        """记忆本：查看 / 手动加一条 / 改一条。
 
-        自动抽取会记错、会漏；能改才是"记忆本"，不能改只是个公告板。
-        """
-        raw = (rest or "").strip()
-        if not raw:
-            return self._list_cards()
 
-        sub, _, args = raw.partition(" ")
-        sub = sub.lower()
 
-        if sub == "add":
-            content = args.strip()
-            if not content:
-                return "要记什么呀？发 /memory add 他不吃香菜"
-            card_id = self.store.add_card(
-                kind="fact", summary=content, importance=0.6
-            )
-            return f"记下来啦（第 {card_id} 条）：{content}"
 
-        if sub in ("ok", "confirm"):
-            target = args.strip()
-            if not target.isdigit():
-                return "格式：/memory ok 编号"
-            card = self.store.get_card(int(target))
-            if card is None:
-                return f"我这儿没有第 {target} 条记忆呀。"
-            self.store.set_confirmed(int(target), True)
-            return f"好，这条我记牢了：{card['summary']}"
 
-        if sub in ("edit", "set"):
-            target, _, content = args.strip().partition(" ")
-            if not target.isdigit() or not content.strip():
-                return "格式：/memory edit 编号 新的内容"
-            if self.store.get_card(int(target)) is None:
-                return f"我这儿没有第 {target} 条记忆呀。"
-            summary = content.strip()
-            self.store.update_card(int(target), summary=summary)
-            return f"改好了：{summary}"
 
-        return self._list_cards()
-
-    def _list_cards(self) -> str:
-        cards = self.store.list_cards(status="active", limit=300)
-        if not cards:
-            return "我还没记住什么呢，多聊聊就记住啦。"
-
-        now = time.time()
-        half_life = self.settings.decay_half_life_days
-        scored = sorted(
-            cards, key=lambda card: card_weight(card, now, half_life), reverse=True
-        )[:20]
-
-        lines = []
-        has_pending = False
-        for card in scored:
-            weight = card_weight(card, now, half_life)
-            label = KIND_LABEL.get(str(card.get("kind")), "记忆")
-            pinned = "·钉" if card.get("pinned") else ""
-            pending = "" if card.get("confirmed", True) else "·待确认"
-            has_pending = has_pending or bool(pending)
-            lines.append(
-                f"{card['id']}. [{label}] {card['summary']}（{weight:.2f}{pinned}{pending}）"
-            )
-        text = "我记得这些事：\n" + "\n".join(lines)
-        if has_pending:
-            text += "\n\n带·待确认的是我猜的，发 /memory ok 编号 我才会当真。"
-        return text
-
-    def _forget(self, rest: str) -> str:
-        if not rest:
-            return "要忘掉哪件事呀？把编号或关键词告诉我。"
-
-        target, _, flag = rest.partition(" ")
-        confirmed = flag.strip().lower() == "confirm"
-
-        if target.isdigit():
-            card = self.store.get_card(int(target))
-            if card is None:
-                return f"我这儿没有第 {target} 条记忆呀。"
-            if not confirmed:
-                return f"要删掉「{card['summary']}」吗？\n确定就发 /forget {target} confirm"
-            self.store.delete_card(int(target))
-            return "删掉了，这件事我不记得了。"
-
-        # 关键词删除是批量操作，必须二次确认
-        if not confirmed:
-            return f"确认忘掉所有关于「{target}」的记忆，就发 /forget {target} confirm"
-        removed = self.store.delete_cards_matching(target)
-        if removed:
-            return f"删掉 {removed} 条关于「{target}」的记忆了。"
-        return f"我好像没有关于「{target}」的记忆呀。"
-
-    def _dream_now(self) -> str:
-        """手动整理一次记忆（夜里也会自动做，这是调试用的入口）。"""
-        dreamer = self.dreamer
-        if dreamer is None:
-            return "做梦还没准备好呢。"
-        try:
-            result = dreamer.dream()
-        except Exception as exc:  # noqa: BLE001 - 手动触发也不能崩
-            log.exception("手动做梦失败")
-            return f"这次没整理成：{exc}"
-
-        if not result.get("ok"):
-            return f"这次没整理成：{result.get('note') or '不知道怎么了'}"
-        if not result.get("messages"):
-            return "这会儿没什么要整理的呢。"
-        return (
-            f"整理完啦：看了 {result['messages']} 条消息，"
-            f"新记 {result['added']} 条、合并 {result['merged']} 条、"
-            f"调了 {result['reweight']} 条权重，记忆本 {result['chars']} 字。"
-        )
-
-    def _digest_command(self, rest: str) -> str:
-        keyword = rest.strip().lower()
-        if keyword in ("周", "一周", "上周", "week"):
-            return digest_mod.week_text(self.settings)
-
-        today = digest_mod.day_of(time.time())
-        if keyword in ("昨天", "yesterday"):
-            target = today - timedelta(days=1)
-        elif keyword in ("", "今天", "today"):
-            target = today
-        else:
-            return "用法：/digest（今天）、/digest 昨天、/digest 周"
-
-        text = digest_mod.read(self.settings, target)
-        if text is None:
-            try:
-                text = digest_mod.generate(self.store, self.llm, self.settings, target)
-            except Exception as exc:  # noqa: BLE001 - 生成失败也别崩
-                log.exception("写日摘要失败")
-                return f"这天没写出来：{exc}"
-        if text is None:
-            return f"{target.strftime('%m-%d')} 这天没说什么呢。"
-        return text
-
-    def _export_command(self) -> str:
-        try:
-            path, stats = export_all(self.store, self.settings)
-        except Exception as exc:  # noqa: BLE001 - 导出失败不影响聊天
-            log.exception("导出失败")
-            return f"没导出成：{exc}"
-        return (
-            f"导出好了：{path}\n"
-            f"消息 {stats['messages']} 条、卡片 {stats['cards']} 张、"
-            f"事件 {stats['events']} 个、摘要 {stats['summaries']} 篇。"
-        )
-
-    def _set_pin(self, rest: str, pinned: bool) -> str:
-        target = rest.strip()
-        if not target.isdigit():
-            return "要钉哪一条呀？先发 /memory 看看编号。"
-        card = self.store.get_card(int(target))
-        if card is None:
-            return f"我这儿没有第 {target} 条记忆呀。"
-        self.store.set_pinned(int(target), pinned)
-        if pinned:
-            return f"记住了，「{card['summary']}」我会一直记着。"
-        return f"「{card['summary']}」不用一直记着了。"
 
     # ---------------- 图库指令 ----------------
-    @staticmethod
-    def _split_tags(raw: str) -> list[str]:
-        return [tag.lower() for tag in re.split(r"[\s,，、]+", raw or "") if tag.strip()][:5]
 
-    def _tag_latest(self, rest: str) -> str:
-        latest = self.store.latest_image(source="user")
-        if latest is None:
-            return "我还没存过表情包呀，先发一张给我？"
-        tags = self._split_tags(rest)
-        if not tags:
-            current = "、".join(latest["tags"]) or "无标签"
-            return (
-                f"最近存的是第 {latest['id']} 张，现在是：{current}。\n"
-                f"要打标就发 /tag 名字，可以给多个。"
-            )
-        self.store.tag_image(latest["id"], tags)
-        return f"好，第 {latest['id']} 张标成「{'、'.join(tags)}」了。"
 
-    def _img_command(self, rest: str) -> str:
-        parts = (rest or "").split()
-        sub = parts[0].lower() if parts else "list"
-
-        if sub in ("list", "ls"):
-            tag = parts[1].lower() if len(parts) > 1 else None
-            rows = self.store.list_images(tag=tag, limit=10)
-            if not rows:
-                return "图库里没有这张呀。" if tag else "图库还是空的呢。"
-            lines = [
-                f"{row['id']}. {'、'.join(row['tags']) or '无标签'}"
-                f"（用 {row['use_count']} 次{'，内置' if row['source'] == 'builtin' else ''}）"
-                for row in rows
-            ]
-            return "图库里这些：\n" + "\n".join(lines)
-
-        if sub == "rm":
-            if len(parts) < 2 or not parts[1].isdigit():
-                return "要删哪一张？发 /img rm 编号。"
-            image_id = int(parts[1])
-            if self.store.get_image(image_id) is None:
-                return f"图库里没有第 {image_id} 张呀。"
-            self.store.delete_image(image_id)
-            return f"第 {image_id} 张删掉了。"
-
-        if sub == "clean":
-            removed, freed = self._clean_archived_images()
-            if not removed:
-                return "图库没有要回收的旧图呢。"
-            return f"收回 {removed} 张旧图（{_size_text(freed)}），磁盘松快点了。"
-
-        if sub == "tag":
-            if len(parts) < 3 or not parts[1].isdigit():
-                return "格式：/img tag 编号 名字，可以给多个名字。"
-            image_id = int(parts[1])
-            if self.store.get_image(image_id) is None:
-                return f"图库里没有第 {image_id} 张呀。"
-            tags = self._split_tags(" ".join(parts[2:]))
-            self.store.tag_image(image_id, tags)
-            return f"好，第 {image_id} 张标成「{'、'.join(tags)}」了。"
-
-        if sub in {"retag", "补标"}:
-            if self.collector is None or not self.settings.vision_enabled:
-                return "现在看不到图（看图关着），补标做不了。"
-            checked, tagged, failed = self.collector.retag_all(
-                self.settings.image_dir, limit=20
-            )
-            if not checked:
-                return "图库里没有没标签的图，都标过了。"
-            return f"看了 {checked} 张，补上 {tagged} 张标签，{failed} 张没把握。"
-
-        return (
-            "图库指令：/img list [tag]、/img tag 编号 名字、/img rm 编号、"
-            "/img clean、/img retag（给没标签的补标）"
-        )
 
     def _clean_archived_images(self) -> tuple[int, int]:
         """把已归档图片的文件和记录真正删掉，返回 (张数, 释放字节)。
@@ -630,86 +284,14 @@ class Engine:
             log.info("回收归档图片 %d 张，释放 %s", removed, _size_text(freed))
         return removed, freed
 
-    def _try_proactive(self) -> str:
-        hook = self.proactive_trigger
-        if hook is None:
-            return "主动消息没开呀。"
-        status = hook()
-        return {
-            "sent": "好，那我自己先开口了。",
-            "skipped": "唔，我想了想，这次还是不说了。",
-            "failed": "想说话，但是没发出去。",
-        }.get(status, "试了一下。")
 
     _EVENT_DATE_RE = re.compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})$")
     _EVENT_TIME_RE = re.compile(r"^(\d{1,2}):(\d{2})$")
     EVENT_DEFAULT_HOUR = 19
 
-    def _list_events(self) -> str:
-        events = self.store.list_events(status="pending", limit=10)
-        if not events:
-            return "我还没记下什么要做的事呀。"
-        lines = ["我记着这些："]
-        for index, event in enumerate(events, 1):
-            stamp = datetime.fromtimestamp(int(event["trigger_at"])).strftime(
-                "%m-%d %H:%M"
-            )
-            lines.append(f"{index}. {stamp} {event['content']}")
-        lines.append("发 /event rm 编号 可以删掉。")
-        return "\n".join(lines)
 
-    def _event_command(self, rest: str) -> str:
-        rest = (rest or "").strip()
-        if not rest:
-            return "用法：/event 2026-11-04 09:00 面试 ｜ /event now 试试 ｜ /event rm 1"
-        head, _, tail = rest.partition(" ")
-        head = head.strip()
-        tail = tail.strip()
 
-        if head == "rm":
-            return self._remove_event(tail)
-        if head == "now":
-            if not tail:
-                return "要告诉我是什么事呀。"
-            self.store.add_scheduled_event(tail[:40], int(time.time()))
-            return f"好，记下了：{tail}"
-        return self._add_event(head, tail)
 
-    def _remove_event(self, raw_index: str) -> str:
-        try:
-            index = int(raw_index)
-        except (TypeError, ValueError):
-            return "要给我编号呀，用 /events 看。"
-        events = self.store.list_events(status="pending", limit=50)
-        if not 1 <= index <= len(events):
-            return "没有这个编号呀。"
-        event = events[index - 1]
-        self.store.delete_proactive_event(int(event["id"]))
-        return f"好，删掉「{event['content']}」了。"
-
-    def _add_event(self, date_token: str, remainder: str) -> str:
-        match = self._EVENT_DATE_RE.match(date_token)
-        if not match:
-            return "日期要写成 2026-11-04 这样呀。"
-        year, month, day = (int(part) for part in match.groups())
-
-        hour, minute = self.EVENT_DEFAULT_HOUR, 0
-        first = remainder.split(" ", 1)[0] if remainder else ""
-        time_match = self._EVENT_TIME_RE.match(first)
-        if time_match:
-            hour, minute = int(time_match.group(1)), int(time_match.group(2))
-            remainder = remainder.split(" ", 1)[1].strip() if " " in remainder else ""
-
-        if not remainder:
-            return "还要告诉我是什么事呀。"
-
-        try:
-            moment = datetime(year, month, day, hour, minute)
-        except ValueError:
-            return "这个日期不太对呀。"
-
-        self.store.add_scheduled_event(remainder[:40], int(moment.timestamp()))
-        return f"好，我记住了：{moment:%m-%d %H:%M} {remainder}"
 
     # ---------------- 对话 ----------------
     # ---------------- 忙完补回 ----------------
@@ -795,15 +377,6 @@ class Engine:
             return True
         return self._rng.random() >= self.settings.busy_skip_chance
 
-    def _busy_note(self, session: str) -> str:
-        """忙完之后回的那一条：先交代一句刚在干嘛。"""
-        if not self.settings.presence_enabled or self._pending_count(session) < 2:
-            return ""
-        activity = presence_mod.describe(self._presence_state())
-        return (
-            f"【你刚才在忙】你{activity}，手机搁一边了，他连着发了几条。"
-            "先说一句刚在干嘛（别太正式、别提手机），再接他的话。"
-        )
 
     def _chat(self, session: str) -> str:
         messages = self._build_messages(session)
@@ -820,127 +393,7 @@ class Engine:
         # 真人不在聊天框里空行；模型爱用它分段，压成单换行
         return re.sub(r"\n{2,}", "\n", result.text)
 
-    def _build_messages(self, session: str) -> list[dict]:
-        window_start = int(self.store.get_cursor(self._window_key(session), "0") or 0)
-        limit = self.settings.history_max_turns * 2
-        history = self.store.recent_messages_after(session, window_start, limit)
 
-        budget = self.settings.context_hard_char_budget
-        selected: list[dict] = []
-        used = 0
-        for item in reversed(history):
-            cost = len(item["content"])
-            if selected and used + cost > budget:
-                break
-            selected.append(item)
-            used += cost
-        selected.reverse()
-
-        # 保证窗口从用户消息开始，避免出现"助手自问自答"
-        while selected and selected[0]["role"] != "user":
-            selected.pop(0)
-
-        # system 不再是字符串一路拼：每段声明优先级和配额，由预算统一分配
-        sections: list[budget_mod.Section] = [
-            budget_mod.Section("人设", self.system_prompt, priority=1000, fixed=True)
-        ]
-        if self.memory is not None:
-            context = self.memory.context()
-            if context:
-                sections.append(budget_mod.Section("记忆", context, priority=60, quota=800))
-        recall = self._recall_section(selected)
-        if recall:
-            sections.append(budget_mod.Section("回忆", recall, priority=55, quota=450))
-
-        digest = digest_mod.recent_text(self.settings)
-        if digest:
-            sections.append(budget_mod.Section("摘要", digest, priority=50, quota=350))
-
-        if self.settings.life_enabled:
-            life_note = life_mod.snippet(self.settings)
-            if life_note:
-                sections.append(budget_mod.Section("日子", life_note, priority=70, quota=280))
-
-        # 她会什么、不会什么——他问"你有没有这个功能"时，她得有事实可依
-        sections.append(budget_mod.Section("能力", abilities_mod.block(), priority=45, quota=300))
-
-        # 网络用语只给意思，不给"怎么用"：听得懂，但自己不说
-        sections.append(budget_mod.Section("梗", memes_mod.block(), priority=40, quota=360))
-
-        if self.mood is not None:
-            state = self.mood.describe()
-            if state:
-                sections.append(budget_mod.Section("情绪", state, priority=80, quota=140))
-
-        busy_note = self._busy_note(session)
-        if busy_note:
-            sections.append(budget_mod.Section("忙", busy_note, priority=88, quota=120))
-
-        if self.settings.talkstate_enabled:
-            talk_note = talkstate_mod.note(
-                [
-                    {"role": row["role"], "content": row["content"]}
-                    for row in self.store.recent_messages(session, 6)
-                ]
-            )
-            if talk_note:
-                sections.append(budget_mod.Section("对话状态", talk_note, priority=90, quota=220))
-
-        fitted = budget_mod.fit(sections, self.settings.context_token_budget)
-        if fitted.trimmed or fitted.dropped:
-            log.info(
-                "上下文压缩：%d tokens；压缩 %s；丢弃 %s",
-                fitted.tokens,
-                "、".join(fitted.trimmed) or "无",
-                "、".join(fitted.dropped) or "无",
-            )
-        system = fitted.text
-
-        # 历史也按 token 算：system 占完剩下的才是它的
-        cap = budget_mod.history_budget(self.settings.context_token_budget, fitted.tokens)
-        while selected and sum(budget_mod.estimate_tokens(i["content"]) for i in selected) > cap:
-            selected.pop(0)
-        while selected and selected[0]["role"] != "user":
-            selected.pop(0)
-
-        messages = [{"role": "system", "content": system}]
-        for item in selected:
-            content = item["content"]
-            # 她自己说过的旧话里可能还带"爸爸"，改掉再喂回去，否则模型会学着叫
-            if item["role"] != "user":
-                content = fix_address(content)
-            messages.append({"role": item["role"], "content": content})
-        return messages
-
-    def _recall_section(self, history: list[dict]) -> str:
-        """从原话里捞几句相关的。
-
-        卡片记的是"结论"，这句补的是"他当时怎么说的"——
-        Paramecium 那套思路：原文才是唯一真相，摘要只是索引。
-        """
-        if not self.settings.recall_enabled or not history:
-            return ""
-        last_user = next((m for m in reversed(history) if m.get("role") == "user"), None)
-        if last_user is None:
-            return ""
-        try:
-            rows = self.store.recall_messages(
-                str(last_user.get("content") or ""),
-                limit=self.settings.recall_max_messages,
-                exclude_ids={m.get("id") for m in history},
-            )
-        except Exception:  # noqa: BLE001 - 召回是加分项，失败就当没想起来
-            log.exception("原话召回失败")
-            return ""
-        if not rows:
-            return ""
-
-        lines = [RECALL_TITLE]
-        for row in rows:
-            stamp = time.strftime("%m-%d", time.localtime(row.get("created_at") or 0))
-            text = str(row.get("content") or "").replace("\n", " ")[:80]
-            lines.append(f"[{stamp}] {text}")
-        return "\n".join(lines)
 
     # ---------------- 发送 ----------------
     def _pick_image(self, session: str, tags: list[str]) -> Path | None:
@@ -1217,22 +670,6 @@ class Engine:
                 return path
         return None
 
-    def _life_command(self, rest: str) -> str:
-        """看看/重写她今天的日子。写这个是为了能马上验证生活线有没有跑。"""
-        if not self.settings.life_enabled:
-            return "生活线关着（LIFE_ENABLED=false）。"
-        if rest.strip() in ("换", "重来", "刷新"):
-            path = Path(self.settings.life_dir) / (time.strftime("%Y-%m-%d") + ".md")
-            try:
-                path.unlink()
-            except OSError:
-                pass
-            with self._life_lock:
-                self._life_day = ""
-            text = life_mod.today(self.settings, self.llm)
-            return ("今天改成这样了：\n" + text) if text else "没写出来，回头再试。"
-        text = life_mod.snippet(self.settings)
-        return text or "今天还没写呢。"
 
     # ---------------- 生活线 ----------------
     def _ensure_life(self) -> None:
@@ -1304,37 +741,7 @@ class Engine:
         except Exception:  # noqa: BLE001 - 画图挂了不能影响聊天
             log.exception("画图异常")
 
-    def _quoted_text(self, message_id: str) -> str:
-        """取被引用那条消息的文本。取不到就当没引用，别让整条回复失败。"""
-        if not self.settings.quote_enabled or not message_id:
-            return ""
-        getter = getattr(self.sender, "get_message", None)
-        if getter is None:
-            return ""
-        try:
-            text = getter(str(message_id)) or ""
-        except Exception:  # noqa: BLE001 - 引用是加分项，失败不影响对话
-            log.exception("取引用消息失败：%s", message_id)
-            return ""
-        return talkstate_mod.phrase(str(text), limit=60)
 
-    def _image_context_hint(self, session: str, record_id: int) -> str:
-        """图片的说明后面跟一句上下文提示：图是接话的，不是让她描述画面。"""
-        rows = [
-            row for row in self.store.recent_messages(session, 6) if row.get("id") != record_id
-        ]
-        tail: list[str] = []
-        for row in rows:
-            content = (row.get("content") or "").strip().replace("\n", " ")
-            # 跳过图片本身的说明和占位符：把它们拼进上下文会变成自己引用自己
-            if not content or content.startswith("（他发来一张") or content.startswith("[表情]"):
-                continue
-            who = "他" if row["role"] == "user" else "你"
-            tail.append(f"{who}：{content[:50]}")
-        hint = "（他在接上文，别只描述画面，直接接话）"
-        if tail:
-            hint += "刚才：" + "；".join(tail[-2:])
-        return hint
 
     # ---------------- 看图 ----------------
     def _describe_images(self, message: IncomingMessage) -> str:
@@ -1411,6 +818,3 @@ class Engine:
                     return False
         return True
 
-    @staticmethod
-    def _window_key(session: str) -> str:
-        return f"window_start:{session}"
