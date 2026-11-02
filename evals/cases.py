@@ -26,6 +26,7 @@ class Case:
     min_bubbles: int = 1
     max_bubbles: int = 6
     max_chars: int = 300
+    max_questions: int = 99  # 一条回复里最多几个问句（查户口检测）
     note: str = ""
 
 
@@ -61,7 +62,7 @@ CASES: tuple[Case, ...] = (
     Case(
         name="不复读梗",
         turns=("我已老实，求放过",),
-        include=(r"放过|怎么|好嘛|行吧|谁",),
+        include=(r"放过|怎么|好嘛|行吧|谁|认输|求饶|欺负",),
         exclude=(r"已老实",),
         note="听懂就行，别跟着说",
     ),
@@ -141,6 +142,12 @@ CASES: tuple[Case, ...] = (
         max_bubbles=6,
         max_chars=400,
         note="生活线要口语，不要'今天过得很充实'那种总结",
+    ),
+    Case(
+        name="别连问",
+        turns=("我今天好累",),
+        max_questions=2,
+        note="最多两个问句；三句以上就是查户口",
     ),
     Case(
         name="不说客套话",

@@ -200,6 +200,8 @@ class Settings:
     watch_max_lines: int = 20
     # 随机改发送条数（合并/切分），让格式别太固定
     reply_reshape: bool = True
+    # 对话状态：她知道自己上一条问了什么、他答没答
+    talkstate_enabled: bool = True
     # 她此刻在干嘛：忙的时候不每条都回
     presence_enabled: bool = False  # 默认关；load_settings 里默认开，测试里构造的 Settings 不受影响
     presence_file: Path = Path("data/presence.json")
@@ -364,6 +366,7 @@ class Settings:
             watch_minutes=_int(env, "WATCH_MINUTES", 30, minimum=1),
             watch_max_lines=_int(env, "WATCH_MAX_LINES", 20, minimum=1),
             reply_reshape=_bool(env, "REPLY_RESHAPE", True),
+            talkstate_enabled=_bool(env, "TALKSTATE_ENABLED", True),
             presence_enabled=_bool(env, "PRESENCE_ENABLED", True),
             presence_file=base_dir / env.get("PRESENCE_FILE", "data/presence.json").strip(),
             busy_skip_chance=_float(env, "BUSY_SKIP_CHANCE", 0.55),

@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from qqbot import talkstate
 from qqbot.config import Settings
 from qqbot.engine import Engine
 from qqbot.llm import LLMClient
@@ -80,6 +81,10 @@ def evaluate(case: Case, turns: list[TurnResult]) -> list[str]:
         failures.append(f"气泡 {len(last)} 条 < {case.min_bubbles}")
     if len(last_text) > case.max_chars:
         failures.append(f"{len(last_text)} 字 > {case.max_chars}")
+
+    questions = sum(1 for bubble in last if talkstate.asks_question(bubble))
+    if questions > case.max_questions:
+        failures.append(f"问了 {questions} 句 > {case.max_questions}（像查户口）")
     return failures
 
 

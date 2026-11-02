@@ -982,3 +982,15 @@ def test_old_pending_message_is_not_chased(tmp_path):
     way_later = time.time() + env.settings.catchup_max_age_seconds + 60
 
     assert env.engine.catchup_tick(way_later) == 0
+
+
+def test_talk_state_goes_into_prompt(tmp_path):
+    """她得知道自己上一条问了个还悬着的问题。"""
+    env = build_env(tmp_path)
+    env.store.save_message("100", "user", "今天好累")
+    env.store.save_message("100", "assistant", "怎么啦，是上班的事吗")
+
+    content = env.engine._build_messages("100")[0]["content"]
+
+    assert "【对话状态】" in content
+    assert "你上一条问了他" in content

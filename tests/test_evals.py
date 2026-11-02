@@ -78,3 +78,12 @@ def test_include_is_checked_across_all_turns():
     ]
 
     assert evaluate(case, turns) == []
+
+
+def test_evaluate_flags_too_many_questions():
+    case = next(c for c in CASES if c.name == "别连问")
+    turns = [TurnResult(user="我今天好累", replies=["怎么啦", "是上班吗", "几点睡的"])]
+
+    failures = evaluate(case, turns)
+
+    assert any("查户口" in item for item in failures)

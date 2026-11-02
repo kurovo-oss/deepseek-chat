@@ -11,6 +11,7 @@ from __future__ import annotations
 
 GLOSSARY: tuple[tuple[str, str], ...] = (
     ("已老实", "认输、求放过"),
+    ("求放过", "求饶、别为难我"),
     ("破防", "被戳到痛处或被夸到"),
     ("绷不住", "忍不住笑"),
     ("典", "典型、带讽刺"),

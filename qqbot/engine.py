@@ -23,6 +23,7 @@ from . import abilities as abilities_mod
 from . import life as life_mod
 from . import memes as memes_mod
 from . import presence as presence_mod
+from . import talkstate as talkstate_mod
 from . import pc as pc_mod
 from . import vision as vision_mod
 from .config import Settings
@@ -859,6 +860,16 @@ class Engine:
         busy_note = self._busy_note(session)
         if busy_note:
             system = f"{system}\n\n{busy_note}"
+
+        if self.settings.talkstate_enabled:
+            talk_note = talkstate_mod.note(
+                [
+                    {"role": row["role"], "content": row["content"]}
+                    for row in self.store.recent_messages(session, 6)
+                ]
+            )
+            if talk_note:
+                system = f"{system}\n\n{talk_note}"
 
         messages = [{"role": "system", "content": system}]
         for item in selected:
