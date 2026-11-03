@@ -27,6 +27,7 @@ from . import presence as presence_mod
 from . import recap as recap_mod
 from . import talkstate as talkstate_mod
 from . import backup as backup_mod
+from . import capability as capability_mod
 from . import recall_guard
 from . import usage as usage_mod
 from . import mood as mood_mod
@@ -462,7 +463,9 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin):
             for item in messages
             if item.get("role") in ("system", "user")
         )
-        return recall_guard.soften(text, evidence)
+        text = recall_guard.soften(text, evidence)
+        # 没做过的事别说成做过：刷抖音、上网、剪视频这些系统现在都做不到
+        return capability_mod.soften(text, self.settings)
 
 
 

@@ -19,6 +19,7 @@ import time
 from datetime import date
 from pathlib import Path
 
+from . import capability as capability_mod
 from . import projects as projects_mod
 
 log = logging.getLogger("qqbot")
@@ -27,6 +28,8 @@ log = logging.getLogger("qqbot")
 PROMPT = """你在给一个角色写"她今天的日子"，用她自己的口吻。
 
 角色：18 岁，有点娇羞、有点馋，手上总有点小事。住在他附近，白天一个人待着。
+
+{WORLD}
 
 **你不是在填别人给的表。** 今天做什么、推进哪件事、要不要开一件新的、
 要不要把某件放下——你自己定；选完说清楚为什么，别只是为了不一样而不一样。
@@ -178,6 +181,21 @@ def _compose(decision: dict, lines: str) -> str:
     return head + "\n" + lines
 
 
+def _world(settings) -> str:
+    """今天能写什么、不能写什么：系统做不到的事，日子也不能写。"""
+    forbidden = capability_mod.cannot(settings)
+    parts: list[str] = []
+    if forbidden:
+        parts.append(
+            "你现在做不到：" + "、".join(forbidden) + "。"
+            "今天的日子别写这些——别写\"刷到一个视频\"\"在网上看到\"\"我拍下来了\"，那是编的。"
+        )
+    allowed = capability_mod.can(settings)
+    if allowed:
+        parts.append("你现在真能做：" + "、".join(allowed) + "；写到的就必须是真正发生过的。")
+    return "\n".join(parts)
+
+
 def today(settings, llm, context: str = "", clock=time.time) -> str:
     """生成今天的日子并落盘，同时更新她手上的事。已经生成过就直接返回。"""
     day = date.fromtimestamp(clock())
@@ -193,6 +211,7 @@ def today(settings, llm, context: str = "", clock=time.time) -> str:
     prompt = prompt.replace("{WEEKDAY}", WEEKDAYS[day.weekday()])
     prompt = prompt.replace("{CONTEXT}", context or "（没有什么特别的背景，自己写几件小事）")
     prompt = prompt.replace("{PROJECTS}", projects_mod.block(items, BUSY_THINGS))
+    prompt = prompt.replace("{WORLD}", _world(settings))
     prompt = prompt.replace("{PAST}", recent(settings, day))
 
     try:
@@ -218,6 +237,9 @@ def today(settings, llm, context: str = "", clock=time.time) -> str:
         if not lines or len(lines.splitlines()) < 2:
             log.warning("她今天的选择里没有像样的日子，丢掉：%r", (result.text or "")[:60])
             return ""
+        if capability_mod.claims_disabled(lines, settings):
+            log.warning("她写了自己做不到的事，丢掉：%r", lines[:60])
+            return ""
         try:
             projects_mod.save(settings, projects_mod.apply(items, decision, day.isoformat()))
         except OSError:
@@ -228,6 +250,9 @@ def today(settings, llm, context: str = "", clock=time.time) -> str:
         text = _clean(result.text or "")
         if not text or len(text) < 8 or len(text.splitlines()) < 2:
             log.warning("今天的日子不像日子，丢掉：%r", text[:40])
+            return ""
+        if capability_mod.claims_disabled(text, settings):
+            log.warning("她写了自己做不到的事，丢掉：%r", text[:40])
             return ""
 
     try:

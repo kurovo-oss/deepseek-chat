@@ -1441,3 +1441,15 @@ def test_system_prompt_presses_when_she_repeats(tmp_path):
     messages = env.engine._build_messages("100")
 
     assert "已经说过" in messages[0]["content"]
+
+
+def test_fabricated_douyin_is_cut(tmp_path):
+    """系统做不到的事，她嘴上也不能有。"""
+    env = build_env(tmp_path)
+    env.engine.llm.text = "我刚刷到一个超好笑的视频。你在干嘛呀"
+
+    env.engine.handle_message(make_message("在吗"))
+
+    sent = "\n".join(text for _, text in env.sender.sent)
+    assert "刷到" not in sent
+    assert "你在干嘛呀" in sent

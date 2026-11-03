@@ -289,3 +289,26 @@ def test_snippet_is_quiet_the_first_couple_of_times(tmp_path):
     _with_stew(settings)
 
     assert "已经说过" not in life.snippet(settings, repeat=1)
+
+
+def test_day_with_unreal_activity_is_rejected(tmp_path):
+    """她写"刷到一个视频"——系统做不到，这一天就不能要。"""
+    settings = make_settings(tmp_path)
+    text = life.today(
+        settings,
+        FakeLLM(_decision(today=["刷到一个超好笑的视频", "笑到肚子疼", "手机没电了", "想给他看"])),
+    )
+
+    assert text == ""
+    assert life.snippet(settings) == ""
+
+
+def test_prompt_tells_her_what_she_cannot_do(tmp_path):
+    settings = make_settings(tmp_path)
+    llm = FakeLLM(_decision())
+
+    life.today(settings, llm)
+
+    prompt = llm.calls[0][0][1]["content"]
+    assert "你现在做不到" in prompt
+    assert "刷抖音" in prompt

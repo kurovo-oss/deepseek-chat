@@ -212,6 +212,12 @@ class Settings:
     fallback_api_key: str = ""
     # 前情摘要：窗口外的旧话压成两三句留着
     recap_enabled: bool = False
+    # 真做了才打开：打开之前她只能说"做不到"，不许编
+    douyin_enabled: bool = False
+    web_enabled: bool = False
+    video_enabled: bool = False
+    moments_enabled: bool = False
+    camera_enabled: bool = False
     # 开场样品组数（0 = 不要）
     sample_pairs: int = 8
     # 上下文预算（token）：人设固定，其余按优先级分配
@@ -390,6 +396,11 @@ class Settings:
             fallback_base_url=env.get("FALLBACK_BASE_URL", ""),
             fallback_api_key=env.get("FALLBACK_API_KEY", ""),
             recap_enabled=_bool(env, "RECAP_ENABLED", True),
+    douyin_enabled=_bool(env, "DOUYIN_ENABLED", False),
+    web_enabled=_bool(env, "WEB_ENABLED", False),
+    video_enabled=_bool(env, "VIDEO_ENABLED", False),
+    moments_enabled=_bool(env, "MOMENTS_ENABLED", False),
+    camera_enabled=_bool(env, "CAMERA_ENABLED", False),
             sample_pairs=_int(env, "SAMPLE_PAIRS", 8, minimum=0),
             context_token_budget=_int(env, "CONTEXT_TOKEN_BUDGET", 9000, minimum=1500),
             talkstate_enabled=_bool(env, "TALKSTATE_ENABLED", True),

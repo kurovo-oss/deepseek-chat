@@ -3,9 +3,15 @@
 为什么要单独一份：他问"你有没有这个功能"这类问题时，模型没有事实依据，
 只能临场编——要么否认得太绝对（"我哪有啥功能啊"），要么把自己说成 AI。
 这份清单是**事实**：她会什么、不会什么，写清楚，她照着说就行。
+
+"能做但不能编"的那部分（刷抖音、上网、剪视频）放在 `qqbot.capability`：
+等以后真做了，把开关打开，这里自动跟着变。
 """
 
 from __future__ import annotations
+
+from . import capability
+
 
 CAN: tuple[str, ...] = (
     "收他发的文字、图片、表情包",
@@ -22,9 +28,12 @@ CANNOT: tuple[str, ...] = (
 )
 
 
-def block() -> str:
+def block(settings=None) -> str:
     """进 system prompt 的那一段。"""
     lines = ["【你会的】（照着说，别吹也别一口否认）"]
     lines.extend(f"- {item}" for item in CAN)
-    lines.append("做不到的：" + "、".join(CANNOT) + "——直说做不到，别说成'我没有功能'")
+    extra = capability.can(settings)
+    if extra:
+        lines.append("- " + "、".join(extra) + "（系统真做了才可以提）")
+    lines.append(capability.block(settings))
     return "\n".join(lines)

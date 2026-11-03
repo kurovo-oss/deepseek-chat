@@ -86,7 +86,7 @@ class ContextMixin:
                 sections.append(budget_mod.Section("日子", life_note, priority=70, quota=280))
 
         # 她会什么、不会什么——他问"你有没有这个功能"时，她得有事实可依
-        sections.append(budget_mod.Section("能力", abilities_mod.block(), priority=45, quota=300))
+        sections.append(budget_mod.Section("能力", abilities_mod.block(self.settings), priority=45, quota=300))
 
         # 网络用语只给意思，不给"怎么用"：听得懂，但自己不说
         sections.append(budget_mod.Section("梗", memes_mod.block(), priority=40, quota=360))
