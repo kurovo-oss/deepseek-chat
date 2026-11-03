@@ -1517,3 +1517,26 @@ def test_voice_failure_does_not_break_anything(tmp_path, monkeypatch):
     env.engine._speak(100, "100", "晚安呀")
 
     assert env.sender.records == []
+
+
+# ------------------------------------------------ 刷网
+def test_browse_command_reports_what_she_saw(tmp_path, monkeypatch):
+    from qqbot import browse as browse_mod
+
+    monkeypatch.setattr(
+        browse_mod,
+        "collect",
+        lambda settings, rng=None: browse_mod.Item("baidu", "小区里一只橘猫天天蹲在楼下等喂"),
+    )
+    env = build_env(tmp_path, web_enabled=True)
+
+    reply = env.engine._handle_command("/刷", "100")
+
+    assert "橘猫" in reply
+    assert "热搜" in reply
+
+
+def test_browse_command_says_off_when_web_is_disabled(tmp_path):
+    env = build_env(tmp_path, web_enabled=False)
+
+    assert "关着" in env.engine._handle_command("/刷", "100")

@@ -9,6 +9,7 @@ import logging
 import time
 
 from . import abilities as abilities_mod
+from . import browse as browse_mod
 from . import budget as budget_mod
 from . import digest as digest_mod
 from . import life as life_mod
@@ -84,6 +85,11 @@ class ContextMixin:
             life_note = life_mod.snippet(self.settings, repeat=repeat)
             if life_note:
                 sections.append(budget_mod.Section("日子", life_note, priority=70, quota=280))
+
+        # 她今天真刷到的东西（只有一条，且是真看过的）
+        web_note = browse_mod.block(self.settings)
+        if web_note:
+            sections.append(budget_mod.Section("刷到", web_note, priority=68, quota=160))
 
         # 她会什么、不会什么——他问"你有没有这个功能"时，她得有事实可依
         sections.append(budget_mod.Section("能力", abilities_mod.block(self.settings), priority=45, quota=300))

@@ -147,3 +147,4 @@ def test_emoji_survive_formatting():
     from qqbot.formatting import strip_markdown
 
     assert strip_markdown("好呀 🥺") == "好呀 🥺"
+

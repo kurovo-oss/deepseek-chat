@@ -50,6 +50,7 @@ from .formatting import (
 from .images import sniff_image
 from .llm import LLMClient, LLMError
 from .media import MediaMixin, wants_image
+from .reading import ReadingMixin
 from .speaking import SpeakingMixin
 from .memory import KIND_LABEL, card_weight
 from .onebot import IncomingMessage, Sender, parse_event
@@ -73,7 +74,7 @@ def _size_text(size: int) -> str:
 
 
 
-class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin):
+class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixin):
     def __init__(
         self,
         settings: Settings,
@@ -160,6 +161,8 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin):
 
         # 每天补一次"她今天的日子"，后台生成，不挡回复
         self._ensure_life()
+        # 每天刷一次网（只读标题），刷到什么就记下来
+        self._maybe_browse()
 
         # 幂等靠"抢占式写入"：先落库占位，写不进去说明这条已经处理过了。
         # 顺序很关键——必须在任何网络 IO（下载表情包、调模型）之前完成。

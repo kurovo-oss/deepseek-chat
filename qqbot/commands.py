@@ -14,6 +14,7 @@ from pathlib import Path
 
 from . import digest as digest_mod
 from . import images as images_mod
+from . import browse as browse_mod
 from . import life as life_mod
 from . import voice as voice_mod
 from . import projects as projects_mod
@@ -82,6 +83,8 @@ class CommandsMixin:
         if head == "/pc":
             return self._pc_command(rest)
 
+        if head in ("/刷", "/browse"):
+            return self._browse_command()
         if head in ("/voice", "/语音"):
             return self._voice_command(rest, session)
         if head == "/life":
@@ -434,6 +437,15 @@ class CommandsMixin:
 
         self.store.add_scheduled_event(remainder[:40], int(moment.timestamp()))
         return f"好，我记住了：{moment:%m-%d %H:%M} {remainder}"
+
+    def _browse_command(self) -> str:
+        """强制刷一次，看看她真能刷到什么。"""
+        if not self.settings.web_enabled:
+            return "上网这块关着（WEB_ENABLED=false）。"
+        item = browse_mod.collect(self.settings)
+        if item is None:
+            return "没刷到，可能没网。"
+        return f"刷到一条：{item.as_line()}"
 
     def _voice_command(self, rest: str, session: str) -> str:
         """发一条语音试试：他不用等"情绪到了"才能验收。"""

@@ -212,6 +212,8 @@ class Settings:
     fallback_api_key: str = ""
     # 前情摘要：窗口外的旧话压成两三句留着
     recap_enabled: bool = False
+    # 她自己上网刷点东西（只读标题），默认关
+    browse_dir: Path = Path("data/browse")
     # 语音：只在情绪重的时候发，默认关（load_settings 按 env 打开）
     voice_enabled: bool = False
     voice_name: str = "xiaoyi"
@@ -408,6 +410,7 @@ class Settings:
             fallback_api_key=env.get("FALLBACK_API_KEY", ""),
             recap_enabled=_bool(env, "RECAP_ENABLED", True),
     emoji_chance=_float(env, "EMOJI_CHANCE", 0.25),
+    browse_dir=base_dir / env.get("BROWSE_DIR", "data/browse").strip(),
     voice_enabled=_bool(env, "VOICE_ENABLED", False),
     voice_name=env.get("VOICE_NAME", "xiaoyi").strip() or "xiaoyi",
     voice_chance=_float(env, "VOICE_CHANCE", 0.3),
