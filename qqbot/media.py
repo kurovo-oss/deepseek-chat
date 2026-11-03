@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 
 from . import mood as mood_mod
+from . import stickers as stickers_mod
 
 # 他明确要图的时候，别拿"冷却"和"今天累了"当借口——他要就得给
 REQUEST_RE = re.compile(
@@ -87,8 +88,8 @@ class MediaMixin:
             return self._latest_collected_path()
         return None
 
-    def _maybe_sticker(self, session: str) -> Path | None:
-        """随手甩个表情包。概率很低，且刚发过图就不发。"""
+    def _maybe_sticker(self, session: str, text: str = "") -> Path | None:
+        """随手甩个表情包。按情绪挑，概率很低，且刚发过图就不发。"""
         chance = float(getattr(self.settings, "sticker_chance", 0.0) or 0.0)
         if chance <= 0 or self.images is None or not self.settings.image_enabled:
             return None
@@ -97,6 +98,16 @@ class MediaMixin:
             return None
         if self.store.has_recent_image(session, self.settings.image_cooldown_messages):
             return None
+
+        # 表情库（按情绪分桶）优先；没货再退回他发过的那些
+        if not getattr(self, "_stickers_seeded", False):
+            stickers_mod.ensure_seeded(self.settings, self.store, self.images)
+            self._stickers_seeded = True
+        values = self.mood.snapshot() if self.mood is not None else {}
+        picked = stickers_mod.pick_for_reply(self.settings, text, values, self._rng)
+        if picked is not None:
+            return picked
+
         tags = [
             item.strip()
             for item in str(getattr(self.settings, "sticker_tags", "")).split(",")
@@ -108,3 +119,30 @@ class MediaMixin:
             if path is not None:
                 return path
         return None
+
+    def _send_sticker(self, user_id: int, session: str, bucket: str) -> bool:
+        """她点名要发某个情绪的表情。库里没有这个桶就什么都不发。"""
+        if not getattr(self, "_stickers_seeded", False):
+            stickers_mod.ensure_seeded(self.settings, self.store, self.images)
+            self._stickers_seeded = True
+        path = stickers_mod.pick(self.settings, bucket, rng=self._rng)
+        return self._deliver_sticker(user_id, session, path)
+
+    def _send_random_sticker(self, user_id: int, session: str, text: str = "") -> bool:
+        """没点名的时候随手甩一张（按情绪挑）。"""
+        return self._deliver_sticker(user_id, session, self._maybe_sticker(session, text))
+
+    def _deliver_sticker(self, user_id: int, session: str, path) -> bool:
+        if path is None:
+            return False
+        if not self.sender.send_private_image(user_id, path, self.settings.image_send_mode):
+            log.warning("表情包发送失败：%s", path)
+            return False
+        try:
+            stickers_mod.record_use(self.settings, path)
+        except ValueError:
+            pass  # 不在库里（他发的那张），不用记
+        self.store.save_message(
+            session, "assistant", "[表情包]", image_tags=[path.name], origin="sticker"
+        )
+        return True

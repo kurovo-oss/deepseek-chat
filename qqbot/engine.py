@@ -51,6 +51,7 @@ from .images import sniff_image
 from .llm import LLMClient, LLMError
 from .media import MediaMixin, wants_image
 from .reading import ReadingMixin
+from . import stickers as stickers_mod
 from .speaking import SpeakingMixin
 from .memory import KIND_LABEL, card_weight
 from .onebot import IncomingMessage, Sender, parse_event
@@ -508,6 +509,7 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
             cleaned = (raw_text or "").strip()
         cleaned, tags = extract_image_tags(cleaned)
         cleaned, drawings = extract_draw_tags(cleaned)
+        cleaned, sticker_buckets = stickers_mod.extract_tags(cleaned)
 
         image_path = self._pick_image(session, tags, force=force_image)
         parts = split_bubbles(
@@ -559,22 +561,13 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
                     user_id, image_path, self.settings.image_send_mode
                 ):
                     all_ok = False
+            elif sticker_buckets:
+                # 她点名要某个情绪的表情；库里没这个桶就退成随手甩一张
+                if not self._send_sticker(user_id, session, sticker_buckets[0]):
+                    self._send_random_sticker(user_id, session, cleaned)
             elif not tags:
                 # 她有时候会随手甩个表情包，不需要理由
-                sticker = self._maybe_sticker(session)
-                if sticker is not None:
-                    if self.sender.send_private_image(
-                        user_id, sticker, self.settings.image_send_mode
-                    ):
-                        self.store.save_message(
-                            session,
-                            "assistant",
-                            "[表情包]",
-                            image_tags=[sticker.name],
-                            origin="sticker",
-                        )
-                    else:
-                        all_ok = False
+                self._send_random_sticker(user_id, session, cleaned)
 
         if origin in ("chat", "proactive"):
             self._maybe_speak(user_id, session, part_texts=parts)

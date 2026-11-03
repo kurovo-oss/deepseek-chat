@@ -102,6 +102,7 @@ def build_env(tmp_path, **overrides):
         presence_enabled=False,
         catchup_enabled=False,
         life_dir=tmp_path / "life",
+        sticker_dir=tmp_path / "stickers",
     )
     kwargs.update(overrides)
     settings = Settings(**kwargs)
@@ -1540,3 +1541,34 @@ def test_browse_command_says_off_when_web_is_disabled(tmp_path):
     env = build_env(tmp_path, web_enabled=False)
 
     assert "关着" in env.engine._handle_command("/刷", "100")
+
+
+def test_sticker_tag_sends_from_the_pack(tmp_path):
+    from qqbot import stickers as stickers_mod
+
+    env = build_env(tmp_path, image_enabled=True, sticker_chance=0.0)
+    source = tmp_path / "sad.gif"
+    source.write_bytes(b"GIF89a" + b"1" * 32)
+    stickers_mod.add_file(env.settings, source, "委屈")
+    env.engine.llm.text = "那我不说了\n{{表情:委屈}}"
+
+    env.engine.handle_message(make_message("哼"))
+
+    assert env.sender.images, "点名要的表情没发出去"
+    assert str(env.sender.images[0][1]).startswith(str(env.settings.sticker_dir))
+    assert all("{{" not in text for _, text in env.sender.sent)
+
+
+def test_sticker_tag_with_empty_bucket_falls_back(tmp_path):
+    env = build_env(
+        tmp_path,
+        image_enabled=True,
+        sticker_chance=1.0,
+        sticker_tags="cat",
+        image_cooldown_messages=0,
+    )
+    env.engine.llm.text = "哼\n{{表情:嘲讽}}"
+
+    env.engine.handle_message(make_message("你好"))
+
+    assert env.sender.images

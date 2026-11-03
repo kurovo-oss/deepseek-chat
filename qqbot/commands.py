@@ -15,6 +15,7 @@ from pathlib import Path
 from . import digest as digest_mod
 from . import images as images_mod
 from . import browse as browse_mod
+from . import stickers as stickers_mod
 from . import life as life_mod
 from . import voice as voice_mod
 from . import projects as projects_mod
@@ -83,6 +84,8 @@ class CommandsMixin:
         if head == "/pc":
             return self._pc_command(rest)
 
+        if head in ("/表情", "/sticker"):
+            return self._sticker_command(rest, session)
         if head in ("/刷", "/browse"):
             return self._browse_command()
         if head in ("/voice", "/语音"):
@@ -437,6 +440,22 @@ class CommandsMixin:
 
         self.store.add_scheduled_event(remainder[:40], int(moment.timestamp()))
         return f"好，我记住了：{moment:%m-%d %H:%M} {remainder}"
+
+    def _sticker_command(self, rest: str, session: str) -> str:
+        """发一张表情：/表情 委屈，或者 /表情 让她自己按心情挑。"""
+        if not (self.settings.image_enabled and self.settings.sticker_chance > 0):
+            return "表情包这块关着。"
+        name = rest.strip()
+        if name and name not in stickers_mod.BUCKETS:
+            bucket = stickers_mod.bucket_from_text(name) or "卖萌"
+        else:
+            bucket = name
+        if not bucket:
+            values = self.mood.snapshot() if self.mood is not None else {}
+            bucket = stickers_mod.bucket_from_mood(values) or "卖萌"
+        if not self._send_sticker(int(session), session, bucket):
+            return f"「{bucket}」这桶里还没有表情，先往 data\\stickers\\{bucket} 丢两张吧。"
+        return f"发了一张「{bucket}」的表情"
 
     def _browse_command(self) -> str:
         """强制刷一次，看看她真能刷到什么。"""

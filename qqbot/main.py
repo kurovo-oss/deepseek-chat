@@ -27,6 +27,7 @@ from .dispatcher import MessageDispatcher
 from .dream import start_dreamer
 from .engine import Engine
 from .mood import Mood
+from . import stickers as stickers_mod
 from .images import ImageLibrary, import_seed_library
 from .llm import LLMClient
 from .logsetup import setup_logging
@@ -96,6 +97,10 @@ def build_engine(settings) -> Engine:
             log.info("已导入内置图 %d 张", imported)
         images = ImageLibrary(store, settings.image_dir)
         log.info("图库：%d 张图 / %d 个 tag", len(images), len(images.tags))
+        try:
+            stickers_mod.ensure_seeded(settings, store, images)
+        except Exception:  # noqa: BLE001 - 表情库坏了不该影响启动
+            log.info("表情库初始化失败", exc_info=True)
         if settings.image_collect_enabled:
             collector = StickerCollector(
                 settings,
