@@ -26,6 +26,9 @@ from pathlib import Path
 
 from .memory import crossed_day
 
+from . import growth as growth_mod
+from . import reflect as reflect_mod
+
 log = logging.getLogger("qqbot")
 
 OP_ADD = "add"
@@ -285,6 +288,10 @@ class Dreamer:
             try:
                 if self.due():
                     self.dream()
+                # 睡前反省：一天一次，写完顺手把旧事件淡忘掉
+                if reflect_mod.due(self.store, self.settings):
+                    reflect_mod.reflect(self.store, self.llm, self.settings)
+                    growth_mod.maintain(self.store)
             except Exception:  # noqa: BLE001 - 做梦线程不能死
                 log.exception("做梦线程异常")
             if stop_event.wait(interval):

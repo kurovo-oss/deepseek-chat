@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from . import digest as digest_mod
+from . import growth as growth_mod
 from . import images as images_mod
 from . import browse as browse_mod
 from . import stickers as stickers_mod
@@ -92,6 +93,9 @@ class CommandsMixin:
             return self._voice_command(rest, session)
         if head == "/life":
             return self._life_command(rest)
+
+        if head in ("/成长", "/grow", "/反思"):
+            return self._growth_command()
 
         if head == "/mood":
             if self.mood is None:
@@ -477,6 +481,39 @@ class CommandsMixin:
         if not self.sender.send_private_record(int(session), path):
             return "合成好了，但没发出去，看看协议端日志。"
         return "发了一条语音，听得到吗"
+
+    def _growth_command(self) -> str:
+        """让她自己说说：最近想通了什么、拒绝过什么。"""
+        if self.store is None:
+            return "还没有可以翻的东西呢。"
+        try:
+            beliefs = growth_mod.beliefs(self.store)
+            thoughts = growth_mod.self_view(self.store)
+            refusals = growth_mod.recent_refusals(self.store, limit=3)
+        except Exception:  # noqa: BLE001 - 看看而已，读坏了不算事
+            log.exception("读事件流失败")
+            return "我这边翻不开小本本，等一下呀。"
+
+        lines: list[str] = []
+        if beliefs:
+            lines.append("【我已经认定的事】")
+            lines.extend(f"- {item}" for item in beliefs if item not in thoughts)
+        if thoughts:
+            lines.append("【最近想通的】")
+            lines.extend(f"- {item}" for item in thoughts)
+        if refusals:
+            lines.append("【我拒绝过】")
+            for row in refusals:
+                verdict = {
+                    "rejected": "他有点不高兴",
+                    "accepted": "他没生气",
+                    "neutral": "他没说什么",
+                }.get(str(row.get("outcome") or ""), "还没下文")
+                ask = str(row.get("ask") or "")[:30]
+                lines.append(f"- 他让我「{ask}」，我没做——{verdict}")
+        if not lines:
+            return "我还没长出什么想法呢，多跟我说说话呀。"
+        return "\n".join(lines)
 
     def _life_command(self, rest: str) -> str:
         """看看/重写她今天的日子。写这个是为了能马上验证生活线有没有跑。"""

@@ -227,6 +227,13 @@ class Settings:
     # 表情出现的概率：提示词管不住（实测 0%），这里兜一层
     # 默认关，由 load_settings 打开——测试里构造 Settings() 不该随机插表情
     emoji_chance: float = 0.0
+    # 事件流人格：只追加、不用配置；关掉她就不再长
+    growth_enabled: bool = True
+    # 会拒绝（撒娇那种）：默认关，load_settings 打开
+    refusal_enabled: bool = False
+    refusal_chance: float = 0.0
+    # 睡前反省：一天一次，默认关
+    reflect_enabled: bool = False
     # 真做了才打开：打开之前她只能说"做不到"，不许编
     douyin_enabled: bool = False
     web_enabled: bool = False
@@ -421,6 +428,10 @@ class Settings:
     voice_rate=env.get("VOICE_RATE", "+8%").strip() or "+8%",
     voice_pitch=env.get("VOICE_PITCH", "+12Hz").strip() or "+12Hz",
     voice_dir=base_dir / env.get("VOICE_DIR", "data/voice").strip(),
+    growth_enabled=_bool(env, "GROWTH_ENABLED", True),
+    refusal_enabled=_bool(env, "REFUSAL_ENABLED", True),
+    refusal_chance=_float(env, "REFUSAL_CHANCE", 0.22),
+    reflect_enabled=_bool(env, "REFLECT_ENABLED", True),
     douyin_enabled=_bool(env, "DOUYIN_ENABLED", False),
     web_enabled=_bool(env, "WEB_ENABLED", False),
     video_enabled=_bool(env, "VIDEO_ENABLED", False),

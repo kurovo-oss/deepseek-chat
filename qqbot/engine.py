@@ -29,6 +29,8 @@ from . import talkstate as talkstate_mod
 from . import backup as backup_mod
 from . import capability as capability_mod
 from . import emoji as emoji_mod
+from . import growth as growth_mod
+from . import refusal as refusal_mod
 from . import recall_guard
 from . import usage as usage_mod
 from . import mood as mood_mod
@@ -204,6 +206,13 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
             except Exception:  # noqa: BLE001 - 情绪是附加状态，不能拖垮对话
                 log.exception("更新情绪状态失败")
 
+        # 他回话了：上回拒绝的事该结算了——他是不高兴、还是没当回事
+        if self.settings.refusal_enabled:
+            try:
+                refusal_mod.settle(self.store, self.settings, text or "")
+            except Exception:  # noqa: BLE001 - 反省链不能拖垮对话
+                log.exception("结算拒绝记录失败")
+
         collected: list[dict] = []
         if message.images and self.collector is not None:
             try:
@@ -254,6 +263,11 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
             origin="chat",
             force_image=wants_image(text),
         )
+            plan = getattr(self, "_pending_refusal", None)
+            if plan and self.settings.refusal_enabled:
+                # 拒绝真发出去之后才记账：模型可能没照做，账不能先记
+                growth_mod.open_refusal(self.store, plan["ask"])
+                self._pending_refusal = None
         finally:
             self._replying.discard(session)
             self._pending_sessions.discard(session)

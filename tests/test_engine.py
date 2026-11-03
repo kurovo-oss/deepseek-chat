@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 import qqbot.engine as engine_mod
+from qqbot import growth
 from qqbot.config import Settings
 from qqbot.engine import FALLBACK_REPLIES, Engine, fallback_reply
 from qqbot.llm import ChatResult, LLMError
@@ -1572,3 +1573,50 @@ def test_sticker_tag_with_empty_bucket_falls_back(tmp_path):
     env.engine.handle_message(make_message("你好"))
 
     assert env.sender.images
+
+
+def test_refusal_directive_reaches_the_model(tmp_path):
+    env = build_env(tmp_path, refusal_enabled=True, refusal_chance=0.6)
+    env.engine._rng = FixedRng(0.0)
+    env.llm.text = "唔……不要嘛，我懒"
+
+    env.engine.handle_message(make_message("帮我写个总结"))
+
+    system = env.llm.calls[0][0]["content"]
+    assert "撒娇地拒绝" in system
+    assert "别凶" in system
+    assert growth.recent_refusals(env.store)[0]["ask"] == "帮我写个总结"
+    assert env.sender.sent
+
+
+def test_no_refusal_directive_when_it_does_not_fire(tmp_path):
+    env = build_env(tmp_path, refusal_enabled=True, refusal_chance=0.0)
+
+    env.engine.handle_message(make_message("帮我写个总结"))
+
+    assert "撒娇地拒绝" not in env.llm.calls[0][0]["content"]
+    assert growth.recent_refusals(env.store) == []
+
+
+def test_his_reaction_gets_settled(tmp_path):
+    env = build_env(tmp_path, refusal_enabled=True, refusal_chance=0.6)
+    env.engine._rng = FixedRng(0.0)
+
+    env.engine.handle_message(make_message("帮我写个总结", mid="m1"))
+    env.engine.handle_message(make_message("算了，我自己来", mid="m2"))
+
+    assert growth.recent_refusals(env.store)[0]["outcome"] == "rejected"
+    notes = [row["text"] for row in growth.recent(env.store, kind="reflect")]
+    assert notes and "不太高兴" in notes[0]
+
+
+def test_growth_command_shows_her_thoughts(tmp_path):
+    env = build_env(tmp_path)
+    growth.record(env.store, "self", "他累的时候我该软一点", salience=0.7)
+
+    env.engine.handle_message(make_message("/成长"))
+
+    text = "\n".join(item for _, item in env.sender.sent)
+    assert "最近想通的" in text
+    assert "软一点" in text
+    assert env.llm.calls == []

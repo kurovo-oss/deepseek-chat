@@ -12,10 +12,12 @@ from . import abilities as abilities_mod
 from . import browse as browse_mod
 from . import budget as budget_mod
 from . import digest as digest_mod
+from . import growth as growth_mod
 from . import life as life_mod
 from . import memes as memes_mod
 from . import presence as presence_mod
 from . import recap as recap_mod
+from . import refusal as refusal_mod
 from . import mood as mood_mod
 from . import samples as samples_mod
 from . import talkstate as talkstate_mod
@@ -101,6 +103,32 @@ class ContextMixin:
             state = self.mood.describe()
             if state:
                 sections.append(budget_mod.Section("情绪", state, priority=80, quota=140))
+
+        if self.settings.growth_enabled and self.store is not None:
+            persona = growth_mod.persona_block(self.store)
+            if persona:
+                sections.append(budget_mod.Section("你自己", persona, priority=74, quota=320))
+
+        self._pending_refusal = None
+        if self.settings.refusal_enabled and self.store is not None:
+            last_user_text = next(
+                (str(m["content"]) for m in reversed(selected) if m["role"] == "user"), ""
+            )
+            plan = refusal_mod.choose(
+                self.store,
+                self.settings,
+                self.mood.snapshot() if self.mood is not None else {},
+                last_user_text,
+                self._rng,
+            )
+            if plan:
+                self._pending_refusal = plan
+                sections.append(
+                    budget_mod.Section("这轮的心思", plan["plan"], priority=96, quota=220)
+                )
+            note = refusal_mod.open_note(self.store)
+            if note:
+                sections.append(budget_mod.Section("压着的事", note, priority=76, quota=160))
 
         busy_note = self._busy_note(session)
         if busy_note:
