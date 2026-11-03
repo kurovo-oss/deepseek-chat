@@ -163,3 +163,20 @@ def test_get_message_returns_text_only(monkeypatch):
     monkeypatch.setattr(sender, "_request", lambda action, body: (True, payload))
 
     assert sender.get_message("1") == "嗯"
+
+
+def test_send_private_record_uses_base64():
+    import base64
+
+    from qqbot.onebot import HttpSender
+
+    client = HttpSender("http://127.0.0.1:1")
+    captured = {}
+    client._call = lambda action, payload: captured.update(
+        action=action, payload=payload
+    ) or True
+
+    assert client.send_private_record(100, b"FAKEMP3")
+    assert captured["action"] == "send_private_msg"
+    assert "record" in captured["payload"]["message"]
+    assert base64.b64encode(b"FAKEMP3").decode() in captured["payload"]["message"]

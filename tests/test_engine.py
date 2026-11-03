@@ -35,6 +35,7 @@ class FakeSender:
         self.sent = []
         self.images = []
         self.events = []
+        self.records = []
         self.quoted = ""  # get_message 的返回值，引用回复测试用
         self.quoted_images = ()
 
@@ -52,6 +53,11 @@ class FakeSender:
     def send_private_image(self, user_id, image, mode="path"):
         self.images.append((user_id, str(image), mode))
         self.events.append(("image", str(image)))
+        return self.ok
+
+    def send_private_record(self, user_id, audio):
+        self.records.append((user_id, str(audio)))
+        self.events.append(("record", str(audio)))
         return self.ok
 
 
@@ -1476,3 +1482,38 @@ def test_no_emoji_when_the_switch_is_off(tmp_path):
     env.engine.handle_message(make_message("我困了"))
 
     assert not any("🥺" in text or "😴" in text for _, text in env.sender.sent)
+
+
+# ------------------------------------------------ 语音
+def test_voice_command_says_off(tmp_path):
+    env = build_env(tmp_path, voice_enabled=False)
+
+    reply = env.engine._handle_command("/语音", "100")
+
+    assert "关着" in reply
+
+
+def test_voice_command_sends_a_record(tmp_path, monkeypatch):
+    from qqbot import voice as voice_mod
+
+    env = build_env(tmp_path, voice_enabled=True)
+    monkeypatch.setattr(
+        voice_mod, "synthesize", lambda text, settings, out_dir=None: tmp_path / "a.mp3"
+    )
+
+    reply = env.engine._handle_command("/语音", "100")
+
+    assert "发了一条语音" in reply
+    assert env.sender.records
+
+
+def test_voice_failure_does_not_break_anything(tmp_path, monkeypatch):
+    """合成失败也不影响她已经发出去的字。"""
+    from qqbot import voice as voice_mod
+
+    env = build_env(tmp_path, voice_enabled=True)
+    monkeypatch.setattr(voice_mod, "synthesize", lambda *a, **k: None)
+
+    env.engine._speak(100, "100", "晚安呀")
+
+    assert env.sender.records == []

@@ -212,6 +212,14 @@ class Settings:
     fallback_api_key: str = ""
     # 前情摘要：窗口外的旧话压成两三句留着
     recap_enabled: bool = False
+    # 语音：只在情绪重的时候发，默认关（load_settings 按 env 打开）
+    voice_enabled: bool = False
+    voice_name: str = "xiaoyi"
+    voice_chance: float = 0.0
+    voice_max_chars: int = 32
+    voice_rate: str = "+8%"
+    voice_pitch: str = "+12Hz"
+    voice_dir: Path = Path("data/voice")
     # 表情出现的概率：提示词管不住（实测 0%），这里兜一层
     # 默认关，由 load_settings 打开——测试里构造 Settings() 不该随机插表情
     emoji_chance: float = 0.0
@@ -400,6 +408,13 @@ class Settings:
             fallback_api_key=env.get("FALLBACK_API_KEY", ""),
             recap_enabled=_bool(env, "RECAP_ENABLED", True),
     emoji_chance=_float(env, "EMOJI_CHANCE", 0.25),
+    voice_enabled=_bool(env, "VOICE_ENABLED", False),
+    voice_name=env.get("VOICE_NAME", "xiaoyi").strip() or "xiaoyi",
+    voice_chance=_float(env, "VOICE_CHANCE", 0.3),
+    voice_max_chars=_int(env, "VOICE_MAX_CHARS", 32, minimum=4),
+    voice_rate=env.get("VOICE_RATE", "+8%").strip() or "+8%",
+    voice_pitch=env.get("VOICE_PITCH", "+12Hz").strip() or "+12Hz",
+    voice_dir=base_dir / env.get("VOICE_DIR", "data/voice").strip(),
     douyin_enabled=_bool(env, "DOUYIN_ENABLED", False),
     web_enabled=_bool(env, "WEB_ENABLED", False),
     video_enabled=_bool(env, "VIDEO_ENABLED", False),

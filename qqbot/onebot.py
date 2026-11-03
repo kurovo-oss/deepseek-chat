@@ -46,6 +46,8 @@ class Sender(Protocol):
 
     def send_private_image(self, user_id: int, image: Path, mode: str = "path") -> bool: ...
 
+    def send_private_record(self, user_id: int, audio: Path | bytes) -> bool: ...
+
     def get_message(self, message_id: str) -> str: ...
 
     def get_message_detail(self, message_id: str) -> dict[str, Any]: ...
@@ -155,6 +157,13 @@ class HttpSender:
             cq = f"[CQ:image,file=base64://{encoded}]"
         else:
             cq = f"[CQ:image,file={Path(image).as_uri()}]"
+        return self._call("send_private_msg", {"user_id": user_id, "message": cq})
+
+    def send_private_record(self, user_id: int, audio: Path | bytes) -> bool:
+        """发语音条。走 base64，协议端在容器里也不用共享路径。"""
+        data = audio if isinstance(audio, bytes) else Path(audio).read_bytes()
+        encoded = base64.b64encode(data).decode("ascii")
+        cq = f"[CQ:record,file=base64://{encoded}]"
         return self._call("send_private_msg", {"user_id": user_id, "message": cq})
 
     def get_message_detail(self, message_id: str) -> dict[str, Any]:

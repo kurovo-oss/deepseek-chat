@@ -15,6 +15,7 @@ from pathlib import Path
 from . import digest as digest_mod
 from . import images as images_mod
 from . import life as life_mod
+from . import voice as voice_mod
 from . import projects as projects_mod
 from .export import export_all
 from .memory import KIND_LABEL, card_weight
@@ -81,6 +82,8 @@ class CommandsMixin:
         if head == "/pc":
             return self._pc_command(rest)
 
+        if head in ("/voice", "/语音"):
+            return self._voice_command(rest, session)
         if head == "/life":
             return self._life_command(rest)
 
@@ -431,6 +434,18 @@ class CommandsMixin:
 
         self.store.add_scheduled_event(remainder[:40], int(moment.timestamp()))
         return f"好，我记住了：{moment:%m-%d %H:%M} {remainder}"
+
+    def _voice_command(self, rest: str, session: str) -> str:
+        """发一条语音试试：他不用等"情绪到了"才能验收。"""
+        if not self.settings.voice_enabled:
+            return "语音关着（VOICE_ENABLED=false）。"
+        text = rest.strip() or "嗯……我在呢，听着呢"
+        path = voice_mod.synthesize(text, self.settings)
+        if path is None:
+            return "这次没合成出来，可能是没网或者 edge-tts 不在。"
+        if not self.sender.send_private_record(int(session), path):
+            return "合成好了，但没发出去，看看协议端日志。"
+        return "发了一条语音，听得到吗"
 
     def _life_command(self, rest: str) -> str:
         """看看/重写她今天的日子。写这个是为了能马上验证生活线有没有跑。"""

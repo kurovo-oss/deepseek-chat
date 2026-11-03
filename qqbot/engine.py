@@ -50,6 +50,7 @@ from .formatting import (
 from .images import sniff_image
 from .llm import LLMClient, LLMError
 from .media import MediaMixin, wants_image
+from .speaking import SpeakingMixin
 from .memory import KIND_LABEL, card_weight
 from .onebot import IncomingMessage, Sender, parse_event
 from .store import Store
@@ -72,7 +73,7 @@ def _size_text(size: int) -> str:
 
 
 
-class Engine(ContextMixin, CommandsMixin, MediaMixin):
+class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin):
     def __init__(
         self,
         settings: Settings,
@@ -571,6 +572,9 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin):
                         )
                     else:
                         all_ok = False
+
+        if origin in ("chat", "proactive"):
+            self._maybe_speak(user_id, session, part_texts=parts)
 
         if record_id is not None:
             self.store.update_send_state(record_id, "sent" if all_ok else "failed")
