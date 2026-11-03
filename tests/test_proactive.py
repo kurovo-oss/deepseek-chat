@@ -48,6 +48,7 @@ class FakeSender:
 def make_settings(tmp_path, **overrides):
     kwargs = dict(
         allow_user_id=100,
+        emoji_chance=0.0,
         model_api_key="k",
         base_dir=tmp_path,
         db_path=tmp_path / "d.db",

@@ -321,6 +321,9 @@ def snippet(settings, clock=time.time, budget: int = 220, repeat: int = 0) -> st
     text = _read(_day_path(settings, day))
     if not text:
         return ""
+    if repeat >= 4:
+        # 说第四遍以上：这一段先收起来，不然她一有机会就往上靠
+        return ""
     note = ""
     if repeat >= 2:
         note = f"\n（这件事今天已经说过 {repeat} 次了——这轮别提它，先接住他的话。）"

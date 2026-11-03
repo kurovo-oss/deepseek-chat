@@ -138,8 +138,9 @@ def test_persona_allows_a_little_emoji():
         encoding="utf-8"
     )
 
-    assert "表情可以带一点" in prompt
-    assert "每三四条里有一条" in prompt
+    assert "表情是有节奏的" in prompt
+    assert "十条里" in prompt
+    assert "一个" in prompt
 
 
 def test_emoji_survive_formatting():

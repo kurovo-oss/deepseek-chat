@@ -91,6 +91,7 @@ def build_env(tmp_path, **overrides):
         draw_dir=tmp_path / "drawn",
         life_enabled=False,
         sticker_chance=0.0,
+        emoji_chance=0.0,
         reply_reshape=False,
         presence_enabled=False,
         catchup_enabled=False,
@@ -1453,3 +1454,25 @@ def test_fabricated_douyin_is_cut(tmp_path):
     sent = "\n".join(text for _, text in env.sender.sent)
     assert "刷到" not in sent
     assert "你在干嘛呀" in sent
+
+
+def test_emoji_lands_when_the_dice_say_so(tmp_path):
+    """提示词管不住（实测 0%），所以兜一层：骰子到了就补一个。"""
+    from qqbot import emoji as emoji_mod
+
+    env = build_env(tmp_path, emoji_chance=1.0)
+    env.engine.llm.text = "好呀\n那你早点睡嘛"
+
+    env.engine.handle_message(make_message("我困了"))
+
+    sent = [text for _, text in env.sender.sent]
+    assert emoji_mod.EMOJI_RE.search(sent[-1])
+
+
+def test_no_emoji_when_the_switch_is_off(tmp_path):
+    env = build_env(tmp_path, emoji_chance=0.0)
+    env.engine.llm.text = "好呀\n那你早点睡嘛"
+
+    env.engine.handle_message(make_message("我困了"))
+
+    assert not any("🥺" in text or "😴" in text for _, text in env.sender.sent)

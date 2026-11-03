@@ -284,6 +284,13 @@ def test_snippet_presses_when_she_repeats_herself(tmp_path):
     assert "别提它" in note
 
 
+def test_after_saying_it_too_often_the_note_is_withheld(tmp_path):
+    settings = make_settings(tmp_path)
+    _with_stew(settings)
+
+    assert life.snippet(settings, repeat=4) == ""
+
+
 def test_snippet_is_quiet_the_first_couple_of_times(tmp_path):
     settings = make_settings(tmp_path)
     _with_stew(settings)

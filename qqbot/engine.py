@@ -28,6 +28,7 @@ from . import recap as recap_mod
 from . import talkstate as talkstate_mod
 from . import backup as backup_mod
 from . import capability as capability_mod
+from . import emoji as emoji_mod
 from . import recall_guard
 from . import usage as usage_mod
 from . import mood as mood_mod
@@ -515,6 +516,13 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin):
         ):
             # 只对"她自己说的话"随机改条数：指令回复是结构化输出，兜底话术改了就认不出来
             parts = reshape_bubbles(parts, random)
+        if origin in ("chat", "proactive"):
+            parts = emoji_mod.maybe_add(
+                parts,
+                self.mood.snapshot() if self.mood is not None else {},
+                self._rng,
+                self.settings.emoji_chance,
+            )
         if not parts and image_path is None and not drawings:
             log.warning(
                 "回复内容为空（原文 %r，图片标记 %s），改用兜底话术", raw_text[:80], tags
