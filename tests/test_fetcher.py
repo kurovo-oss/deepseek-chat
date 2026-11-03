@@ -47,3 +47,30 @@ def test_page_parser_reads_preview_and_caption():
     rows = fetcher.parse_page(html)
 
     assert rows == [("https://img/a.webp", "DeepSeek娘『笑死』捧腹大笑表情包")]
+
+
+def test_index_parser_reads_the_whole_gallery():
+    data = {
+        "gallery": {
+            "DeepSeek娘": {
+                "images": [
+                    {
+                        "alt": "DeepSeek娘『真当我是便宜货啊』气鼓鼓表情包",
+                        "preview": "https://img/meme/001.webp",
+                    }
+                ]
+            },
+            "AI娘化": {
+                "images": [{"name": "AI娘表情包", "original": "https://img/meme/1510.jpg"}]
+            },
+        }
+    }
+
+    rows = fetcher.parse_index(data)
+
+    assert ("https://img/meme/001.webp", "DeepSeek娘『真当我是便宜货啊』气鼓鼓表情包") in rows
+    assert ("https://img/meme/1510.jpg", "AI娘表情包") in rows
+
+
+def test_index_bucket_for_a_pout_is_anger():
+    assert fetcher.classify("DeepSeek娘『真当我是便宜货啊』气鼓鼓表情包") == "生气"

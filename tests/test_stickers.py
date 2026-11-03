@@ -177,3 +177,34 @@ def test_seed_twice_adds_nothing(tmp_path):
     stickers.seed_from_collected(settings_, store, images)
 
     assert stickers.seed_from_collected(settings_, store, images) == 0
+
+
+def test_daily_bucket_is_accepted(tmp_path):
+    settings_ = settings(tmp_path)
+
+    assert stickers.add_file(settings_, make_png(tmp_path / "a.png"), "日常")
+
+
+def test_prune_drops_missing_rows_and_empty_buckets(tmp_path):
+    settings_ = settings(tmp_path)
+    row = stickers.add_file(settings_, make_png(tmp_path / "a.png"), "开心")
+    (settings_.sticker_dir / "开心" / Path(row["file"]).name).unlink()
+    (settings_.sticker_dir / "无语").mkdir()
+
+    removed = stickers.prune(settings_)
+
+    assert removed == 3  # 一个索引条目 + 两个空目录（开心、无语）
+    assert stickers.items(settings_) == []
+    assert not (settings_.sticker_dir / "无语").exists()
+    assert not (settings_.sticker_dir / "开心").exists()
+
+
+def test_no_emotion_falls_back_to_something_safe(tmp_path):
+    """没情绪词、没心情时，别随手甩一张带字的梗图，先挑卖萌/开心。"""
+    settings_ = settings(tmp_path)
+    stickers.add_file(settings_, make_png(tmp_path / "rude.png", b"rude"), "日常")
+    stickers.add_file(settings_, make_png(tmp_path / "cute.png", b"cute"), "卖萌")
+
+    path = stickers.pick_for_reply(settings_, "在吗", {}, Rng())
+
+    assert path.parent.name == "卖萌"

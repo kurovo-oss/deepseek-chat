@@ -20,12 +20,13 @@ import logging
 import random
 import re
 import shutil
+import threading
 import time
 from pathlib import Path
 
 log = logging.getLogger("qqbot")
 
-BUCKETS = ("开心", "卖萌", "生气", "委屈", "无语", "嘲讽", "疑惑", "早晚安")
+BUCKETS = ("开心", "卖萌", "生气", "委屈", "无语", "嘲讽", "疑惑", "早晚安", "日常")
 
 # 视觉模型打的是英文标签，映射到情绪桶
 TAG_BUCKETS = {
@@ -37,7 +38,12 @@ TAG_BUCKETS = {
     "嘲讽": ("smirk", "sarcasm", "mock", "嘲讽", "偷笑", "doge", "狗头"),
     "疑惑": ("confused", "thinking", "hmm", "question", "疑惑", "问号", "what"),
     "早晚安": ("tired", "sleepy", "sleep", "night", "morning", "困", "晚安", "早安", "睡"),
+    "日常": ("日常", "干饭", "摸鱼", "上班", "打工", "吃饭"),
 }
+
+# 情绪对不上时优先用这几桶：梗图里带字的很多，随手甩一张"真当我是便宜货啊"
+# 会在不合时宜的时候扎人；宁可发个卖萌的
+SAFE_FALLBACK = ("卖萌", "开心", "早晚安")
 
 MOOD_BUCKETS = {
     "tired": "早晚安",
@@ -60,6 +66,7 @@ CUE_WORDS = {
 TAG_RE = re.compile(r"\{\{\s*表情\s*[:：]\s*([^{}\n]{1,8}?)\s*\}\}")
 
 INDEX_NAME = "index.json"
+_LOCK = threading.RLock()
 
 
 # ---------------------------------------------------------------- 结构
@@ -88,15 +95,17 @@ def save_index(settings, index: dict) -> None:
     path = index_path(settings)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(index, ensure_ascii=False, indent=1), encoding="utf-8")
-    tmp.replace(path)
+    with _LOCK:
+        tmp.write_text(json.dumps(index, ensure_ascii=False, indent=1), encoding="utf-8")
+        tmp.replace(path)
 
 
 def items(settings, bucket: str | None = None) -> list[dict]:
-    rows = [row for row in load_index(settings)["items"] if (root(settings) / row["file"]).is_file()]
+    rows = load_index(settings)["items"]
     if bucket:
         rows = [row for row in rows if row.get("bucket") == bucket]
-    return rows
+    # 先按桶筛再查文件：库大了以后每条都 stat 一次太亏
+    return [row for row in rows if (root(settings) / row.get("file", "")).is_file()]
 
 
 def bucket_from_tags(tags) -> str:
@@ -127,28 +136,29 @@ def add_file(settings, source: Path, bucket: str, tags=None, sha: str = "") -> d
     if not source.is_file() or bucket not in BUCKETS:
         return None
     sha = sha or hashlib.sha256(source.read_bytes()).hexdigest()
-    index = load_index(settings)
-    if any(row.get("sha") == sha for row in index["items"]):
-        return None
-    target_dir = root(settings) / bucket
-    target_dir.mkdir(parents=True, exist_ok=True)
-    target = target_dir / f"{sha[:12]}{source.suffix.lower() or '.gif'}"
-    try:
-        if not target.is_file():
-            shutil.copyfile(source, target)
-    except OSError:
-        log.warning("表情复制失败：%s", source, exc_info=True)
-        return None
-    row = {
-        "file": f"{bucket}/{target.name}",
-        "bucket": bucket,
-        "tags": list(tags or []),
-        "sha": sha,
-        "uses": 0,
-        "last_used": 0,
-    }
-    index["items"].append(row)
-    save_index(settings, index)
+    with _LOCK:
+        index = load_index(settings)
+        if any(row.get("sha") == sha for row in index["items"]):
+            return None
+        target_dir = root(settings) / bucket
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / f"{sha[:12]}{source.suffix.lower() or '.gif'}"
+        try:
+            if not target.is_file():
+                shutil.copyfile(source, target)
+        except OSError:
+            log.warning("表情复制失败：%s", source, exc_info=True)
+            return None
+        row = {
+            "file": f"{bucket}/{target.name}",
+            "bucket": bucket,
+            "tags": list(tags or []),
+            "sha": sha,
+            "uses": 0,
+            "last_used": 0,
+        }
+        index["items"].append(row)
+        save_index(settings, index)
     return row
 
 
@@ -204,7 +214,14 @@ def record_use(settings, path: Path) -> None:
 
 def pick_for_reply(settings, reply_text: str, values: dict, rng=random) -> Path | None:
     bucket = bucket_from_text(str(reply_text or "")) or bucket_from_mood(values)
-    return pick(settings, bucket, cues=(), rng=rng)
+    if bucket:
+        path = pick(settings, bucket, rng=rng)
+        if path is not None:
+            return path
+    for safe in SAFE_FALLBACK:
+        if items(settings, safe):
+            return pick(settings, safe, rng=rng)
+    return pick(settings, "", rng=rng)
 
 
 # ---------------------------------------------------------------- 她的点名
@@ -221,3 +238,33 @@ def extract_tags(text: str) -> tuple[str, list[str]]:
 
     cleaned = TAG_RE.sub(_replace, text or "")
     return cleaned, buckets
+
+
+def prune(settings) -> int:
+    """删掉索引里指向不存在文件的条目，再删掉空桶目录。"""
+    with _LOCK:
+        return _prune(settings)
+
+
+def _prune(settings) -> int:
+    index = load_index(settings)
+    kept = []
+    removed = 0
+    for row in index["items"]:
+        if (root(settings) / row.get("file", "")).is_file():
+            kept.append(row)
+        else:
+            removed += 1
+    if removed:
+        index["items"] = kept
+        save_index(settings, index)
+    folder = root(settings)
+    if folder.is_dir():
+        for child in folder.iterdir():
+            if child.is_dir() and not any(child.iterdir()):
+                try:
+                    child.rmdir()
+                    removed += 1
+                except OSError:
+                    continue
+    return removed
