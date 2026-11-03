@@ -80,7 +80,8 @@ class ContextMixin:
                 sections.append(budget_mod.Section("前情", recap_note, priority=65, quota=220))
 
         if self.settings.life_enabled:
-            life_note = life_mod.snippet(self.settings)
+            repeat = life_mod.mentions_today(self.store, session, self.settings)
+            life_note = life_mod.snippet(self.settings, repeat=repeat)
             if life_note:
                 sections.append(budget_mod.Section("日子", life_note, priority=70, quota=280))
 

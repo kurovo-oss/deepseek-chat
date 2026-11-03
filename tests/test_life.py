@@ -1,11 +1,13 @@
 """生活线：她自己的日子。没这条线，她每句话都挂在他身上。"""
 
 import time
+from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
 
-from qqbot import life
+from qqbot import life, projects
 from qqbot.llm import ChatResult
+from qqbot.store import Store
 
 
 class FakeLLM:
@@ -236,3 +238,54 @@ def test_truncated_json_is_salvaged(tmp_path):
     assert "肉终于烂了" in text
     assert "今天把" not in text  # 标题要按 done 的说法来
     assert "番茄牛腩" in text
+
+
+# ------------------------------------------------ 别拿同一件事硬拐话题
+def _with_stew(settings):
+    folder = settings.life_dir
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"{date.today().isoformat()}.md").write_text(
+        "今天挑的是：学做番茄牛腩（想再试一次）\n"
+        "番茄下锅炒半天不出沙\n灶上小火咕嘟着\n",
+        encoding="utf-8",
+    )
+
+
+def test_keywords_come_from_her_own_day(tmp_path):
+    settings = make_settings(tmp_path)
+    _with_stew(settings)
+    projects.save(settings, [{"title": "学做番茄牛腩", "status": "active"}])
+
+    words = life.keywords(settings)
+
+    assert "牛腩" in words
+    assert "今天" not in words  # 太泛的词不算，否则每条回复都会被当成"提过"
+
+
+def test_mentions_today_counts_her_talk(tmp_path):
+    settings = make_settings(tmp_path)
+    _with_stew(settings)
+    store = Store(tmp_path / "chat.db")
+    store.save_message("100", "assistant", "牛腩炖上了，就是有点咸")
+    store.save_message("100", "assistant", "今天好累")
+    store.save_message("100", "user", "牛腩好吃吗")
+
+    assert life.mentions_today(store, "100", settings) == 1
+    store.close()
+
+
+def test_snippet_presses_when_she_repeats_herself(tmp_path):
+    settings = make_settings(tmp_path)
+    _with_stew(settings)
+
+    note = life.snippet(settings, repeat=3)
+
+    assert "已经说过 3 次" in note
+    assert "别提它" in note
+
+
+def test_snippet_is_quiet_the_first_couple_of_times(tmp_path):
+    settings = make_settings(tmp_path)
+    _with_stew(settings)
+
+    assert "已经说过" not in life.snippet(settings, repeat=1)

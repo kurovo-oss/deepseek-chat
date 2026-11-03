@@ -1426,3 +1426,18 @@ def test_request_falls_back_to_latest_when_tag_misses(tmp_path):
     env.store.add_image("a" * 64, "aa/a.png", "image/png", 10, tags=["cat"], source="user")
 
     assert env.engine._pick_image("100", ["不存在"], force=True) == env.images.cat_path
+
+
+def test_system_prompt_presses_when_she_repeats(tmp_path):
+    """同一件事今天已经说了三遍：提示词里要压一句，别让她再拿它拐话题。"""
+    env = build_env(tmp_path, life_enabled=True, life_dir=tmp_path / "life")
+    (tmp_path / "life").mkdir()
+    (tmp_path / "life" / (time.strftime("%Y-%m-%d") + ".md")).write_text(
+        "今天挑的是：学做番茄牛腩\n灶上小火咕嘟着\n", encoding="utf-8"
+    )
+    for index in range(3):
+        env.store.save_message("100", "assistant", f"牛腩还在炖着呢{index}")
+
+    messages = env.engine._build_messages("100")
+
+    assert "已经说过" in messages[0]["content"]

@@ -239,13 +239,67 @@ def today(settings, llm, context: str = "", clock=time.time) -> str:
     return text
 
 
-def snippet(settings, clock=time.time, budget: int = 220) -> str:
-    """进 system prompt 的那一段。没生成过就返回空串。"""
+# 判断"她今天已经提过这事没有"时用的词：太泛的二合字不算
+_STOP_GRAMS = frozenset(
+    (
+        "今天", "昨天", "明天", "早上", "上午", "中午", "下午", "晚上", "现在", "刚才",
+        "一个", "这个", "那个", "什么", "有点", "还是", "已经", "然后", "就是", "觉得",
+        "时候", "自己", "他们", "我们", "你们", "因为", "所以", "但是", "不过", "而且",
+        "如果", "其实", "一下", "一点", "一会", "起来", "出来", "看着", "盯着", "在灶",
+        "手边", "试着", "想再", "这回", "下回", "结果", "感觉",
+    )
+)
+
+
+def keywords(settings, clock=time.time) -> set[str]:
+    """今天这件事的"关键词"：从她手上的事和今天第一行里取，够具体才认。"""
+    words: set[str] = set()
+    try:
+        items = projects_mod.load(settings)
+    except OSError:
+        items = []
+    seeds = [item.get("title", "") for item in items if item.get("status") in ("active", "done")]
+    text = _read(_day_path(settings, date.fromtimestamp(clock())))
+    seeds.append(text.splitlines()[0] if text else "")
+    for chunk in re.findall(r"[\u4e00-\u9fff]+", " ".join(seeds)):
+        for index in range(len(chunk) - 1):
+            gram = chunk[index : index + 2]
+            if gram not in _STOP_GRAMS:
+                words.add(gram)
+    return words
+
+
+def mentions_today(store, session: str, settings, clock=time.time) -> int:
+    """她今天已经提过这件事几次——用来按住"对了，牛腩……"这种硬拐。"""
+    words = keywords(settings, clock)
+    if not words or store is None:
+        return 0
+    day = date.fromtimestamp(clock())
+    midnight = int(time.mktime(day.timetuple()))
+    count = 0
+    for row in store.recent_messages(session, 200):
+        if row.get("role") != "assistant" or int(row.get("created_at") or 0) < midnight:
+            continue
+        content = str(row.get("content") or "")
+        if any(word in content for word in words):
+            count += 1
+    return count
+
+
+def snippet(settings, clock=time.time, budget: int = 220, repeat: int = 0) -> str:
+    """进 system prompt 的那一段。没生成过就返回空串。
+
+    `repeat` 是"今天已经提过几次"：说太多了就在末尾压一句，别让她一天到晚
+    拿同一件小事当转折——那是"话题转移太刻意"的来源。
+    """
     day = date.fromtimestamp(clock())
     text = _read(_day_path(settings, day))
     if not text:
         return ""
-    return "【你今天】\n" + text[:budget]
+    note = ""
+    if repeat >= 2:
+        note = f"\n（这件事今天已经说过 {repeat} 次了——这轮别提它，先接住他的话。）"
+    return "【你今天】\n" + text[:budget] + note
 
 
 def prune(settings, keep: int | None = None) -> int:
