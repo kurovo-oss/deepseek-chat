@@ -20,6 +20,7 @@ from . import recap as recap_mod
 from . import refusal as refusal_mod
 from . import mood as mood_mod
 from . import samples as samples_mod
+from . import selfknow as selfknow_mod
 from . import talkstate as talkstate_mod
 from . import usage as usage_mod
 from .formatting import fix_address
@@ -98,6 +99,11 @@ class ContextMixin:
 
         # 网络用语只给意思，不给"怎么用"：听得懂，但自己不说
         sections.append(budget_mod.Section("梗", memes_mod.block(), priority=40, quota=360))
+
+        # 她自己的真数字：模型、用量、跑了多久——问起来不至于瞎编
+        mine = selfknow_mod.block(self.store, self.settings)
+        if mine:
+            sections.append(budget_mod.Section("关于你自己", mine, priority=79, quota=260))
 
         if self.mood is not None:
             state = self.mood.describe()

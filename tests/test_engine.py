@@ -1620,3 +1620,47 @@ def test_growth_command_shows_her_thoughts(tmp_path):
     assert "最近想通的" in text
     assert "软一点" in text
     assert env.llm.calls == []
+
+
+def test_system_prompt_knows_her_own_numbers(tmp_path):
+    env = build_env(tmp_path)
+
+    env.engine.handle_message(make_message("你用了多少 token 啊"))
+
+    system = env.llm.calls[0][0]["content"]
+    assert "关于你自己" in system
+    assert "token" in system
+
+
+def test_lookup_tag_triggers_a_second_pass(tmp_path, monkeypatch):
+    from qqbot import search as search_mod
+
+    env = build_env(tmp_path, search_enabled=True)
+    env.llm.shots = ["等我一下，我查查\n{{查:地球到月球多远}}", "查到了，三十八万公里左右"]
+    monkeypatch.setattr(
+        search_mod,
+        "search",
+        lambda query, limit=4: [
+            {"title": "地球到月球多远", "url": "https://baike.baidu.com/x", "snippet": "平均距离约 38.4 万公里"}
+        ],
+    )
+
+    env.engine.handle_message(make_message("地球到月球多远"))
+
+    sent = " ".join(text for _, text in env.sender.sent)
+    assert "38" in sent or "三十八万" in sent
+    assert "{{查" not in sent
+
+
+def test_lookup_without_results_keeps_her_words(tmp_path, monkeypatch):
+    from qqbot import search as search_mod
+
+    env = build_env(tmp_path, search_enabled=True)
+    env.llm.shots = ["我查一下哦\n{{查:查不到的东西}}"]
+    monkeypatch.setattr(search_mod, "search", lambda query, limit=4: [])
+
+    env.engine.handle_message(make_message("查不到的东西是啥"))
+
+    sent = " ".join(text for _, text in env.sender.sent)
+    assert "我查一下" in sent
+    assert "{{查" not in sent

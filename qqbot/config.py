@@ -234,6 +234,8 @@ class Settings:
     refusal_chance: float = 0.0
     # 睡前反省：一天一次，默认关
     reflect_enabled: bool = False
+    # 真查一下（Bing 的 RSS，只读标题摘要）
+    search_enabled: bool = False
     # 真做了才打开：打开之前她只能说"做不到"，不许编
     douyin_enabled: bool = False
     web_enabled: bool = False
@@ -428,6 +430,7 @@ class Settings:
     voice_rate=env.get("VOICE_RATE", "+8%").strip() or "+8%",
     voice_pitch=env.get("VOICE_PITCH", "+12Hz").strip() or "+12Hz",
     voice_dir=base_dir / env.get("VOICE_DIR", "data/voice").strip(),
+    search_enabled=_bool(env, "SEARCH_ENABLED", True),
     growth_enabled=_bool(env, "GROWTH_ENABLED", True),
     refusal_enabled=_bool(env, "REFUSAL_ENABLED", True),
     refusal_chance=_float(env, "REFUSAL_CHANCE", 0.22),

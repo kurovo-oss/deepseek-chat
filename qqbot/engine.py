@@ -31,6 +31,7 @@ from . import capability as capability_mod
 from . import emoji as emoji_mod
 from . import growth as growth_mod
 from . import refusal as refusal_mod
+from . import search as search_mod
 from . import recall_guard
 from . import usage as usage_mod
 from . import mood as mood_mod
@@ -442,6 +443,9 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
             )
         return self._fallback_llm
 
+    def _log_lookup_usage(self, result) -> None:
+        self.store.log_usage(result.model, result.tokens_in, result.tokens_out, "lookup", True)
+
     def _complete(self, messages: list[dict]):
         """主通道 → 备用通道 → None。None 表示"这轮真的说不了话"。"""
         try:
@@ -482,6 +486,10 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
             str(item.get("content") or "")
             for item in messages
             if item.get("role") in ("system", "user")
+        )
+        # 她说"我查一下"：真查一遍再让她说（逻辑在 search.py）
+        text = search_mod.follow_up(
+            self.settings, self._complete, messages, text, self._log_lookup_usage
         )
         text = recall_guard.soften(text, evidence)
         # 没做过的事别说成做过：刷抖音、上网、剪视频这些系统现在都做不到

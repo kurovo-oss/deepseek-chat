@@ -1212,6 +1212,24 @@ class Store:
             )
             self._conn.commit()
 
+    def usage_between(self, start: int, end: int) -> tuple[int, int]:
+        """某段时间的 token（给"你自己"那块用）。"""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COALESCE(SUM(tokens_in), 0), COALESCE(SUM(tokens_out), 0)"
+                " FROM usage_log WHERE created_at >= ? AND created_at < ?",
+                (int(start), int(end)),
+            ).fetchone()
+        return int(row[0] or 0), int(row[1] or 0)
+
+    def count_messages_between(self, start: int, end: int) -> int:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM messages WHERE created_at >= ? AND created_at < ?",
+                (int(start), int(end)),
+            ).fetchone()
+        return int(row[0] or 0)
+
     def usage_total(self) -> tuple[int, int]:
         with self._lock:
             row = self._conn.execute(

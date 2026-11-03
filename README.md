@@ -71,6 +71,7 @@ powershell -ExecutionPolicy Bypass -File scripts\uninstall-autostart.ps1   # 卸
 | 表情库 | `data/stickers/<情绪桶>/`（约 2900 张 / 270MB；`scripts\fetch-stickers.py` 从公开 CDN 全量拉取） |
 | 她刷到的 | `data/browse/日期.json`（只读标题，真看见的才说） |
 | 她自己长出来的 | `data/chat.db` 的 `growth` / `refusals` 表（只追加：想通的、拒绝过的） |
+| 她查到的 | 不落盘：查完就用，Bing RSS 只给标题和摘要 |
 | 语音 | `data/voice/*.mp3`（最近 60 条，自动清） |
 | 协议端 | `tools/NapCat-*`（约 140MB） |
 | Python 运行时 | `tools/python`（约 340MB，自包含） |

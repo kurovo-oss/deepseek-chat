@@ -251,3 +251,10 @@ def recent_refusals(store, limit: int = 5) -> list[dict]:
             "SELECT * FROM refusals ORDER BY id DESC LIMIT ?", (max(1, int(limit)),)
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def count(store) -> int:
+    ensure(store)
+    with store._lock:  # noqa: SLF001
+        row = store._conn.execute("SELECT COUNT(*) FROM growth").fetchone()  # noqa: SLF001
+    return int(row[0] or 0)

@@ -20,6 +20,7 @@ from . import stickers as stickers_mod
 from . import life as life_mod
 from . import voice as voice_mod
 from . import projects as projects_mod
+from . import search as search_mod
 from .export import export_all
 from .memory import KIND_LABEL, card_weight
 from .sayings import HELP_TEXT
@@ -94,6 +95,8 @@ class CommandsMixin:
         if head == "/life":
             return self._life_command(rest)
 
+        if head in ("/查", "/search"):
+            return search_mod.command(rest)
         if head in ("/成长", "/grow", "/反思"):
             return self._growth_command()
 
