@@ -1139,6 +1139,17 @@ mimo-v2.5 / muse-spark-1.3-contributor）。key 只在 `.env` 里，没进 git�
 结论：抖音登录必须在**这台电脑的桌面**上由人完成一次（拖滑块 + 扫码）；
 做完之后 cookie 落在 `data/browser/douyin`，后续点赞/分享全自动。
 
+**2026-11-05 抖音网页端结论：风控拦死，转向「有登录态但进不去」**
+
+主人扫码后 cookie 里确实有 `sessionid`/`sid_guard`/`login_time`（68 个 douyin cookie），
+但用 CDP 打开首页 30 秒，`rmc-nocaptcha` iframe 一直在、头像不渲染、推荐流 0 条，
+`navigator.webdriver` 是 False 也没用——是抖音对这台机器/IP 的自动化风控，不是我们的登录问题。
+
+结论：
+- 点赞/分享代码与本地假页面端到端验证过了（`liked=3 shared=1`），真号这一步卡在风控
+- 保留登录 profile（`data/browser/douyin`），换网络/过段时间或人工桌面可再试
+- `DOUYIN_ENABLED` 保持 false，不空跑、不刷验证
+
 ## 七、主动消息（M4）
 
 **做了什么**：她会先开口——两种情形。
