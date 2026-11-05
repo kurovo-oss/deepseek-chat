@@ -203,6 +203,9 @@ def page_target(port: int, timeout: float = 5.0, prefer: str = "") -> dict:
     for target in targets:
         if str(target.get("url", "")).startswith("about:blank"):
             return target
+    if targets:
+        # 只有 edge://newtab 之类也行，调用方会自己导航
+        return targets[0]
     raise CDPError("没有找到页面 target")
 
 

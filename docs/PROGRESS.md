@@ -1117,6 +1117,15 @@ mimo-v2.5 / muse-spark-1.3-contributor）。key 只在 `.env` 里，没进 git�
 之后她收到这张图会说得出“这张我存下啦，一只橘猫趴在键盘上”；
 老图用 `note_missing()` 补，只补没备注的。实测补了 4 张（早期占位图也被认出来了）。
 
+**2026-11-05 抖音：用一个本地假页面把链路跑通了**
+
+真抖音要扫码，先不等：起了个本地假抖音（`scripts/mock-douyin.py`），三条卡片、一个能切换 aria-pressed 的点赞按钮，
+把 `douyin_home_url`/`douyin_video_url` 指过去，用真 Edge + 真 CDP 跑了一遍：
+
+- 结果 `liked=3 shared=1`，分享发出「一只橘猫趴在键盘上睡着了 + 链接」
+- 审计 4 条（3 个 like ok、1 个 share ok），`douyin_seen` 三条记录
+- 顺手修了两个真问题：Edge 用 `CREATE_NO_WINDOW` 起不来（去掉），target 只有 `edge://newtab` 时挑不到页面（改成兜底任意页面）
+
 ## 七、主动消息（M4）
 
 **做了什么**：她会先开口——两种情形。

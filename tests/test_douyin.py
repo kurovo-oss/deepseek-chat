@@ -186,3 +186,17 @@ def test_pid_file_lives_in_profile(tmp_path):
     cfg = settings(tmp_path)
     assert douyin.pid_file(cfg) == tmp_path / "prof" / "browser.pid"
 
+def test_custom_home_and_video_urls(tmp_path, monkeypatch):
+    monkeypatch.setattr(time, "sleep", lambda seconds: None)
+    cfg, store, gate = env(
+        tmp_path,
+        douyin_home_url="http://mock.local/",
+        douyin_video_url="http://mock.local/v/{aweme_id}",
+    )
+    page = FakePage(feed=[{"id": "9", "text": "云"}])
+
+    douyin.run_once(store, cfg, gate, FakeSender(), FakeBrowser(page), now=int(time.time()))
+
+    assert page.visited[0] == "http://mock.local/"
+    assert "http://mock.local/v/9" in page.visited
+

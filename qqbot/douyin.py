@@ -140,11 +140,8 @@ class Browser:
             if not visible:
                 args.append("--window-position=-32000,-32000")
             args.append("about:blank")
-            creation = 0
-            if os.name == "nt":
-                creation = getattr(subprocess, "CREATE_NO_WINDOW", 0)
             self.process = subprocess.Popen(  # noqa: S603 - 路径来自固定候选
-                args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=creation
+                args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
             )
             pid_file = self.profile / "browser.pid"
             try:
@@ -240,7 +237,9 @@ def run_once(store, settings, guard, sender, browser: Browser, now: int | None =
         return result
     try:
         page = browser.start()
-        page.goto(HOME, timeout=40)
+        home = getattr(settings, "douyin_home_url", HOME) or HOME
+        video_url = getattr(settings, "douyin_video_url", VIDEO) or VIDEO
+        page.goto(home, timeout=40)
         time.sleep(3)
         state = login_probe(page)
         if not state.get("has_avatar") and state.get("has_login_button"):
@@ -260,7 +259,7 @@ def run_once(store, settings, guard, sender, browser: Browser, now: int | None =
             if not decision.allowed:
                 result["skipped"] += 1
                 break
-            page.goto(VIDEO.format(aweme_id=item["id"]), timeout=40)
+            page.goto(video_url.format(aweme_id=item["id"]), timeout=40)
             time.sleep(2)
             outcome = like_current(page)
             ok = bool(outcome.get("ok")) and bool(outcome.get("changed", True))
@@ -345,7 +344,7 @@ def open_for_login(settings) -> str:
     stop_browser(settings)  # 先关掉后台那个隐身窗口，免得连到它
     browser = Browser(settings)
     page = browser.start(visible=True)
-    page.goto(HOME, timeout=40)
+    page.goto(getattr(settings, "douyin_home_url", HOME) or HOME, timeout=40)
     return (
         "浏览器开好了，在服务器上找到那个 Edge 窗口扫码登录；登录完回来发 /抖音 就行。"
         f"（profile：{Path(getattr(settings, 'douyin_profile', 'data/browser/douyin'))}）"
