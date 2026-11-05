@@ -1721,3 +1721,25 @@ def test_douyin_command_reports_switch(tmp_path):
     text = " ".join(chunk for _, chunk in env.sender.sent)
     assert "抖音：关" in text
 
+def test_memory_profile_command_when_empty(tmp_path):
+    env = build_env(tmp_path)
+
+    env.engine.handle_message(make_message("/记忆 档案"))
+
+    text = " ".join(chunk for _, chunk in env.sender.sent)
+    assert "没有档案" in text
+
+
+def test_memory_tidy_command_reports_counts(tmp_path, monkeypatch):
+    from qqbot import facts as facts_mod
+
+    env = build_env(tmp_path)
+    monkeypatch.setattr(facts_mod, "extract", lambda store, llm, settings: [1, 2])
+    monkeypatch.setattr(facts_mod, "maintain", lambda store: 3)
+
+    env.engine.handle_message(make_message("/记忆 整理"))
+
+    text = " ".join(chunk for _, chunk in env.sender.sent)
+    assert "新记住 2 条" in text
+    assert "清掉 3 条" in text
+

@@ -300,8 +300,31 @@ class CommandsMixin:
             )
             for who, count in (data.get("by_subject") or {}).items():
                 lines.append(f"关于{who}：{count} 条")
-            lines.append("用法：/记忆 香菜   /记忆 来源 12   /记忆 更正 12 新的说法   /记忆 忘了 12")
+            lines.append(
+                "用法：/记忆 香菜   /记忆 来源 12   /记忆 更正 12 新的说法   /记忆 忘了 12"
+                "   /记忆 档案   /记忆 整理"
+            )
             return "\n".join(lines)
+
+        if rest.startswith("档案") or rest.startswith("人物"):
+            lines = ["【人物档案】"]
+            for who in ("他", "我"):
+                text = facts_mod.profile(self.store, who) or facts_mod.profile_text(self.store, who)
+                if text:
+                    lines.append(text)
+            if len(lines) == 1:
+                return "还没有档案，等夜里整理，或者发 /记忆 整理 现在就写。"
+            return "\n".join(lines)
+
+        if rest.startswith("整理") or rest.startswith("刷新"):
+            if getattr(self, "llm", None) is None:
+                return "现在没接模型，整理不了。"
+            written = facts_mod.extract(self.store, self.llm, self.settings)
+            cleaned = facts_mod.maintain(self.store)
+            return (
+                f"整理完了：新记住 {len(written)} 条，清掉 {cleaned} 条低置信度的。"
+                "用 /记忆 统计 看总数，/记忆 档案 看人物小传。"
+            )
 
         if rest.startswith("来源") or rest.startswith("看 "):
             fact_id = _first_int(rest)
