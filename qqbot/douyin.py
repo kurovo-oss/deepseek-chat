@@ -237,6 +237,13 @@ def run_once(store, settings, guard, sender, browser: Browser, now: int | None =
     if not getattr(settings, "douyin_enabled", False):
         return result
     try:
+        pid_path = pid_file(settings)
+        try:
+            plain_pid = int(pid_path.read_text(encoding="ascii").strip())
+        except (OSError, ValueError):
+            plain_pid = 0
+        if plain_pid and _pid_running(plain_pid) and not _port_open(int(getattr(settings, "douyin_cdp_port", 9222))):
+            stop_browser(settings)  # 登录窗口还开着，先关掉，免得 profile 被占
         page = browser.start()
         home = getattr(settings, "douyin_home_url", HOME) or HOME
         video_url = getattr(settings, "douyin_video_url", VIDEO) or VIDEO
@@ -347,27 +354,53 @@ def stop_browser(settings) -> bool:
     return killed
 
 
-def open_for_login(settings) -> str:
-    """拉起一个看得见的窗口让主人扫码，返回说明。"""
-    stop_browser(settings)  # 先关掉后台那个隐身窗口，免得连到它
-    browser = Browser(settings)
-    page = browser.start(visible=True)
-    page.goto(getattr(settings, "douyin_home_url", HOME) or HOME, timeout=40)
+def _pid_running(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if os.name != "nt":
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+    import ctypes
+
+    handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+    if not handle:
+        return False
+    ctypes.windll.kernel32.CloseHandle(handle)
+    return True
+
+
+def _port_open(port: int) -> bool:
     try:
-        page.call("Page.bringToFront")  # 把窗口顶到最前面，省得找不到
-    except Exception:  # noqa: BLE001 - 顶不到前台也不影响登录
-        pass
-    base = (
-        "浏览器开好了，在服务器上找到那个 Edge 窗口扫码登录；登录完回来发 /抖音 就行。"
-        f"（profile：{Path(getattr(settings, 'douyin_profile', 'data/browser/douyin'))}）"
+        cdp_mod.list_targets(port, timeout=0.8)
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def open_for_login(settings) -> str:
+    """用普通浏览器窗口登录：不带调试端口，最不像脚本，少触发验证。"""
+    stop_browser(settings)
+    exe = browser_path()
+    if exe is None:
+        raise cdp_mod.CDPError("找不到 Edge/Chrome")
+    profile = Path(getattr(settings, "douyin_profile", "data/browser/douyin"))
+    profile.mkdir(parents=True, exist_ok=True)
+    url = getattr(settings, "douyin_home_url", HOME) or HOME
+    process = subprocess.Popen(  # noqa: S603 - 路径来自固定候选
+        [exe, f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check",
+         "--disable-sync", url],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
     try:
-        time.sleep(4)
-        state = login_probe(page)
-    except Exception:  # noqa: BLE001 - 探测失败不该挡住登录
-        return base
-    if state.get("captcha"):
-        return base + "\n页面里弹了验证，先把它点掉再扫码。"
-    if state.get("has_avatar"):
-        return "已经是登录状态了，直接发 /抖音 就行。"
-    return base
+        pid_file(settings).write_text(str(process.pid), encoding="ascii")
+    except OSError:
+        pass
+    return (
+        "这次用的是普通窗口（没开调试端口，不容易被当成脚本）。"
+        "在那个窗口里点掉验证、扫码登录，看到头像后把窗口关掉，再发 /抖音 给我。"
+        f"（profile：{profile}）"
+    )

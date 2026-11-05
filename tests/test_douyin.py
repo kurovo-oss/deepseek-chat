@@ -224,3 +224,50 @@ def test_no_avatar_means_not_logged_in_even_without_login_button(tmp_path, monke
 
     assert result["error"] == "not_logged_in"
 
+def test_pid_running_detects_self_and_bogus():
+    import os
+
+    assert douyin._pid_running(os.getpid()) is True
+    assert douyin._pid_running(999999) is False
+
+
+def test_login_window_has_no_debug_port(tmp_path, monkeypatch):
+    cfg = settings(tmp_path)
+    calls = {}
+
+    class FakeProcess:
+        pid = 424242
+
+    def fake_popen(args, **kwargs):
+        calls["args"] = args
+        return FakeProcess()
+
+    monkeypatch.setattr(douyin, "browser_path", lambda: "edge.exe")
+    monkeypatch.setattr(douyin, "stop_browser", lambda settings: True)
+    monkeypatch.setattr(douyin.subprocess, "Popen", fake_popen)
+
+    douyin.open_for_login(cfg)
+
+    args = calls["args"]
+    assert not any(arg.startswith("--remote-debugging-port") for arg in args)
+    assert args[-1] == cfg.douyin_home_url
+    assert douyin.pid_file(cfg).read_text(encoding="ascii").strip() == "424242"
+
+
+def test_run_once_closes_leftover_login_window(tmp_path, monkeypatch):
+    monkeypatch.setattr(time, "sleep", lambda seconds: None)
+    cfg, store, gate = env(tmp_path)
+    douyin.pid_file(cfg).parent.mkdir(parents=True, exist_ok=True)
+    douyin.pid_file(cfg).write_text("12345", encoding="ascii")
+    stopped = []
+    monkeypatch.setattr(douyin, "_pid_running", lambda pid: True)
+    monkeypatch.setattr(douyin, "_port_open", lambda port: False)
+    monkeypatch.setattr(douyin, "stop_browser", lambda settings: stopped.append(settings) or True)
+
+    douyin.run_once(
+        store, cfg, gate, FakeSender(), FakeBrowser(FakePage(feed=[{"id": "1", "text": "云"}])),
+        now=int(time.time()),
+    )
+
+    assert stopped == [cfg]
+
