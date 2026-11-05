@@ -1688,3 +1688,16 @@ def test_proactive_never_gets_the_refusal_directive(tmp_path):
     system = messages[0]["content"]
     assert "撒娇地拒绝" not in system
     assert getattr(env.engine, "_pending_refusal", None) is None
+
+
+def test_memory_facts_command_shows_evidence(tmp_path):
+    from qqbot import facts
+
+    env = build_env(tmp_path)
+    facts.record(env.store, "他", "讨厌", "香菜", quote="别放香菜")
+
+    env.engine.handle_message(make_message("/记忆 香菜"))
+
+    text = " ".join(chunk for _, chunk in env.sender.sent)
+    assert "讨厌香菜" in text
+    assert "别放香菜" in text

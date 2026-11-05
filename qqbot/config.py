@@ -229,6 +229,8 @@ class Settings:
     emoji_chance: float = 0.0
     # 事件流人格：只追加、不用配置；关掉她就不再长
     growth_enabled: bool = True
+    memory_facts_enabled: bool = False
+    memory_fact_budget: int = 600
     # 会拒绝（撒娇那种）：默认关，load_settings 打开
     refusal_enabled: bool = False
     refusal_chance: float = 0.0
@@ -432,6 +434,8 @@ class Settings:
     voice_dir=base_dir / env.get("VOICE_DIR", "data/voice").strip(),
     search_enabled=_bool(env, "SEARCH_ENABLED", True),
     growth_enabled=_bool(env, "GROWTH_ENABLED", True),
+    memory_facts_enabled=_bool(env, "MEMORY_FACTS_ENABLED", True),
+    memory_fact_budget=_int(env, "MEMORY_FACT_BUDGET", 600, minimum=200),
     refusal_enabled=_bool(env, "REFUSAL_ENABLED", True),
     refusal_chance=_float(env, "REFUSAL_CHANCE", 0.22),
     reflect_enabled=_bool(env, "REFLECT_ENABLED", True),

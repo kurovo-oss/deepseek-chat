@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from . import digest as digest_mod
+from . import facts as facts_mod
 from . import growth as growth_mod
 from . import images as images_mod
 from . import browse as browse_mod
@@ -55,6 +56,9 @@ class CommandsMixin:
 
         if head == "/memory":
             return self._memory_command(rest)
+
+        if head in ("/记忆", "/facts"):
+            return self._facts_command(rest)
 
         if head == "/forget":
             return self._forget(rest)
@@ -176,6 +180,68 @@ class CommandsMixin:
             return f"改好了：{summary}"
 
         return self._list_cards()
+
+    def _facts_command(self, rest: str) -> str:
+        rest = (rest or "").strip()
+        if not rest or rest in ("统计", "stats"):
+            data = facts_mod.stats(self.store)
+            by = data.get("by_status") or {}
+            lines = ["【我记住的事】"]
+            lines.append(
+                "active %d 条 / 被顶掉 %d / 忘了 %d"
+                % (by.get("active", 0), by.get("superseded", 0), by.get("forgotten", 0))
+            )
+            for who, count in (data.get("by_subject") or {}).items():
+                lines.append(f"关于{who}：{count} 条")
+            lines.append("用法：/记忆 香菜   /记忆 来源 12   /记忆 更正 12 新的说法   /记忆 忘了 12")
+            return "\n".join(lines)
+
+        if rest.startswith("来源") or rest.startswith("看 "):
+            fact_id = _first_int(rest)
+            if fact_id is None:
+                return "要给我一条编号呀，比如 /记忆 来源 12"
+            row = facts_mod.get(self.store, fact_id)
+            if not row:
+                return f"没有 #f{fact_id} 这条。"
+            lines = [
+                f"#f{fact_id} {row['subject']}{row['predicate']}{row['object']}",
+                f"（{row['status']}，置信度 {row['confidence']:.1f}）",
+            ]
+            if row.get("quote"):
+                lines.append(f"原话：“{row['quote']}”")
+            if row.get("source_msg_id"):
+                lines.append(f"来源消息：{row['source_msg_id']}")
+            for event in facts_mod.events(self.store, fact_id):
+                lines.append(f"- {event['action']}：{event['note'] or '（无备注）'}")
+            return "\n".join(lines)
+
+        if rest.startswith("更正"):
+            fact_id = _first_int(rest)
+            new_text = rest.split(None, 2)[-1] if len(rest.split(None, 2)) > 2 else ""
+            if fact_id is None or not new_text or new_text == rest:
+                return "用法：/记忆 更正 12 他其实不讨厌香菜了"
+            old_row = facts_mod.get(self.store, fact_id)
+            if not old_row:
+                return f"没有 #f{fact_id} 这条。"
+            new_id = facts_mod.correct(self.store, fact_id, new_text)
+            return f"改了：#f{fact_id} → #f{new_id}「{new_text}」（旧的没删，标成被顶掉了）"
+
+        if rest.startswith("忘了") or rest.startswith("忘掉"):
+            fact_id = _first_int(rest)
+            if fact_id is None:
+                return "要给我一条编号呀，比如 /记忆 忘了 12"
+            if not facts_mod.forget(self.store, fact_id):
+                return f"没有 #f{fact_id} 这条，或者已经忘了。"
+            return f"好，#f{fact_id} 我当没这回事了（记录还留着，能找回来）。"
+
+        rows = facts_mod.recall(self.store, rest, limit=5)
+        if not rows:
+            return f"关于「{rest}」我还没记住什么呢。"
+        lines = [f"关于「{rest}」："]
+        for row in rows:
+            quote = f"，他说“{row['quote']}”" if row.get("quote") else ""
+            lines.append(f"- #f{row['id']} {row['subject']}{row['predicate']}{row['object']}{quote}")
+        return "\n".join(lines)
 
     def _list_cards(self) -> str:
         cards = self.store.list_cards(status="active", limit=300)
@@ -535,3 +601,9 @@ class CommandsMixin:
         text = life_mod.snippet(self.settings)
         hand = projects_mod.describe(projects_mod.load(self.settings))
         return (text or "今天还没写呢。") + "\n\n" + hand
+
+
+
+def _first_int(text: str) -> int | None:
+    match = re.search(r"\d+", text or "")
+    return int(match.group(0)) if match else None

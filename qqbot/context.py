@@ -12,6 +12,7 @@ from . import abilities as abilities_mod
 from . import browse as browse_mod
 from . import budget as budget_mod
 from . import digest as digest_mod
+from . import facts as facts_mod
 from . import growth as growth_mod
 from . import life as life_mod
 from . import memes as memes_mod
@@ -109,6 +110,17 @@ class ContextMixin:
             state = self.mood.describe()
             if state:
                 sections.append(budget_mod.Section("情绪", state, priority=80, quota=140))
+
+        if self.settings.memory_facts_enabled and self.store is not None:
+            last_text = next(
+                (str(m["content"]) for m in reversed(selected) if m["role"] == "user"), ""
+            )
+            budget_chars = getattr(self.settings, "memory_fact_budget", 600)
+            known = facts_mod.block(self.store, last_text, max_chars=budget_chars)
+            if known:
+                sections.append(
+                    budget_mod.Section("我知道的事", known, priority=72, quota=budget_chars)
+                )
 
         if self.settings.growth_enabled and self.store is not None:
             persona = growth_mod.persona_block(self.store)

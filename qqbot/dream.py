@@ -26,6 +26,7 @@ from pathlib import Path
 
 from .memory import crossed_day
 
+from . import facts as facts_mod
 from . import growth as growth_mod
 from . import reflect as reflect_mod
 
@@ -335,12 +336,17 @@ def _format_messages(messages: list[dict]) -> str:
 
 
 def bedtime(store, llm, settings) -> bool:
-    """睡前反省 + 淡忘。跟 DREAM_ENABLED 无关，单独可测。"""
-    if not reflect_mod.due(store, settings):
-        return False
-    reflect_mod.reflect(store, llm, settings)
-    growth_mod.maintain(store)
-    return True
+    """睡前反省 + 抽事实 + 淡忘。跟 DREAM_ENABLED 无关，单独可测。"""
+    did = False
+    if reflect_mod.due(store, settings):
+        reflect_mod.reflect(store, llm, settings)
+        growth_mod.maintain(store)
+        did = True
+    if facts_mod.due(store, settings):
+        facts_mod.extract(store, llm, settings)
+        facts_mod.maintain(store)
+        did = True
+    return did
 
 
 def start_dreamer(engine, store, settings, stop_event: threading.Event) -> threading.Thread:
