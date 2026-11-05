@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sqlite3
 import subprocess
 import time
 from pathlib import Path
@@ -405,3 +406,25 @@ def open_for_login(settings) -> str:
         "在那个窗口里点掉验证、扫码登录，看到头像后把窗口关掉，再发 /抖音 给我。"
         f"（profile：{profile}）"
     )
+
+def login_status(settings) -> dict:
+    """看登录状态：窗口开着没、cookie 里有没有 sessionid（不启动浏览器）。"""
+    profile = Path(getattr(settings, "douyin_profile", "data/browser/douyin")).resolve()
+    state = {"profile": str(profile), "window_open": False, "has_sessionid": False}
+    try:
+        pid = int(pid_file(settings).read_text(encoding="ascii").strip())
+    except (OSError, ValueError):
+        pid = 0
+    state["window_open"] = bool(pid and _pid_running(pid))
+    cookies = profile / "Default" / "Network" / "Cookies"
+    if cookies.exists():
+        try:
+            conn = sqlite3.connect(f"file:{cookies.as_posix()}?mode=ro", uri=True, timeout=2)
+            rows = conn.execute(
+                "SELECT name FROM cookies WHERE host_key LIKE '%douyin%'"
+            ).fetchall()
+            conn.close()
+            state["has_sessionid"] = any(row[0] == "sessionid" for row in rows)
+        except sqlite3.Error:
+            state["cookie_locked"] = True
+    return state

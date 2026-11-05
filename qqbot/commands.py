@@ -213,9 +213,17 @@ class CommandsMixin:
             return "浏览器关掉了。" if douyin_mod.stop_browser(self.settings) else "现在没在跑。"
         gate = self._gate()
         state = gate.status().get("douyin", {})
+        login = douyin_mod.login_status(self.settings)
+        if login.get("has_sessionid"):
+            who = "已登录"
+        elif login.get("window_open"):
+            who = "登录窗口开着，等你扫码"
+        else:
+            who = "未登录"
         lines = [
             f"抖音：{'开' if self.settings.douyin_enabled else '关'}"
             f"（试运行 {'开' if self.settings.douyin_dry_run else '关'}）",
+            f"登录状态：{who}",
             f"今天点赞 {state.get('used_today', 0)}/{state.get('daily_quota', 0)}，"
             f"分享额度 {self.settings.douyin_share_daily_max}",
         ]

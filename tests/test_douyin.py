@@ -277,3 +277,39 @@ def test_browser_profile_is_absolute(tmp_path, monkeypatch):
 
     assert browser.profile.is_absolute()
 
+def make_cookie_db(profile: Path, with_session: bool):
+    import sqlite3
+
+    path = profile / "Default" / "Network"
+    path.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(path / "Cookies")
+    conn.execute("CREATE TABLE cookies (name TEXT, host_key TEXT)")
+    conn.execute("INSERT INTO cookies VALUES ('ttwid', '.douyin.com')")
+    if with_session:
+        conn.execute("INSERT INTO cookies VALUES ('sessionid', '.douyin.com')")
+    conn.commit()
+    conn.close()
+
+
+def test_login_status_with_session_cookie(tmp_path, monkeypatch):
+    cfg = settings(tmp_path)
+    make_cookie_db(cfg.douyin_profile, with_session=True)
+    monkeypatch.setattr(douyin, "_pid_running", lambda pid: False)
+
+    state = douyin.login_status(cfg)
+
+    assert state["has_sessionid"] is True
+    assert state["window_open"] is False
+
+
+def test_login_status_without_cookie_is_not_logged_in(tmp_path, monkeypatch):
+    cfg = settings(tmp_path)
+    make_cookie_db(cfg.douyin_profile, with_session=False)
+    douyin.pid_file(cfg).write_text("4242", encoding="ascii")
+    monkeypatch.setattr(douyin, "_pid_running", lambda pid: True)
+
+    state = douyin.login_status(cfg)
+
+    assert state["has_sessionid"] is False
+    assert state["window_open"] is True
+
