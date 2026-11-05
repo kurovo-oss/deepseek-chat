@@ -271,3 +271,9 @@ def test_run_once_closes_leftover_login_window(tmp_path, monkeypatch):
 
     assert stopped == [cfg]
 
+def test_browser_profile_is_absolute(tmp_path, monkeypatch):
+    cfg = settings(tmp_path)
+    browser = douyin.Browser(cfg)
+
+    assert browser.profile.is_absolute()
+

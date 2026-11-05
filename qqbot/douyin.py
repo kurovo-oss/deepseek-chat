@@ -113,7 +113,8 @@ class Browser:
     def __init__(self, settings):
         self.settings = settings
         self.port = int(getattr(settings, "douyin_cdp_port", 9222))
-        self.profile = Path(getattr(settings, "douyin_profile", "data/browser/douyin"))
+        # Edge 对相对路径会解析到安装目录/默认 profile，必须给绝对路径
+        self.profile = Path(getattr(settings, "douyin_profile", "data/browser/douyin")).resolve()
         self.process: subprocess.Popen | None = None
         self.page: cdp_mod.CDP | None = None
 
@@ -386,7 +387,7 @@ def open_for_login(settings) -> str:
     exe = browser_path()
     if exe is None:
         raise cdp_mod.CDPError("找不到 Edge/Chrome")
-    profile = Path(getattr(settings, "douyin_profile", "data/browser/douyin"))
+    profile = Path(getattr(settings, "douyin_profile", "data/browser/douyin")).resolve()
     profile.mkdir(parents=True, exist_ok=True)
     url = getattr(settings, "douyin_home_url", HOME) or HOME
     process = subprocess.Popen(  # noqa: S603 - 路径来自固定候选

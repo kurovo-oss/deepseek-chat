@@ -1126,6 +1126,19 @@ mimo-v2.5 / muse-spark-1.3-contributor）。key 只在 `.env` 里，没进 git�
 - 审计 4 条（3 个 like ok、1 个 share ok），`douyin_seen` 三条记录
 - 顺手修了两个真问题：Edge 用 `CREATE_NO_WINDOW` 起不来（去掉），target 只有 `edge://newtab` 时挑不到页面（改成兜底任意页面）
 
+**2026-11-05 抖音登录卡在哪：滑块验证（需要人）**
+
+实测结论（换了全新 profile、绝对路径、无调试端口都试过）：
+
+- 首次打开首页可能没有验证，但只要点「登录」，抖音就弹 `rmc-nocaptcha` 滑块验证，
+  登录弹窗/二维码在验证后面，DOM 里读不到 dialog、canvas 是 0×0
+- 所以「机器人把二维码发到 QQ 让你扫」这条路走不通：得先有人把滑块拖过去
+- 旧 profile 一打开就带验证，新 profile 干净些；`Browser` 现在强制绝对路径
+  （Edge 会把相对 `--user-data-dir` 解析到默认目录，直接不启调试端口）
+
+结论：抖音登录必须在**这台电脑的桌面**上由人完成一次（拖滑块 + 扫码）；
+做完之后 cookie 落在 `data/browser/douyin`，后续点赞/分享全自动。
+
 ## 七、主动消息（M4）
 
 **做了什么**：她会先开口——两种情形。
