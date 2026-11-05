@@ -5,9 +5,14 @@
 
 $ErrorActionPreference = "Continue"
 
+$self = $PID
 $killed = 0
 Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue |
-    Where-Object { $_.CommandLine -match "supervise\.ps1" } |
+    Where-Object {
+        $_.ProcessId -ne $self -and
+        $_.CommandLine -match "supervise\.ps1" -and
+        $_.CommandLine -notmatch "stop-bot"
+    } |
     ForEach-Object {
         Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
         Write-Host ("stopped supervisor: {0}" -f $_.ProcessId)
@@ -15,7 +20,7 @@ Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction Silen
     }
 
 Get-CimInstance Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue |
-    Where-Object { $_.CommandLine -match "qqbot" } |
+    Where-Object { $_.ProcessId -ne $self -and $_.CommandLine -match "qqbot" } |
     ForEach-Object {
         Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
         Write-Host ("stopped bot: {0}" -f $_.ProcessId)

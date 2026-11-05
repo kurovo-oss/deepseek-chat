@@ -92,3 +92,10 @@ def test_stop_script_kills_supervisor_and_bot():
     text = (SCRIPTS / "stop-bot.ps1").read_text(encoding="utf-8")
     assert "supervise" in text
     assert "qqbot" in text
+
+
+def test_stop_script_does_not_kill_itself():
+    """实测踩过：杀掉命令行里带 supervise.ps1 的 powershell，把自己也杀了。"""
+    text = (SCRIPTS / "stop-bot.ps1").read_text(encoding="utf-8")
+    assert "$PID" in text
+    assert 'notmatch "stop-bot"' in text
