@@ -1701,3 +1701,23 @@ def test_memory_facts_command_shows_evidence(tmp_path):
     text = " ".join(chunk for _, chunk in env.sender.sent)
     assert "讨厌香菜" in text
     assert "别放香菜" in text
+
+def test_health_command_lists_channels(tmp_path):
+    env = build_env(tmp_path)
+
+    env.engine.handle_message(make_message("/健康"))
+
+    text = " ".join(chunk for _, chunk in env.sender.sent)
+    assert "【健康】" in text
+    assert "空间" in text
+    assert "记忆" in text
+
+
+def test_douyin_command_reports_switch(tmp_path):
+    env = build_env(tmp_path)
+
+    env.engine.handle_message(make_message("/抖音"))
+
+    text = " ".join(chunk for _, chunk in env.sender.sent)
+    assert "抖音：关" in text
+

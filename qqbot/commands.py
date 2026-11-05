@@ -14,8 +14,11 @@ from pathlib import Path
 
 from . import digest as digest_mod
 from . import facts as facts_mod
+from . import douyin as douyin_mod
+from . import facts as facts_mod
 from . import growth as growth_mod
 from . import guard as guard_mod
+from . import memepedia as memepedia_mod
 from . import qzone as qzone_mod
 from . import images as images_mod
 from . import browse as browse_mod
@@ -64,6 +67,12 @@ class CommandsMixin:
 
         if head in ("/空间", "/qzone"):
             return self._qzone_command(rest)
+
+        if head in ("/抖音", "/douyin"):
+            return self._douyin_command(rest)
+
+        if head in ("/健康", "/health"):
+            return self._health_command()
 
         if head == "/forget":
             return self._forget(rest)
@@ -185,6 +194,72 @@ class CommandsMixin:
             return f"改好了：{summary}"
 
         return self._list_cards()
+
+    def _gate(self):
+        gate = getattr(self, "guard", None)
+        if gate is None:
+            gate = guard_mod.Guard(self.store, self.settings)
+            self.guard = gate
+        return gate
+
+    def _douyin_command(self, rest: str) -> str:
+        rest = (rest or "").strip()
+        if rest in ("登录", "login", "扫码"):
+            try:
+                return douyin_mod.open_for_login(self.settings)
+            except Exception as exc:  # noqa: BLE001 - 浏览器起不来要说人话
+                return f"浏览器没起来：{exc}"
+        if rest in ("停", "关闭", "stop"):
+            return "浏览器关掉了。" if douyin_mod.stop_browser(self.settings) else "现在没在跑。"
+        gate = self._gate()
+        state = gate.status().get("douyin", {})
+        lines = [
+            f"抖音：{'开' if self.settings.douyin_enabled else '关'}"
+            f"（试运行 {'开' if self.settings.douyin_dry_run else '关'}）",
+            f"今天点赞 {state.get('used_today', 0)}/{state.get('daily_quota', 0)}，"
+            f"分享额度 {self.settings.douyin_share_daily_max}",
+        ]
+        rows = [row for row in gate.recent(30) if row["module"].startswith("douyin")][:3]
+        for row in rows:
+            lines.append(f"- {time.strftime('%m-%d %H:%M', time.localtime(row['at']))} {row['module']} {row['result']}")
+        return "\n".join(lines)
+
+    def _health_command(self) -> str:
+        gate = self._gate()
+        state = gate.status()
+        lines = ["【健康】"]
+        sender = getattr(self, "sender", None)
+        if sender is not None and hasattr(sender, "request"):
+            try:
+                ok, data = sender.request("get_login_info", {})
+                nickname = (data or {}).get("nickname") or ""
+                lines.append(f"协议端：{'在线' if ok else '离线'}" + (f"（{nickname}）" if nickname else ""))
+            except Exception:  # noqa: BLE001
+                lines.append("协议端：探测失败")
+        else:
+            lines.append("协议端：未知")
+        space = state.get("qzone", {})
+        lines.append(f"空间：今天 {space.get('used_today', 0)}/{space.get('daily_quota', 0)}"
+                     + ("，熔断中" if space.get("circuit_open") else ""))
+        look = state.get("douyin", {})
+        lines.append(f"抖音：{'开' if look.get('enabled') else '关'}，今天 {look.get('used_today', 0)}/{look.get('daily_quota', 0)}")
+        try:
+            by = facts_mod.stats(self.store).get("by_status") or {}
+            lines.append(f"记忆：active {by.get('active', 0)} 条，忘了 {by.get('forgotten', 0)} 条")
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            lines.append(f"梗库：{memepedia_mod.count(self.store)} 条")
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            posts = qzone_mod.last_posts(self.store, 1)
+            if posts:
+                row = posts[0]
+                lines.append(f"最近一条空间：{row['status']}（{time.strftime('%m-%d %H:%M', time.localtime(row['created_at']))}）")
+        except Exception:  # noqa: BLE001
+            pass
+        return "\n".join(lines)
 
     def _qzone_command(self, rest: str) -> str:
         guard = getattr(self, "guard", None)

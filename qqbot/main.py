@@ -25,6 +25,7 @@ from .config import (
 from .collect import StickerCollector
 from .dispatcher import MessageDispatcher
 from .dream import start_dreamer
+from . import douyin as douyin_mod
 from . import guard as guard_mod
 from . import qzone as qzone_mod
 from .engine import Engine
@@ -435,6 +436,21 @@ def main(argv: list[str] | None = None) -> int:
             settings.qzone_daily_max,
             "开" if settings.qzone_image_enabled else "关",
             "开" if settings.qzone_dry_run else "关",
+        )
+
+    if settings.douyin_enabled:
+        threading.Thread(
+            target=douyin_mod.tick_loop,
+            args=(engine.store, settings, engine.guard, engine.sender, stop_event),
+            name="douyin",
+            daemon=True,
+        ).start()
+        log.info(
+            "抖音已启用：每天最多 %d 个赞、%d 条分享、试运行 %s（profile %s）",
+            settings.douyin_daily_max,
+            settings.douyin_share_daily_max,
+            "开" if settings.douyin_dry_run else "关",
+            settings.douyin_profile,
         )
 
     if settings.dream_enabled or settings.reflect_enabled:

@@ -72,7 +72,7 @@ def capabilities(settings) -> dict[str, Capability]:
             douyin_on,
             bool(get("douyin_dry_run", True)),
             daily_quota=int(get("douyin_daily_max", 5) or 0),
-            cooldown_seconds=8,
+            cooldown_seconds=0,
         ),
         "douyin_share": Capability(
             "douyin_share",
