@@ -81,7 +81,7 @@ def pick_image(store, settings, now: int) -> Path | None:
     """今天她发过的图里挑最后一张；没有就 None。"""
     with store._lock:  # noqa: SLF001
         row = store._conn.execute(  # noqa: SLF001
-            "SELECT rel_path FROM images WHERE created_at >= ? AND status = 'ok' "
+            "SELECT rel_path FROM images WHERE created_at >= ? AND status IN ('ok','active') "
             "ORDER BY id DESC LIMIT 1",
             (_today_start(now),),
         ).fetchone()

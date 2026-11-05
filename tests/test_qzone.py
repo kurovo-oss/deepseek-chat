@@ -167,3 +167,23 @@ def test_maybe_post_respects_window_and_switch(tmp_path):
     assert result["status"] == "ok"
 
     assert qzone.maybe_post(store, FakeLLM(), cfg, g, sender, now=evening) is None
+
+def test_pick_image_accepts_active_status(tmp_path):
+    settings_ = settings(tmp_path)
+    store = Store(settings_.db_path)
+    image = settings_.image_dir / "x" / "y.png"
+    image.parent.mkdir(parents=True, exist_ok=True)
+    image.write_bytes(b"\x89PNG\r\n\x1a\n")
+    now = 1793868800
+    store.add_image("sha-active", "x/y.png", "image/png", 8, tags=[], source="user", created_at=now)
+
+    assert qzone.pick_image(store, settings_, now) == image
+
+
+def test_pick_image_without_todays_image_is_none(tmp_path):
+    settings_ = settings(tmp_path)
+    store = Store(settings_.db_path)
+    store.add_image("sha-old", "a/b.png", "image/png", 8, tags=[], source="user", created_at=1000)
+
+    assert qzone.pick_image(store, settings_, 1793868800) is None
+
