@@ -353,6 +353,10 @@ def open_for_login(settings) -> str:
     browser = Browser(settings)
     page = browser.start(visible=True)
     page.goto(getattr(settings, "douyin_home_url", HOME) or HOME, timeout=40)
+    try:
+        page.call("Page.bringToFront")  # 把窗口顶到最前面，省得找不到
+    except Exception:  # noqa: BLE001 - 顶不到前台也不影响登录
+        pass
     base = (
         "浏览器开好了，在服务器上找到那个 Edge 窗口扫码登录；登录完回来发 /抖音 就行。"
         f"（profile：{Path(getattr(settings, 'douyin_profile', 'data/browser/douyin'))}）"
