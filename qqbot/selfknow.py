@@ -52,7 +52,14 @@ def _count_stickers(settings) -> int:
         return 0
 
 
-def _count_voices(settings) -> int:
+def _count_voices(store, settings) -> int:
+    """发过几条语音：数消息，不数缓存文件（缓存里有发失败和重试的）。"""
+    counter = getattr(store, "count_by_origin", None)
+    if callable(counter):
+        try:
+            return int(counter("voice"))
+        except Exception:  # noqa: BLE001 - 数不出来就退回文件数
+            pass
     folder = getattr(settings, "voice_dir", None)
     if folder is None:
         return 0
@@ -80,7 +87,7 @@ def facts(store, settings, now: int | None = None) -> dict:
         "cards": cards,
         "events": events,
         "stickers": _count_stickers(settings),
-        "voices": _count_voices(settings),
+        "voices": _count_voices(store, settings),
         "uptime": _uptime(stamp),
         "now": datetime.fromtimestamp(stamp),
         "weekday": WEEKDAYS[datetime.fromtimestamp(stamp).weekday()],
@@ -92,7 +99,7 @@ def block(store, settings, now: int | None = None, budget: int = 260) -> str:
     if store is None:
         return ""
     stamp = int(now if now is not None else time.time())
-    key = f"{id(store)}:{stamp // 120}"
+    key = _cache_key(store)
     cached = _cache.get(key)
     if cached and time.time() - cached[0] < _CACHE_TTL:
         return cached[1]
@@ -121,5 +128,20 @@ def block(store, settings, now: int | None = None, budget: int = 260) -> str:
     lines.append(f"现在 {data['now']:%m-%d} {data['weekday']} {data['now']:%H:%M}。")
     lines.append("问到这些就照实说；没列到的（花了多少钱、还剩多少额度）就说算不出来。")
     text = "\n".join(lines)[:budget]
-    _cache[key] = (time.time(), text)
+    _remember(key, text)
     return text
+
+
+def _cache_key(store) -> str:
+    """按库路径缓存：按 id(store) 会撞上回收后的新对象，还会一直漏。"""
+    path = getattr(store, "path", "")
+    return str(path) if path else f"mem:{id(store)}"
+
+
+def _remember(key: str, text: str) -> None:
+    now = time.time()
+    for stale in [name for name, (born, _) in _cache.items() if now - born >= _CACHE_TTL]:
+        _cache.pop(stale, None)
+    if len(_cache) > 64:
+        _cache.clear()
+    _cache[key] = (now, text)

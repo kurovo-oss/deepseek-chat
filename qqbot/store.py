@@ -368,6 +368,14 @@ class Store:
             ).fetchall()
         return [dict(r) for r in reversed(rows)]
 
+    def count_by_origin(self, origin: str) -> int:
+        """发过多少条某类消息（语音/表情/画）——比数缓存文件准。"""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM messages WHERE origin = ?", (str(origin),)
+            ).fetchone()
+        return int(row[0] or 0)
+
     def count_messages(self, session_id: str) -> int:
         with self._lock:
             row = self._conn.execute(

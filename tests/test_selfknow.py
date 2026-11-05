@@ -78,3 +78,47 @@ def test_number_formatting():
     assert selfknow._num(999) == "999"
     assert selfknow._num(12345) == "1.2 万"
     assert selfknow._num(1234567) == "123 万"
+
+
+def test_cache_is_keyed_by_path(tmp_path, monkeypatch):
+    store = Store(tmp_path / "k.db")
+    calls = []
+    real = selfknow.facts
+
+    def counting(*args, **kwargs):
+        calls.append(1)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(selfknow, "facts", counting)
+    selfknow._cache.clear()
+    cfg = settings(tmp_path)
+
+    selfknow.block(store, cfg, now=1_700_000_000)
+    # 同一路径新建的 Store 应该命中缓存；时间进了下一个桶也一样
+    another = Store(tmp_path / "k.db")
+    selfknow.block(another, cfg, now=1_700_000_600)
+
+    assert len(calls) == 1
+
+
+def test_cache_does_not_grow_forever(tmp_path, monkeypatch):
+    selfknow._cache.clear()
+    monkeypatch.setattr(selfknow, "_cache", selfknow._cache)
+    store = Store(tmp_path / "g.db")
+    cfg = settings(tmp_path)
+
+    for step in range(80):
+        selfknow.block(store, cfg, now=1_700_000_000 + step * 120)
+
+    assert len(selfknow._cache) <= 64
+
+
+def test_voices_are_counted_from_messages(tmp_path):
+    store = Store(tmp_path / "v.db")
+    store.save_message("100", "assistant", "[语音]", origin="voice")
+    store.save_message("100", "assistant", "[语音]", origin="voice")
+    store.save_message("100", "assistant", "在的", origin="chat")
+
+    data = selfknow.facts(store, settings(tmp_path), now=int(time.time()))
+
+    assert data["voices"] == 2

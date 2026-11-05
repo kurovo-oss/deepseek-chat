@@ -1663,7 +1663,8 @@ def test_lookup_without_results_keeps_her_words(tmp_path, monkeypatch):
     env.engine.handle_message(make_message("查不到的东西是啥"))
 
     sent = " ".join(text for _, text in env.sender.sent)
-    assert "我查一下" in sent
+    # 查不到就把"我查一下"换成实话，不能只留半句承诺
+    assert "真不知道" in sent
     assert "{{查" not in sent
 
 

@@ -151,3 +151,48 @@ def test_command_lists_results(monkeypatch):
 
     assert "标题" in text
     assert "摘要" in text
+
+
+class FakeResult:
+    model = "fake"
+    tokens_in = 10
+    tokens_out = 5
+
+    def __init__(self, text):
+        self.text = text
+
+
+def test_follow_up_without_results_replaces_the_promise(monkeypatch):
+    monkeypatch.setattr(search, "search", lambda query, limit=4: [])
+    called = []
+
+    text = search.follow_up(
+        type("S", (), {"search_enabled": True})(),
+        lambda messages: called.append(1) or FakeResult("多余"),
+        [{"role": "user", "content": "珠峰多高"}],
+        "我查一下哦\n{{查:珠峰多高}}",
+    )
+
+    assert "真不知道" in text
+    assert "{{查" not in text
+    assert called == []
+
+
+def test_follow_up_strips_a_repeated_tag(monkeypatch):
+    rows = search._parse(RSS)
+    monkeypatch.setattr(search, "search", lambda query, limit=4: rows)
+    settings = type("S", (), {"search_enabled": True})()
+
+    text = search.follow_up(
+        settings,
+        lambda messages: FakeResult("查到了，三十八万公里左右\n{{查:地球到月球多远}}"),
+        [{"role": "user", "content": "多远"}],
+        "等我查查\n{{查:地球到月球多远}}",
+    )
+
+    assert "三十八万" in text
+    assert "{{查" not in text
+
+
+def test_no_result_keeps_a_real_answer():
+    assert search._no_result("大概三十八万公里吧") == "大概三十八万公里吧"

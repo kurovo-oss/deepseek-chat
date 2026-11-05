@@ -90,3 +90,14 @@ def test_refusal_lifecycle(tmp_path):
     assert growth.last_open_refusal(store) is None
     assert growth.recent_refusal_outcomes(store) == ["accepted"]
     assert growth.recent_refusals(store)[0]["note"] == "他没生气"
+
+
+def test_persona_does_not_repeat_between_beliefs_and_fresh(tmp_path):
+    store = Store(tmp_path / "p.db")
+    long_text = "他累的时候我该软一点，别老讲道理，先陪他坐一会儿，等他缓过来再说别的"
+    growth.record(store, "self", long_text, salience=0.6)
+    growth.record(store, "self", long_text, salience=0.6)
+
+    text = growth.persona_block(store)
+
+    assert text.count(long_text[:20]) == 1

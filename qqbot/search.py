@@ -30,6 +30,8 @@ UA = {
 BING = "https://www.bing.com/search?q={query}&format=rss&setlang=zh-Hans&mkt=zh-CN"
 SO = "https://www.so.com/s?q={query}"
 CACHE_TTL = 1800.0
+# 查不到时替掉"我查一下"那半句，别让对话悬在那儿
+NO_RESULT = "我查了一下，没找到靠谱的……这个我是真不知道"
 MAX_SNIPPET = 120
 
 _cache: dict[str, tuple[float, list[dict]]] = {}
@@ -167,7 +169,7 @@ def follow_up(settings, complete, messages: list[dict], text: str, log_usage=Non
         return cleaned
     rows = search(query)
     if not rows:
-        return cleaned
+        return _no_result(cleaned)
     try:
         second = complete(
             [
@@ -183,4 +185,17 @@ def follow_up(settings, complete, messages: list[dict], text: str, log_usage=Non
         return cleaned
     if log_usage is not None:
         log_usage(second)
-    return re.sub(r"\n{2,}", "\n", second.text)
+    # 第二遍也可能又写一遍标记：再摘一次，别漏进聊天框
+    final, _ = strip_tag(second.text)
+    final = re.sub(r"\n{2,}", "\n", final).strip()
+    return final or cleaned
+
+
+def _no_result(cleaned: str) -> str:
+    """查不到：短承诺（"我查一下"）换成实话；他已经看到的正文保留。"""
+    body = (cleaned or "").strip()
+    if not body:
+        return NO_RESULT
+    if len(body) <= 30 and any(cue in body for cue in ("查", "搜", "看看")):
+        return NO_RESULT
+    return body

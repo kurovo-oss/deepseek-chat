@@ -160,7 +160,12 @@ def persona_block(store, budget: int = 300) -> str:
     fresh = self_view(store)
     if fixed:
         lines.append("【你已经认定的事】")
-        lines.extend(f"- {item}" for item in fixed if item not in fresh)
+        # 90 字和 100 字截断后字符串不等，得按相似度去重
+        lines.extend(
+            f"- {item}"
+            for item in fixed
+            if not any(_similar(item, other) >= 0.8 for other in fresh)
+        )
     if fresh:
         lines.append("【你最近想通的】")
         lines.extend(f"- {item}" for item in fresh)
