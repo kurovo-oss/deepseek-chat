@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
+import json
 import time
 import urllib.request
 from html import unescape
@@ -17,6 +18,8 @@ log = logging.getLogger("qqbot")
 BASE = "https://aigengtu.com/zh/meme/{number}"
 TOTAL = 2956
 DELAY = 0.7
+INDEX_CURRENT = "https://img.aigengtu.com/index/current.json"
+INDEX_ENTRY = "https://img.aigengtu.com/index/{version}.json"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS memes (
@@ -185,7 +188,7 @@ def search(store, query: str, limit: int = 2) -> list[dict]:
     for row in rows:
         body = _bigrams(f"{row['title']}{row['quote']}{row['meaning']}{row['emotion']}")
         hits = len(grams & body)
-        if hits:
+        if hits >= 2:
             scored.append((hits, dict(row)))
     scored.sort(key=lambda item: (-item[0], item[1]["number"]))
     return [row for _, row in scored[:limit]]
@@ -198,6 +201,67 @@ def block(store, query: str, limit: int = 2, max_chars: int = 240) -> str:
     lines = ["【这个梗】"]
     for row in rows:
         head = f"#{row['number']} {row['quote'] or row['title']}（{row['emotion'] or row['kind'] or '梗'}）"
-        tail = (row["meaning"] or "")[:120]
+        tail = (row["meaning"] or "")[:100]
         lines.append(f"- {head}：{tail}" if tail else f"- {head}")
     return "\n".join(lines)[:max_chars]
+
+def _fetch_json(url: str, timeout: float = 60.0):
+    request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 dafeiyu/1.0"})
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def _number_from(url: str) -> int:
+    match = re.search(r"/(\d+)\.(?:webp|png|jpg|jpeg)$", url or "", re.I)
+    return int(match.group(1)) if match else 0
+
+
+def _row_from_entry(number: int, role: str, image: dict, now: int) -> tuple:
+    story = image.get("story") or {}
+    title = str(image.get("alt") or image.get("name") or "")
+    quote = (_QUOTE_RE.search(title) or [None, ""])[1]
+    emotion = (_EMOTION_RE.search(title) or [None, ""])[1]
+    return (
+        number,
+        title,
+        unescape(quote),
+        role,
+        str(image.get("type") or ""),
+        unescape(emotion),
+        str(story.get("zh") or "")[:400],
+        str(story.get("origin") or "")[:300],
+        str(story.get("contributor") or "")[:40],
+        BASE.format(number=number),
+        now,
+    )
+
+
+def ingest_index(store, data: dict | None = None, fetch_json=None, now: int | None = None) -> int:
+    """用 R2 索引一次入库（2956 条，含释义/出处），不用逐页抓。"""
+    ensure(store)
+    getter = fetch_json or _fetch_json
+    if data is None:
+        meta = getter(INDEX_CURRENT)
+        version = str(meta.get("v") or "")
+        if not version:
+            raise RuntimeError("索引指针里没有 v")
+        data = getter(INDEX_ENTRY.format(version=version))
+    stamp = int(now if now is not None else time.time())
+    rows = []
+    for role, section in (data.get("gallery") or {}).items():
+        for image in section.get("images") or []:
+            number = _number_from(image.get("preview") or image.get("original") or "")
+            if not number:
+                continue
+            rows.append(_row_from_entry(number, role, image, stamp))
+    if not rows:
+        return 0
+    with store._lock:  # noqa: SLF001
+        store._conn.executemany(  # noqa: SLF001
+            "INSERT OR REPLACE INTO memes (number, title, quote, role, kind, emotion, meaning,"
+            " origin, author, page_url, fetched_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            rows,
+        )
+        store._conn.commit()  # noqa: SLF001
+    return len(rows)
+

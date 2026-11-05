@@ -90,3 +90,53 @@ def test_block_returns_empty_when_nothing_matches(tmp_path):
     memepedia.save(store, 1, {"title": "晚安", "quote": "该睡了", "meaning": "晚安表情"})
 
     assert memepedia.block(store, "量子力学") == ""
+
+def test_ingest_index_reads_story_fields(tmp_path):
+    store = make_store(tmp_path)
+    data = {
+        "gallery": {
+            "DeepSeek娘": {
+                "images": [
+                    {
+                        "alt": "DeepSeek娘『真当我是便宜货啊』气鼓鼓表情包",
+                        "preview": "https://img.aigengtu.com/0_preview/meme/001.webp",
+                        "type": "meme",
+                        "story": {
+                            "zh": "吐槽只谈性价比",
+                            "origin": "2025 年初的定价梗",
+                            "contributor": "浪生微澜",
+                        },
+                    }
+                ]
+            }
+        }
+    }
+
+    written = memepedia.ingest_index(store, data=data, now=100)
+    row = memepedia.get(store, 1)
+
+    assert written == 1
+    assert row["quote"] == "真当我是便宜货啊"
+    assert row["emotion"] == "气鼓鼓"
+    assert row["role"] == "DeepSeek娘"
+    assert row["meaning"] == "吐槽只谈性价比"
+    assert row["origin"] == "2025 年初的定价梗"
+    assert row["author"] == "浪生微澜"
+
+
+def test_ingest_index_is_idempotent(tmp_path):
+    store = make_store(tmp_path)
+    data = {
+        "gallery": {
+            "鲸鱼娘": {
+                "images": [
+                    {"alt": "鲸鱼娘『晚安』晚安表情包", "preview": "https://img.aigengtu.com/meme/42.webp"}
+                ]
+            }
+        }
+    }
+
+    assert memepedia.ingest_index(store, data=data) == 1
+    assert memepedia.ingest_index(store, data=data) == 1
+    assert memepedia.count(store) == 1
+
