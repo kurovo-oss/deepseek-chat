@@ -19,6 +19,20 @@ log = logging.getLogger("qqbot")
 
 STICKER_HINTS = ("表情", "sticker", "mface", "闪照")
 MAX_TAGS = 3
+NOTE_PREFIX = "sticker:"
+
+
+def save_sticker_note(store, sha: str, note: str) -> None:
+    note = (note or "").strip()
+    if sha and note:
+        store.save_image_note(NOTE_PREFIX + sha, note[:200])
+
+
+def sticker_note(store, sha: str) -> str:
+    """这张表情包的备注：优先用收藏时写下的，退回归档的画面描述。"""
+    if not sha:
+        return ""
+    return store.get_image_note(NOTE_PREFIX + sha) or store.get_image_note(sha) or ""
 
 
 def is_sticker(image) -> bool:
@@ -122,7 +136,9 @@ class StickerCollector:
                 self.retag(existing, data)
             return int(existing["id"])
 
-        tags = self._infer_tags(recent, self._describe(data))
+        note = self._describe(data)
+        tags = self._infer_tags(recent, note)
+        save_sticker_note(self.store, digest, note)
         image_id = self.store.add_image(
             digest,
             rel_path,
@@ -162,6 +178,29 @@ class StickerCollector:
             self.store.update_image_tags(int(record["id"]), tags)
             log.info("补标表情包 #%s：%s", record["id"], "、".join(tags))
         return tags
+
+    def note_missing(self, root: Path, limit: int = 30) -> tuple[int, int]:
+        """给还没备注的老表情补备注（只补没备注的），返回 (检查数, 补上数)。"""
+        checked = added = 0
+        with self.store._lock:  # noqa: SLF001
+            rows = self.store._conn.execute(  # noqa: SLF001
+                "SELECT id, sha256, rel_path FROM images"
+                " ORDER BY id DESC LIMIT ?",
+                (max(1, limit),),
+            ).fetchall()
+        for row in rows:
+            if sticker_note(self.store, row["sha256"]):
+                continue
+            checked += 1
+            try:
+                data = (Path(root) / row["rel_path"]).read_bytes()
+            except OSError:
+                continue
+            note = self._describe(data)
+            if note:
+                save_sticker_note(self.store, row["sha256"], note)
+                added += 1
+        return checked, added
 
     def retag_all(self, root: Path, limit: int = 20) -> tuple[int, int, int]:
         """批量补标：返回 (检查张数, 补上张数, 没补上张数)。"""
@@ -220,3 +259,17 @@ class StickerCollector:
             if tag in allowed and tag not in tags:
                 tags.append(tag)
         return tags[:MAX_TAGS]
+
+def ack_text(store, collected: list[dict]) -> str:
+    """她说“我存下啦”时的那句话：能说出这张画的是什么。"""
+    if not collected:
+        return "嗯，我看到啦。"
+    record = collected[0]
+    note = sticker_note(store, str(record.get("sha256") or ""))
+    if note:
+        return f"这张我存下啦，{note[:40]}。"
+    tags = record.get("tags") or []
+    if tags:
+        return f"这张我存下啦嘿嘿，记成「{'、'.join(tags)}」了。"
+    return "这张我存下啦嘿嘿，回头再给它起个名字。"
+

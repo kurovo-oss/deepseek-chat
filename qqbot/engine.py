@@ -53,6 +53,7 @@ from .images import sniff_image
 from .llm import LLMClient, LLMError
 from .media import MediaMixin, wants_image
 from .reading import ReadingMixin
+from . import collect as collect_mod
 from . import stickers as stickers_mod
 from .speaking import SpeakingMixin
 from .memory import KIND_LABEL, card_weight
@@ -504,12 +505,7 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
         return max(1, limit)
 
     def _sticker_ack(self, collected: list[dict]) -> str:
-        if not collected:
-            return "嗯，我看到啦。"
-        tags = collected[0].get("tags") or []
-        if tags:
-            return f"这张我存下啦嘿嘿，记成「{'、'.join(tags)}」了。"
-        return "这张我存下啦嘿嘿，回头再给它起个名字。"
+        return collect_mod.ack_text(self.store, collected)
 
     def _send_reply(
         self,

@@ -538,3 +538,64 @@ def test_collection_is_audited(tmp_path):
     assert audit["module"] == "sticker"
     assert audit["result"] == "ok"
 
+def collect_note(store, sha):
+    from qqbot.collect import sticker_note
+
+    return sticker_note(store, sha)
+
+
+def test_vision_description_becomes_sticker_note(tmp_path):
+    settings = make_settings(tmp_path, vision_enabled=True)
+    store = Store(settings.db_path)
+    collector = StickerCollector(
+        settings,
+        store,
+        settings.image_dir,
+        llm=FakeLLM("一只橘猫趴在键盘上"),
+        fetch=lambda url: PNG,
+    )
+    message = IncomingMessage(
+        user_id=100,
+        message_id="m3",
+        text="",
+        raw={},
+        images=(IncomingImage(url="http://example.com/3.png", sub_type=1),),
+    )
+
+    records = collector.collect(message)
+
+    assert records
+    sha = records[0]["sha256"]
+    assert "橘猫" in collect_note(store, sha)
+
+
+def test_sticker_ack_uses_note(tmp_path):
+    from qqbot.collect import save_sticker_note
+
+    settings = make_settings(tmp_path)
+    store = Store(settings.db_path)
+    save_sticker_note(store, "abc", "橘猫在键盘上睡着了")
+    engine = Engine(settings, store, None, FakeSender(), "你是大肥鱼", sleep=lambda ms: None)
+
+    ack = engine._sticker_ack([{"sha256": "abc"}])
+
+    assert "橘猫" in ack
+
+
+def test_note_missing_backfills_old_stickers(tmp_path):
+    settings = make_settings(tmp_path, vision_enabled=True)
+    store = Store(settings.db_path)
+    image_id = store.add_image("abc", "a/b.png", "image/png", len(PNG), tags=[], source="user")
+    path = settings.image_dir / "a" / "b.png"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(PNG)
+    collector = StickerCollector(
+        settings, store, settings.image_dir, llm=FakeLLM("一只猫"), fetch=lambda url: PNG
+    )
+
+    checked, added = collector.note_missing(settings.image_dir)
+
+    assert checked == 1
+    assert added == 1
+    assert collect_note(store, "abc") == "一只猫"
+
