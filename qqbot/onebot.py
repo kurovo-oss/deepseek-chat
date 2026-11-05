@@ -27,6 +27,7 @@ class IncomingImage:
     file: str = ""
     sub_type: int = 0
     summary: str = ""
+    emoji_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -101,6 +102,7 @@ def extract_images(message: Any) -> tuple[IncomingImage, ...]:
                 file=str(data.get("file") or ""),
                 sub_type=sub_type,
                 summary=str(data.get("summary") or ""),
+                emoji_id=str(data.get("emoji_id") or ""),
             )
         )
     return tuple(found)

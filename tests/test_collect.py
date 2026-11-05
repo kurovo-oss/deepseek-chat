@@ -483,3 +483,58 @@ def test_tag_call_reserves_tokens_for_reasoning(tmp_path):
 
     assert llm.calls[-1]["max_tokens"] if isinstance(llm.calls[-1], dict) else True
     store.close()
+
+def test_emoji_id_counts_as_sticker():
+    assert is_sticker(IncomingImage(file="whatever", emoji_id="1001")) is True
+
+
+def test_mface_file_counts_as_sticker():
+    assert is_sticker(IncomingImage(file="mface_abc123")) is True
+
+
+def test_hourly_quota_stops_collection(tmp_path):
+    from qqbot import guard
+
+    settings = make_settings(tmp_path, sticker_hourly_max=1, sticker_daily_max=10)
+    store = Store(settings.db_path)
+    gate = guard.Guard(store, settings)
+    gate.record("sticker", "save", result="ok")
+    collector = StickerCollector(
+        settings, store, settings.image_dir, fetch=lambda url: PNG, guard=gate
+    )
+    message = IncomingMessage(
+        user_id=100,
+        message_id="m1",
+        text="",
+        raw={},
+        images=(IncomingImage(url="http://example.com/1.png", sub_type=1),),
+    )
+
+    assert collector.collect(message) == []
+    assert gate.recent(1)[0]["result"] == "ok"
+
+
+def test_collection_is_audited(tmp_path):
+    from qqbot import guard
+
+    settings = make_settings(tmp_path)
+    store = Store(settings.db_path)
+    gate = guard.Guard(store, settings)
+    collector = StickerCollector(
+        settings, store, settings.image_dir, fetch=lambda url: PNG, guard=gate
+    )
+    message = IncomingMessage(
+        user_id=100,
+        message_id="m2",
+        text="",
+        raw={},
+        images=(IncomingImage(url="http://example.com/2.png", sub_type=1),),
+    )
+
+    records = collector.collect(message)
+
+    assert records
+    audit = gate.recent(1)[0]
+    assert audit["module"] == "sticker"
+    assert audit["result"] == "ok"
+

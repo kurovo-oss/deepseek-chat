@@ -28,8 +28,14 @@ def is_sticker(image) -> bool:
         sub_type = 0
     if sub_type == 1:
         return True
+    if str(getattr(image, "emoji_id", "") or "").strip():
+        # 商城表情/大表情：协议端会带 emoji_id
+        return True
     summary = str(getattr(image, "summary", "") or "").lower()
-    return any(hint in summary for hint in STICKER_HINTS)
+    if any(hint in summary for hint in STICKER_HINTS):
+        return True
+    file_name = str(getattr(image, "file", "") or "").lower()
+    return "mface" in file_name
 
 
 class StickerCollector:
@@ -42,6 +48,7 @@ class StickerCollector:
         tag_prompt: str = "",
         fetch=None,
         clock=time.time,
+        guard=None,
     ) -> None:
         self.settings = settings
         self.store = store
@@ -50,6 +57,7 @@ class StickerCollector:
         self.tag_prompt = tag_prompt
         self._fetch = fetch or self._http_fetch
         self._clock = clock
+        self.guard = guard
 
     # ---------------- 下载 ----------------
     def _http_fetch(self, url: str) -> bytes | None:
@@ -71,6 +79,14 @@ class StickerCollector:
         """收藏消息里的表情包，返回本次涉及到的图库记录。"""
         if not self.settings.image_collect_enabled:
             return []
+
+        if self.guard is not None:
+            decision = self.guard.check(
+                "sticker", "save", user_id=int(getattr(self.settings, "allow_user_id", 0) or 0)
+            )
+            if not decision.allowed:
+                log.info("表情收藏被闸门拦下：%s", decision.reason)
+                return []
 
         results: list[dict] = []
         for image in getattr(message, "images", ()):  # noqa: B007
@@ -119,6 +135,8 @@ class StickerCollector:
         if image_id is None:
             return None
 
+        if self.guard is not None:
+            self.guard.record("sticker", "save", target=rel_path, result="ok")
         self.store.evict_images(self.settings.image_max_count)
         log.info("收藏表情包 #%s：%s（%s）", image_id, rel_path, "、".join(tags) or "无标签")
         return image_id

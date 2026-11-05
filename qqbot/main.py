@@ -83,6 +83,7 @@ def wait_for_network(
 
 def build_engine(settings) -> Engine:
     store = Store(settings.db_path)
+    guard = guard_mod.Guard(store, settings)
     llm = LLMClient(
         base_url=settings.model_base_url,
         api_key=settings.model_api_key,
@@ -110,6 +111,7 @@ def build_engine(settings) -> Engine:
                 settings.image_dir,
                 llm=llm,
                 tag_prompt=load_optional_prompt(settings.tag_prompt_file),
+                guard=guard,
             )
 
     memory = None
@@ -420,7 +422,7 @@ def main(argv: list[str] | None = None) -> int:
             settings.proactive_idle_hours,
         )
 
-    engine.guard = guard_mod.Guard(engine.store, settings)
+    engine.guard = guard
     if settings.qzone_enabled:
         threading.Thread(
             target=qzone_mod.tick_loop,
