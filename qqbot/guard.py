@@ -127,7 +127,9 @@ class Guard:
         return int(row["at"]) if row is not None else 0
 
     def circuit_open(self, module: str, now: int) -> bool:
-        recent = self._rows(module, now - CIRCUIT_SECONDS)
+        # 看“最近三次尝试”，不按时间窗滑：否则失败后过了 30 分钟窗口一滑，
+        # 又会在协议端还没恢复时重试，变成每几分钟打一次接口。
+        recent = self._rows(module, 0)
         if len(recent) < CIRCUIT_FAILS:
             return False
         tail = recent[:CIRCUIT_FAILS]

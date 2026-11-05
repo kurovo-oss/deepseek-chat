@@ -127,3 +127,27 @@ def test_status_counts(tmp_path):
 
     assert status["qzone"]["enabled"] is True
     assert status["qzone"]["used_today"] == 1
+
+def test_circuit_stays_open_after_window_slides(tmp_path):
+    g = make_guard(tmp_path, qzone_dry_run=False)
+    now = int(time.time())
+    for i in range(3):
+        g.record("qzone", "post", payload="x", result="failed", error="offline", now=now + i)
+
+    # 10 分钟后还在熔断期
+    assert g.check("qzone", "post", user_id=7, now=now + 10 * 60).reason == "circuit_open"
+    # 但距最后一次失败满 30 分钟，允许再试一次（只试一次，不是每 5 分钟）
+    assert g.check("qzone", "post", user_id=7, now=now + 31 * 60).allowed is True
+
+
+def test_circuit_closes_after_success(tmp_path):
+    g = make_guard(tmp_path, qzone_dry_run=False)
+    now = int(time.time())
+    for i in range(3):
+        g.record("qzone", "post", payload="x", result="failed", error="boom", now=now + i)
+    g.record("qzone", "post", payload="ok", result="ok", now=now + 100)
+
+    decision = g.check("qzone", "post", user_id=7, now=now + 100 + 1300)
+
+    assert decision.allowed is True
+
