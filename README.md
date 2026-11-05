@@ -5,6 +5,7 @@
 - 产品方向：[docs/PRD.md](docs/PRD.md)
 - 工程规格：[docs/MVP.md](docs/MVP.md)
 - 记忆设计：[docs/M2-memory.md](docs/M2-memory.md)
+- 语义记忆（事实/证据/更正）：`/记忆` 指令，见 [docs/companion-v2.md](docs/companion-v2.md)
 - 下一版设计（记忆 v2 / 表情梗库 / 空间·B站·抖音 / 可靠性）：[docs/companion-v2.md](docs/companion-v2.md)
 - 人格卡：[docs/persona/dafeiyu.md](docs/persona/dafeiyu.md)
 - 交互演示（无后端）：[demo/index.html](demo/index.html)

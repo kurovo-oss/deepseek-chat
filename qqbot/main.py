@@ -25,6 +25,8 @@ from .config import (
 from .collect import StickerCollector
 from .dispatcher import MessageDispatcher
 from .dream import start_dreamer
+from . import guard as guard_mod
+from . import qzone as qzone_mod
 from .engine import Engine
 from .mood import Mood
 from . import stickers as stickers_mod
@@ -416,6 +418,21 @@ def main(argv: list[str] | None = None) -> int:
             settings.proactive_end_hour,
             settings.proactive_min_gap_hours,
             settings.proactive_idle_hours,
+        )
+
+    engine.guard = guard_mod.Guard(engine.store, settings)
+    if settings.qzone_enabled:
+        threading.Thread(
+            target=qzone_mod.tick_loop,
+            args=(engine.store, engine.llm, settings, engine.guard, engine.sender, stop_event),
+            name="qzone",
+            daemon=True,
+        ).start()
+        log.info(
+            "空间已启用：每天最多 %d 条、配图 %s、试运行 %s",
+            settings.qzone_daily_max,
+            "开" if settings.qzone_image_enabled else "关",
+            "开" if settings.qzone_dry_run else "关",
         )
 
     if settings.dream_enabled or settings.reflect_enabled:

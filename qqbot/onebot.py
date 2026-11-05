@@ -225,3 +225,7 @@ class HttpSender:
     def _call(self, action: str, payload: dict) -> bool:
         ok, _data = self._request(action, payload)
         return ok
+
+    def request(self, action: str, payload: dict) -> tuple[bool, dict]:
+        """和 _call 一样，但把 data 也带回来（发空间的 tid 要用）。"""
+        return self._request(action, payload)

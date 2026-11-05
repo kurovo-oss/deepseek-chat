@@ -231,6 +231,19 @@ class Settings:
     growth_enabled: bool = True
     memory_facts_enabled: bool = False
     memory_fact_budget: int = 600
+    # 表情采集
+    sticker_collect_enabled: bool = True
+    sticker_hourly_max: int = 20
+    sticker_daily_max: int = 100
+    # 对外渠道：默认全关、全试运行
+    qzone_enabled: bool = False
+    qzone_dry_run: bool = True
+    qzone_daily_max: int = 3
+    qzone_image_enabled: bool = True
+    douyin_dry_run: bool = True
+    douyin_daily_max: int = 5
+    douyin_share_enabled: bool = True
+    douyin_share_daily_max: int = 2
     # 会拒绝（撒娇那种）：默认关，load_settings 打开
     refusal_enabled: bool = False
     refusal_chance: float = 0.0
@@ -436,6 +449,17 @@ class Settings:
     growth_enabled=_bool(env, "GROWTH_ENABLED", True),
     memory_facts_enabled=_bool(env, "MEMORY_FACTS_ENABLED", True),
     memory_fact_budget=_int(env, "MEMORY_FACT_BUDGET", 600, minimum=200),
+    sticker_collect_enabled=_bool(env, "STICKER_COLLECT_ENABLED", True),
+    sticker_hourly_max=_int(env, "STICKER_HOURLY_MAX", 20, minimum=1),
+    sticker_daily_max=_int(env, "STICKER_DAILY_MAX", 100, minimum=1),
+    qzone_enabled=_bool(env, "QZONE_ENABLED", False),
+    qzone_dry_run=_bool(env, "QZONE_DRY_RUN", True),
+    qzone_daily_max=_int(env, "QZONE_DAILY_MAX", 3, minimum=0),
+    qzone_image_enabled=_bool(env, "QZONE_IMAGE_ENABLED", True),
+    douyin_dry_run=_bool(env, "DOUYIN_DRY_RUN", True),
+    douyin_daily_max=_int(env, "DOUYIN_DAILY_MAX", 5, minimum=0),
+    douyin_share_enabled=_bool(env, "DOUYIN_SHARE_ENABLED", True),
+    douyin_share_daily_max=_int(env, "DOUYIN_SHARE_DAILY_MAX", 2, minimum=0),
     refusal_enabled=_bool(env, "REFUSAL_ENABLED", True),
     refusal_chance=_float(env, "REFUSAL_CHANCE", 0.22),
     reflect_enabled=_bool(env, "REFLECT_ENABLED", True),

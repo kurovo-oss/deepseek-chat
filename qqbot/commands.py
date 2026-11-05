@@ -15,6 +15,8 @@ from pathlib import Path
 from . import digest as digest_mod
 from . import facts as facts_mod
 from . import growth as growth_mod
+from . import guard as guard_mod
+from . import qzone as qzone_mod
 from . import images as images_mod
 from . import browse as browse_mod
 from . import stickers as stickers_mod
@@ -59,6 +61,9 @@ class CommandsMixin:
 
         if head in ("/记忆", "/facts"):
             return self._facts_command(rest)
+
+        if head in ("/空间", "/qzone"):
+            return self._qzone_command(rest)
 
         if head == "/forget":
             return self._forget(rest)
@@ -180,6 +185,33 @@ class CommandsMixin:
             return f"改好了：{summary}"
 
         return self._list_cards()
+
+    def _qzone_command(self, rest: str) -> str:
+        guard = getattr(self, "guard", None)
+        if guard is None:
+            guard = guard_mod.Guard(self.store, self.settings)
+            self.guard = guard
+        rest = (rest or "").strip()
+        if rest in ("记录", "历史", "列表"):
+            rows = qzone_mod.last_posts(self.store, 5)
+            if not rows:
+                return "空间还没发过什么呢。"
+            lines = ["【最近的空间】"]
+            for row in rows:
+                when = time.strftime("%m-%d %H:%M", time.localtime(row["created_at"]))
+                lines.append(f"- {when} {row['status']}：{row['content'][:40]}")
+            return "\n".join(lines)
+        matter = qzone_mod.draft(self.store, self.llm, self.settings)
+        if not matter["text"]:
+            return "今天没什么想写的……"
+        if rest in ("发", "发布", "send"):
+            result = qzone_mod.publish(
+                self.store, guard, self.sender, matter["text"], matter["image"], reason="手动"
+            )
+            head = {"ok": "发出去了", "dry_run": "试运行：只存了草稿", "denied": "没发", "failed": "发送失败"}[result["status"]]
+            return f"{head}（{result['detail']}）\n---\n{matter['text']}"
+        image = f"\n配图：{matter['image'].name}" if matter["image"] else "\n不配图"
+        return f"【空间草稿】\n{matter['text']}{image}\n（/空间 发 才会真发）"
 
     def _facts_command(self, rest: str) -> str:
         rest = (rest or "").strip()
