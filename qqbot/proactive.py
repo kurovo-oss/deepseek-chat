@@ -150,7 +150,7 @@ class ProactiveScheduler:
 
     # ---------------- 生成 ----------------
     def build_messages(self, kind: str, now: int, event: str = "") -> list[dict]:
-        messages = self.engine._build_messages(self.session)
+        messages = self.engine._build_messages(self.session, allow_refusal=False)
         stamp = datetime.fromtimestamp(now).strftime("%H:%M")
 
         if event:

@@ -29,7 +29,6 @@ from . import talkstate as talkstate_mod
 from . import backup as backup_mod
 from . import capability as capability_mod
 from . import emoji as emoji_mod
-from . import growth as growth_mod
 from . import refusal as refusal_mod
 from . import search as search_mod
 from . import recall_guard
@@ -264,11 +263,9 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
             origin="chat",
             force_image=wants_image(text),
         )
-            plan = getattr(self, "_pending_refusal", None)
-            if plan and self.settings.refusal_enabled:
-                # 拒绝真发出去之后才记账：模型可能没照做，账不能先记
-                growth_mod.open_refusal(self.store, plan["ask"])
-                self._pending_refusal = None
+            # 光"发出去了"不算数：得看这条回复是不是真在拒绝（逻辑在 refusal.py）
+            refusal_mod.book(self.store, self.settings, getattr(self, "_pending_refusal", None), reply)
+            self._pending_refusal = None
         finally:
             self._replying.discard(session)
             self._pending_sessions.discard(session)
@@ -375,7 +372,7 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
                     continue
                 self._replying.add(session)
                 try:
-                    reply = self._chat(session)
+                    reply = self._chat(session, allow_refusal=False)
                     self._send_reply(int(session), session, reply, origin="chat")
                     if self.memory is not None and reply not in FALLBACK_REPLIES:
                         self.memory.note_reply(session, str(last.get("content") or ""))
@@ -465,8 +462,8 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
         log.info("切到备用通道：%s", result.model)
         return result
 
-    def _chat(self, session: str) -> str:
-        messages = self._build_messages(session)
+    def _chat(self, session: str, allow_refusal: bool = True) -> str:
+        messages = self._build_messages(session, allow_refusal=allow_refusal)
         result = self._complete(messages)
         if result is None:
             return fallback_reply()

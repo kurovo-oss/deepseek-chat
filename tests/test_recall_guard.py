@@ -51,8 +51,8 @@ def test_engine_keeps_recall_that_is_in_context(tmp_path, monkeypatch):
     env.engine.llm = FakeLLM("你之前说过要出差呀")
     real = env.engine._build_messages
 
-    def with_evidence(session):
-        messages = real(session)
+    def with_evidence(session, **kwargs):
+        messages = real(session, **kwargs)
         return messages + [{"role": "system", "content": "他下周要出差三天"}]
 
     monkeypatch.setattr(env.engine, "_build_messages", with_evidence)

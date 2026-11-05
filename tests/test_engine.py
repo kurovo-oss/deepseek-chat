@@ -1601,6 +1601,7 @@ def test_no_refusal_directive_when_it_does_not_fire(tmp_path):
 def test_his_reaction_gets_settled(tmp_path):
     env = build_env(tmp_path, refusal_enabled=True, refusal_chance=0.6)
     env.engine._rng = FixedRng(0.0)
+    env.llm.text = "唔……不要嘛，我写不来这种的"
 
     env.engine.handle_message(make_message("帮我写个总结", mid="m1"))
     env.engine.handle_message(make_message("算了，我自己来", mid="m2"))
@@ -1664,3 +1665,25 @@ def test_lookup_without_results_keeps_her_words(tmp_path, monkeypatch):
     sent = " ".join(text for _, text in env.sender.sent)
     assert "我查一下" in sent
     assert "{{查" not in sent
+
+
+def test_a_compliant_reply_does_not_get_booked_as_refusal(tmp_path):
+    env = build_env(tmp_path, refusal_enabled=True, refusal_chance=0.6)
+    env.engine._rng = FixedRng(0.0)
+    env.llm.text = "好呀，我给你搭个架子，你看看行不行"
+
+    env.engine.handle_message(make_message("帮我写个总结", mid="m9"))
+
+    # 指令是"撒娇拒绝"，但模型照做了活——不能记一笔"我拒绝了他"
+    assert growth.recent_refusals(env.store) == []
+
+
+def test_proactive_never_gets_the_refusal_directive(tmp_path):
+    env = build_env(tmp_path, refusal_enabled=True, refusal_chance=0.6)
+    env.engine._rng = FixedRng(0.0)
+
+    messages = env.engine._build_messages("100", allow_refusal=False)
+
+    system = messages[0]["content"]
+    assert "撒娇地拒绝" not in system
+    assert getattr(env.engine, "_pending_refusal", None) is None

@@ -42,7 +42,7 @@ class ContextMixin:
             "先说一句刚在干嘛（别太正式、别提手机），再接他的话。"
         )
 
-    def _build_messages(self, session: str) -> list[dict]:
+    def _build_messages(self, session: str, allow_refusal: bool = True) -> list[dict]:
         window_start = int(self.store.get_cursor(self._window_key(session), "0") or 0)
         limit = self.settings.history_max_turns * 2
         history = self.store.recent_messages_after(session, window_start, limit)
@@ -115,8 +115,9 @@ class ContextMixin:
             if persona:
                 sections.append(budget_mod.Section("你自己", persona, priority=74, quota=320))
 
+        # 主动开口、忙完补回不是"回复他这句请求"，别把拒绝指令塞进去
         self._pending_refusal = None
-        if self.settings.refusal_enabled and self.store is not None:
+        if allow_refusal and self.settings.refusal_enabled and self.store is not None:
             last_user_text = next(
                 (str(m["content"]) for m in reversed(selected) if m["role"] == "user"), ""
             )

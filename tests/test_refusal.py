@@ -1,3 +1,5 @@
+import time
+
 """会拒绝，但是撒娇那种。"""
 
 import random
@@ -77,8 +79,9 @@ def test_tired_raises_the_chance(tmp_path):
 
 def test_recent_rejection_lowers_the_chance(tmp_path):
     store = make_store(tmp_path)
-    rid = growth.open_refusal(store, "帮我写个总结")
-    growth.close_refusal(store, rid, "rejected", "他不太高兴")
+    long_ago = int(time.time()) - 2 * 3600  # 避开半小时冷却，单看"上次他不高兴"的影响
+    rid = growth.open_refusal(store, "帮我写个总结", now=long_ago)
+    growth.close_refusal(store, rid, "rejected", "他不太高兴", now=long_ago)
 
     assert refusal.choose(store, settings(tmp_path, refusal_chance=0.28), {}, "帮我写个总结", Rng(roll=0.25)) is None
     assert refusal.choose(store, settings(tmp_path, refusal_chance=0.4), {}, "帮我写个总结", Rng(roll=0.25)) is not None
@@ -132,3 +135,35 @@ def test_open_note_stays_quiet_when_nothing_hurts(tmp_path):
     growth.record(store, "reflect", "我拒绝了他，他没生气。", salience=0.45)
 
     assert refusal.open_note(store) == ""
+
+
+def test_a_fresh_refusal_cools_down(tmp_path):
+    store = make_store(tmp_path)
+    growth.open_refusal(store, "帮我写个总结")
+
+    # 半小时内拒过一次，再高的概率也不拒
+    assert refusal.choose(store, settings(tmp_path, refusal_chance=0.6), {}, "帮我写个总结", Rng(roll=0.0)) is None
+
+
+def test_old_refusal_does_not_cool_down(tmp_path):
+    store = make_store(tmp_path)
+    growth.open_refusal(store, "帮我写个总结", now=int(time.time()) - 3600)
+
+    assert refusal.choose(store, settings(tmp_path, refusal_chance=0.6), {}, "帮我写个总结", Rng(roll=0.0)) is not None
+
+
+def test_classify_ignores_plain_acknowledgements():
+    assert refusal.classify("嗯") == "neutral"
+    assert refusal.classify("哦") == "neutral"
+    assert refusal.classify("嗯嗯知道啦") == "neutral"
+
+
+def test_classify_handles_negation():
+    assert refusal.classify("我没生气呀") == "accepted"
+    assert refusal.classify("不怪你") == "accepted"
+    assert refusal.classify("不高兴") == "rejected"
+
+
+def test_classify_short_yes():
+    assert refusal.classify("行") == "accepted"
+    assert refusal.classify("行吧") == "rejected"
