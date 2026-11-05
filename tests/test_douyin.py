@@ -200,3 +200,27 @@ def test_custom_home_and_video_urls(tmp_path, monkeypatch):
     assert page.visited[0] == "http://mock.local/"
     assert "http://mock.local/v/9" in page.visited
 
+def test_captcha_blocks_and_notifies(tmp_path, monkeypatch):
+    monkeypatch.setattr(time, "sleep", lambda seconds: None)
+    cfg, store, gate = env(tmp_path)
+    page = FakePage(login={"has_avatar": False, "has_login_button": True, "captcha": True})
+    messages = []
+
+    result = douyin.run_once(
+        store, cfg, gate, FakeSender(), FakeBrowser(page), now=int(time.time()),
+        notify=messages.append,
+    )
+
+    assert result["error"] == "captcha"
+    assert messages and "验证" in messages[0]
+
+
+def test_no_avatar_means_not_logged_in_even_without_login_button(tmp_path, monkeypatch):
+    monkeypatch.setattr(time, "sleep", lambda seconds: None)
+    cfg, store, gate = env(tmp_path)
+    page = FakePage(login={"has_avatar": False, "has_login_button": False})
+
+    result = douyin.run_once(store, cfg, gate, FakeSender(), FakeBrowser(page), now=int(time.time()))
+
+    assert result["error"] == "not_logged_in"
+

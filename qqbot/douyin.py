@@ -61,7 +61,8 @@ LOGIN_JS = """(() => {
   const body = document.body ? document.body.innerText : '';
   const hasLoginBtn = /登录|扫码登录/.test(body) && !/退出登录/.test(body);
   const avatar = document.querySelector('img[data-e2e="user-avatar"], [data-e2e="user-avatar"]');
-  return {has_login_button: hasLoginBtn, has_avatar: !!avatar, url: location.href};
+  const captcha = !!document.querySelector('iframe[src*="captcha"], iframe[src*="verify"], [id*="captcha"]');
+  return {has_login_button: hasLoginBtn, has_avatar: !!avatar, captcha: captcha, url: location.href};
 })()"""
 
 LIKE_JS = """(() => {
@@ -242,7 +243,14 @@ def run_once(store, settings, guard, sender, browser: Browser, now: int | None =
         page.goto(home, timeout=40)
         time.sleep(3)
         state = login_probe(page)
-        if not state.get("has_avatar") and state.get("has_login_button"):
+        if state.get("captcha"):
+            result["error"] = "captcha"
+            last = int(store.get_cursor("douyin:captcha", "0") or 0)
+            if notify is not None and stamp - last > 12 * 3600:
+                store.set_cursor("douyin:captcha", str(stamp))
+                notify("抖音弹验证了，得你在那个窗口里点一下（滑块/验证码），好了发 /抖音 给我")
+            return result
+        if not state.get("has_avatar"):
             result["error"] = "not_logged_in"
             last = int(store.get_cursor("douyin:notified", "0") or 0)
             if notify is not None and stamp - last > 12 * 3600:
@@ -345,7 +353,17 @@ def open_for_login(settings) -> str:
     browser = Browser(settings)
     page = browser.start(visible=True)
     page.goto(getattr(settings, "douyin_home_url", HOME) or HOME, timeout=40)
-    return (
+    base = (
         "浏览器开好了，在服务器上找到那个 Edge 窗口扫码登录；登录完回来发 /抖音 就行。"
         f"（profile：{Path(getattr(settings, 'douyin_profile', 'data/browser/douyin'))}）"
     )
+    try:
+        time.sleep(4)
+        state = login_probe(page)
+    except Exception:  # noqa: BLE001 - 探测失败不该挡住登录
+        return base
+    if state.get("captcha"):
+        return base + "\n页面里弹了验证，先把它点掉再扫码。"
+    if state.get("has_avatar"):
+        return "已经是登录状态了，直接发 /抖音 就行。"
+    return base
