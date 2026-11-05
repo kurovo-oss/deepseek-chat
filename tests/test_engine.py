@@ -700,6 +700,18 @@ def test_random_sticker_is_sent_after_text(tmp_path):
         image_cooldown_messages=0,
     )
 
+    class Always:
+        def random(self):
+            return 0.0
+
+        def choice(self, seq):
+            return seq[0]
+
+        def shuffle(self, seq):
+            return None
+
+    # 情绪会把概率乘下去（0.95 封顶再乘 mood），随机一下就会偶发不中，测试里钉死
+    env.engine._rng = Always()
     env.engine.handle_message(make_message("你好"))
 
     assert [text for _, text in env.sender.sent] == ["好呀。"]
