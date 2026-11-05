@@ -230,6 +230,7 @@ class Settings:
     # 事件流人格：只追加、不用配置；关掉她就不再长
     growth_enabled: bool = True
     memory_facts_enabled: bool = False
+    memepedia_enabled: bool = True
     memory_fact_budget: int = 600
     # 表情采集
     sticker_collect_enabled: bool = True
@@ -448,6 +449,7 @@ class Settings:
     search_enabled=_bool(env, "SEARCH_ENABLED", True),
     growth_enabled=_bool(env, "GROWTH_ENABLED", True),
     memory_facts_enabled=_bool(env, "MEMORY_FACTS_ENABLED", True),
+    memepedia_enabled=_bool(env, "MEMEPEDIA_ENABLED", True),
     memory_fact_budget=_int(env, "MEMORY_FACT_BUDGET", 600, minimum=200),
     sticker_collect_enabled=_bool(env, "STICKER_COLLECT_ENABLED", True),
     sticker_hourly_max=_int(env, "STICKER_HOURLY_MAX", 20, minimum=1),

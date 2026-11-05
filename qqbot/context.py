@@ -15,6 +15,7 @@ from . import digest as digest_mod
 from . import facts as facts_mod
 from . import growth as growth_mod
 from . import life as life_mod
+from . import memepedia as memepedia_mod
 from . import memes as memes_mod
 from . import presence as presence_mod
 from . import recap as recap_mod
@@ -100,6 +101,15 @@ class ContextMixin:
 
         # 网络用语只给意思，不给"怎么用"：听得懂，但自己不说
         sections.append(budget_mod.Section("梗", memes_mod.block(), priority=40, quota=360))
+
+        # 梗鲸的点子：他提到某个梗/某张图时，能说出台词和出处
+        if getattr(self.settings, "memepedia_enabled", True) and self.store is not None:
+            last_text = next(
+                (str(m["content"]) for m in reversed(selected) if m["role"] == "user"), ""
+            )
+            meme_note = memepedia_mod.block(self.store, last_text)
+            if meme_note:
+                sections.append(budget_mod.Section("梗库", meme_note, priority=41, quota=240))
 
         # 她自己的真数字：模型、用量、跑了多久——问起来不至于瞎编
         mine = selfknow_mod.block(self.store, self.settings)

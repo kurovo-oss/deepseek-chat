@@ -1089,6 +1089,17 @@ mimo-v2.5 / muse-spark-1.3-contributor）。key 只在 `.env` 里，没进 git�
 - 默认 `QZONE_ENABLED=false` + `QZONE_DRY_RUN=true`；试运行只写审计和草稿
 - 测试 +17（918 通过）
 
+**2026-11-05 梗库：台词 + 释义进本地**
+
+梗鲸档案馆（2956 枚）每张都有编号、台词、角色、情绪、释义、出处。
+`scripts/fetch-memepedia.py` 断点续传抓文本元数据（0.7s/条，只存文字不存图），
+`qqbot/memepedia.py` 负责解析、入库、按台词/释义找梗；他提到某个梗时注入最多两条
+「台词（情绪）：释义」，她听得懂，但不会复读。
+
+- `memes` 表：number/title/quote/role/kind/emotion/meaning/origin/author/page_url
+- 语境注入优先级 41、配额 240 字；`MEMEPEDIA_ENABLED` 默认开
+- 测试 +6（924 通过）
+
 ## 七、主动消息（M4）
 
 **做了什么**：她会先开口——两种情形。
