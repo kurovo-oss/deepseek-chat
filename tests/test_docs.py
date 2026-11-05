@@ -79,3 +79,13 @@ def test_license_is_mit_and_linked_from_readme():
     assert "MIT License" in license_text
     assert "Copyright (c) 2026" in license_text
     assert "LICENSE" in read("README.md")
+
+
+def test_companion_v2_design_is_linked_and_covers_every_module():
+    """下一版设计必须能回答：记忆、梗库、三个渠道、可靠性、分期。"""
+    assert (ROOT / "docs" / "companion-v2.md").exists()
+    assert "docs/companion-v2.md" in read("README.md")
+    text = read("docs/companion-v2.md")
+    for keyword in ("记忆 v2", "表情包", "梗百科", "QQ 空间", "B 站", "抖音", "Guard", "审计", "分期", "风险"):
+        assert keyword in text, f"设计方案缺少：{keyword}"
+
