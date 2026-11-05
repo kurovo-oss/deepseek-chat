@@ -422,7 +422,7 @@ def main(argv: list[str] | None = None) -> int:
             settings.proactive_idle_hours,
         )
 
-    engine.guard = guard
+    engine.guard = guard_mod.Guard(engine.store, settings)
     if settings.qzone_enabled:
         threading.Thread(
             target=qzone_mod.tick_loop,
