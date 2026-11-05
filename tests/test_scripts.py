@@ -69,3 +69,26 @@ def test_restart_napcat_kills_only_napcat_tree():
     assert "NapCatWinBootMain" in text
     assert "Get-ChildProcessId" in text
     assert "Name='QQ.exe'" not in text
+
+
+def test_supervise_uses_project_local_python():
+    text = (SCRIPTS / "supervise.ps1").read_text(encoding="utf-8")
+    assert "tools\\python\\python.exe" in text
+    assert "-m" in text and "qqbot" in text
+
+
+def test_supervise_has_a_single_instance_guard():
+    text = (SCRIPTS / "supervise.ps1").read_text(encoding="utf-8")
+    assert "Mutex" in text
+
+
+def test_autostart_uses_registry_and_keeps_c_free():
+    text = (SCRIPTS / "install-autostart.ps1").read_text(encoding="utf-8")
+    assert "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" in text
+    assert "CreateShortcut" not in text
+
+
+def test_stop_script_kills_supervisor_and_bot():
+    text = (SCRIPTS / "stop-bot.ps1").read_text(encoding="utf-8")
+    assert "supervise" in text
+    assert "qqbot" in text

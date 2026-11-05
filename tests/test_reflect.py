@@ -108,3 +108,42 @@ def test_reflect_disabled(tmp_path):
 
     assert reflect.reflect(store, FakeLLM(), settings(tmp_path, reflect_enabled=False)) == []
     assert not reflect.due(store, settings(tmp_path, reflect_enabled=False))
+
+
+def test_turns_are_parsed_and_recorded(tmp_path):
+    import time
+
+    from qqbot import growth
+    from qqbot.store import Store
+
+    store = Store(tmp_path / "turn.db")
+    store.save_message("100", "user", "我今天有点累", origin="chat")
+    growth.record(store, "self", "他累的时候我该硬着头皮上", salience=0.6)
+    growth.record(store, "self", "他累的时候我该硬着头皮上", salience=0.6)
+
+    llm = FakeLLM(
+        '{"thoughts": ["他累的时候其实想自己待着"], '
+        '"turn": ["他累的时候我该硬着头皮上 → 他累的时候我先问一句要不要陪"]}'
+    )
+    reflect.reflect(store, llm, settings(tmp_path, reflect_enabled=True), now=int(time.time()))
+
+    turns = growth.recent(store, kind="turn")
+    assert [row["text"] for row in turns] == ["他累的时候我该硬着头皮上 → 他累的时候我先问一句要不要陪"]
+
+
+def test_prompt_carries_her_beliefs(tmp_path):
+    import time
+
+    from qqbot import growth
+    from qqbot.store import Store
+
+    store = Store(tmp_path / "belief.db")
+    store.save_message("100", "user", "你在干嘛", origin="chat")
+    for _ in range(2):
+        growth.record(store, "self", "他嘴上说没事的时候其实有事", salience=0.6)
+
+    llm = FakeLLM('{"thoughts": []}')
+    reflect.reflect(store, llm, settings(tmp_path, reflect_enabled=True), now=int(time.time()))
+
+    prompt = llm.calls[0][-1]["content"] if hasattr(llm, "calls") else ""
+    assert "他嘴上说没事" in prompt

@@ -286,12 +286,11 @@ class Dreamer:
         interval = self.settings.dream_check_seconds
         while not stop_event.is_set():
             try:
-                if self.due():
+                if self.settings.dream_enabled and self.due():
                     self.dream()
-                # 睡前反省：一天一次，写完顺手把旧事件淡忘掉
-                if reflect_mod.due(self.store, self.settings):
-                    reflect_mod.reflect(self.store, self.llm, self.settings)
-                    growth_mod.maintain(self.store)
+                # 睡前反省：一天一次，写完顺手把旧事件淡忘掉。
+                # 关掉做梦也得跑——人格不能跟着做梦一起停
+                bedtime(self.store, self.llm, self.settings)
             except Exception:  # noqa: BLE001 - 做梦线程不能死
                 log.exception("做梦线程异常")
             if stop_event.wait(interval):
@@ -333,6 +332,15 @@ def _format_messages(messages: list[dict]) -> str:
         who = "他" if item.get("role") == "user" else "我"
         lines.append(f"{who}：{text}")
     return "\n".join(lines) or "（这一天没有聊天，只有指令）"
+
+
+def bedtime(store, llm, settings) -> bool:
+    """睡前反省 + 淡忘。跟 DREAM_ENABLED 无关，单独可测。"""
+    if not reflect_mod.due(store, settings):
+        return False
+    reflect_mod.reflect(store, llm, settings)
+    growth_mod.maintain(store)
+    return True
 
 
 def start_dreamer(engine, store, settings, stop_event: threading.Event) -> threading.Thread:

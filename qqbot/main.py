@@ -418,11 +418,12 @@ def main(argv: list[str] | None = None) -> int:
             settings.proactive_idle_hours,
         )
 
-    if settings.dream_enabled:
+    if settings.dream_enabled or settings.reflect_enabled:
         start_dreamer(engine, engine.store, settings, stop_event)
         log.info(
-            "做梦已启用：每天 %s 整理一次记忆（上次成功：%s）",
-            settings.dream_at,
+            "夜间整理已启用：做梦 %s、睡前反省 %s（上次做梦：%s）",
+            "开" if settings.dream_enabled else "关",
+            "开" if settings.reflect_enabled else "关",
             time.strftime("%m-%d %H:%M", time.localtime(engine.store.last_dream_at() or 0))
             if engine.store.last_dream_at()
             else "还没做过",

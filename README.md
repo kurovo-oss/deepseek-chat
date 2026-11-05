@@ -39,25 +39,28 @@
 ## 启动与自启
 
 ```bat
-scripts\start-all.bat     :: 协议端 + 机器人（自启就用这个）
+scripts\start-all.bat     :: 协议端 + 机器人（前台，看日志用）
 scripts\start-bot.bat     :: 只启机器人
 ```
+
+自启走 `scripts\supervise.ps1`（机器人崩了自动重启），见下。
 
 两个脚本都会自动找解释器，**优先用项目内的 `tools\python\python.exe`**，
 所以即使 DSH 运行时被卸载也不受影响。
 
 日志写在 `logs\bot.log`（滚动，5MB × 4），不再只依赖控制台。
 
-安装开机自启：
+安装开机自启（写注册表 `HKCU\...\Run`，**不往 C 盘放文件**）：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\install-autostart.ps1
 powershell -ExecutionPolicy Bypass -File scripts\uninstall-autostart.ps1   # 卸载
+powershell -ExecutionPolicy Bypass -File scripts\stop-bot.ps1              # 停 supervisor + 机器人
 ```
 
-> 自启会在 `%APPDATA%\...\Startup\` 放一个 **约 1KB 的快捷方式**（指向 H 盘的
-> `start-all.bat`）。这是 Windows 唯一支持的自启方式，无法放在项目盘；
-> 除此之外的所有数据（数据库、日志、Python、协议端）都在项目目录里。
+> 自启项指向 `scripts\supervise.ps1`：登录后先看协议端（6099 不通就拉 NapCat），
+> 再拉起机器人；机器人进程退出 15 秒后自动重启，日志在 `logs\supervise.log`。
+> 协议端要管理员权限，掉线后仍需手动 `scripts\restart-napcat.ps1`，免得半夜弹 UAC。
 
 ## 数据都在哪
 
@@ -75,7 +78,7 @@ powershell -ExecutionPolicy Bypass -File scripts\uninstall-autostart.ps1   # 卸
 | 语音 | `data/voice/*.mp3`（最近 60 条，自动清） |
 | 协议端 | `tools/NapCat-*`（约 140MB） |
 | Python 运行时 | `tools/python`（约 340MB，自包含） |
-| 自启快捷方式 | `%APPDATA%\...\Startup\dafeiyu-qqbot.lnk`（约 1KB，仅此一项在 C 盘） |
+| 自启 | 注册表 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\DafeiyuQQBot`（不占磁盘空间） |
 
 ## 目录
 

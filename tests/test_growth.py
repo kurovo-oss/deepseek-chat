@@ -101,3 +101,13 @@ def test_persona_does_not_repeat_between_beliefs_and_fresh(tmp_path):
     text = growth.persona_block(store)
 
     assert text.count(long_text[:20]) == 1
+
+
+def test_open_refusal_also_writes_a_refuse_event(tmp_path):
+    store = Store(tmp_path / "r.db")
+    growth.open_refusal(store, "帮我写个周报")
+
+    events = growth.recent(store, kind="refuse")
+
+    assert events
+    assert "帮我写个周报" in events[0]["text"]

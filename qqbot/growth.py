@@ -211,13 +211,26 @@ def maintain(
 def open_refusal(store, ask: str, now: int | None = None) -> int:
     """记下"我拒绝了他这件事"，等着看他反应。"""
     ensure(store)
+    stamp = _now(now)
     with store._lock:  # noqa: SLF001
         cur = store._conn.execute(  # noqa: SLF001
             "INSERT INTO refusals (created_at, ask) VALUES (?, ?)",
-            (_now(now), (ask or "")[:120]),
+            (stamp, (ask or "")[:120]),
         )
         store._conn.commit()  # noqa: SLF001
-        return int(cur.lastrowid or 0)
+        refusal_id = int(cur.lastrowid or 0)
+    if refusal_id:
+        # 事件流里也留一笔：夜间反省读得到"我今天推掉了他一件事"
+        record(
+            store,
+            "refuse",
+            f"我拒绝了他：{(ask or '').strip()[:80]}",
+            salience=0.6,
+            source="her",
+            ref=f"refusal:{refusal_id}",
+            now=stamp,
+        )
+    return refusal_id
 
 
 def last_open_refusal(store) -> dict | None:

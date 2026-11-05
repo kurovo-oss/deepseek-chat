@@ -1,3 +1,4 @@
+import time
 """做梦（M2 P3）：夜里整理记忆，产出记忆本 + 卡片操作。"""
 
 import json
@@ -312,3 +313,48 @@ def test_dream_asks_for_enough_tokens(env):
     env.dreamer.dream(at(23, 30))
 
     assert seen["max_tokens"] >= 4000
+
+
+def test_bedtime_reflects_even_with_dream_disabled(tmp_path, monkeypatch):
+    from qqbot import dream, reflect
+    from qqbot.config import Settings
+    from qqbot.store import Store
+
+    store = Store(tmp_path / "bed.db")
+    settings = Settings(
+        allow_user_id=1,
+        model_api_key="k",
+        base_dir=tmp_path,
+        db_path=tmp_path / "bed.db",
+        system_prompt_file=tmp_path / "s.md",
+        dream_enabled=False,
+        reflect_enabled=True,
+    )
+    store.set_cursor(reflect.CURSOR_KEY, "0")
+    called = []
+    monkeypatch.setattr(dream.reflect_mod, "reflect", lambda *a, **k: called.append(1) or [])
+
+    assert dream.bedtime(store, None, settings) is True
+    assert called == [1]
+
+
+def test_bedtime_skips_until_due(tmp_path, monkeypatch):
+    from qqbot import dream
+    from qqbot.config import Settings
+    from qqbot.store import Store
+
+    store = Store(tmp_path / "bed2.db")
+    settings = Settings(
+        allow_user_id=1,
+        model_api_key="k",
+        base_dir=tmp_path,
+        db_path=tmp_path / "bed2.db",
+        system_prompt_file=tmp_path / "s.md",
+        reflect_enabled=True,
+    )
+    called = []
+    monkeypatch.setattr(dream.reflect_mod, "reflect", lambda *a, **k: called.append(1) or [])
+    store.set_cursor(dream.reflect_mod.CURSOR_KEY, str(int(time.time())))
+
+    assert dream.bedtime(store, None, settings) is False
+    assert called == []

@@ -1,37 +1,37 @@
-# Install autostart: create a shortcut in the user's Startup folder
-# that launches scripts\start-all.bat at logon.
+# Install autostart via HKCU Run (no file is written to C:).
+# The value points at scripts\supervise.ps1 so the bot comes back after a crash.
+# Remove with: scripts\uninstall-autostart.ps1
 #
-# Footprint on C: : one .lnk file (~1 KB). All actual data stays on the
-# project drive.
+# Keep this file ASCII-only: PowerShell 5.1 reads .ps1 as ANSI.
 
 $ErrorActionPreference = "Stop"
 
-$target = Join-Path $PSScriptRoot "start-all.bat"
-if (-not (Test-Path $target)) {
-    Write-Error "start-all.bat not found next to this script: $target"
+$root = Split-Path -Parent $PSScriptRoot
+$supervise = Join-Path $root "scripts\supervise.ps1"
+if (-not (Test-Path $supervise)) {
+    Write-Error "supervisor not found: $supervise"
     exit 1
 }
 
-$startup = [Environment]::GetFolderPath("Startup")
-if (-not $startup) {
-    Write-Error "Cannot locate the Startup folder for the current user."
+$powershell = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+if (-not (Test-Path $powershell)) {
+    Write-Error "powershell.exe not found: $powershell"
     exit 1
 }
 
-$lnkPath = Join-Path $startup "dafeiyu-qqbot.lnk"
-$projectRoot = Split-Path -Parent $PSScriptRoot
+$command = '"{0}" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{1}"' -f $powershell, $supervise
+$runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+New-Item -Path $runKey -Force | Out-Null
+Set-ItemProperty -Path $runKey -Name "DafeiyuQQBot" -Value $command
 
-$shell = New-Object -ComObject WScript.Shell
-$shortcut = $shell.CreateShortcut($lnkPath)
-$shortcut.TargetPath = $target
-$shortcut.WorkingDirectory = $projectRoot
-$shortcut.WindowStyle = 7
-$shortcut.Description = "Start Dafeiyu QQ bot"
-$shortcut.Save()
+$oldShortcut = Join-Path ([Environment]::GetFolderPath("Startup")) "dafeiyu-qqbot.lnk"
+if (Test-Path $oldShortcut) {
+    Remove-Item -LiteralPath $oldShortcut -Force
+    Write-Host "removed old startup shortcut: $oldShortcut"
+}
 
-Write-Host "Autostart installed."
-Write-Host "  shortcut : $lnkPath"
-Write-Host "  target   : $target"
-Write-Host "  workdir  : $projectRoot"
+Write-Host "autostart installed (registry Run, nothing written to C:)"
+Write-Host "  key : HKCU\Software\Microsoft\Windows\CurrentVersion\Run\DafeiyuQQBot"
+Write-Host "  cmd : $command"
 Write-Host ""
-Write-Host "It will run at next logon. To start now, double-click scripts\start-all.bat"
+Write-Host "Takes effect at next logon. Start now: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\supervise.ps1"
