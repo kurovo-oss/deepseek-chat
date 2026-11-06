@@ -1456,12 +1456,27 @@ def test_system_prompt_presses_when_she_repeats(tmp_path):
     (tmp_path / "life" / (time.strftime("%Y-%m-%d") + ".md")).write_text(
         "今天挑的是：学做番茄牛腩\n灶上小火咕嘟着\n", encoding="utf-8"
     )
-    for index in range(3):
+    for index in range(2):
         env.store.save_message("100", "assistant", f"牛腩还在炖着呢{index}")
 
     messages = env.engine._build_messages("100")
 
     assert "已经说过" in messages[0]["content"]
+
+
+def test_system_prompt_drops_life_after_third_mention(tmp_path):
+    """说第三遍就把这段收起来，免得她一整天拿同一件小事拐话题。"""
+    env = build_env(tmp_path, life_enabled=True, life_dir=tmp_path / "life")
+    (tmp_path / "life").mkdir()
+    (tmp_path / "life" / (time.strftime("%Y-%m-%d") + ".md")).write_text(
+        "今天挑的是：学做番茄牛腩\n灶上小火咕嘟着\n", encoding="utf-8"
+    )
+    for index in range(3):
+        env.store.save_message("100", "assistant", f"牛腩还在炖着呢{index}")
+
+    messages = env.engine._build_messages("100")
+
+    assert "灶上小火咕嘟着" not in messages[0]["content"]
 
 
 def test_fabricated_douyin_is_cut(tmp_path):
