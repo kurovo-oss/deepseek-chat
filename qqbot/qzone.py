@@ -486,6 +486,15 @@ def maybe_post(store, llm, settings, guard, sender, now: int | None = None) -> d
         post_id = save_draft(store, matter, stamp, ledger, review)
         guard.record("qzone", "post", target="定时", payload=matter["text"], result="held", error=review, now=stamp)
         log.info("空间：草稿 #%s 待审（%s）", post_id, review)
+        try:
+            if hasattr(sender, "send_private"):
+                sender.send_private(
+                    int(settings.allow_user_id),
+                    f"今晚这条说说没过事实校验，先存成草稿 #{post_id}：{review}\n"
+                    f"/空间 发 {post_id} 通过，/空间 删 {post_id} 删掉",
+                )
+        except Exception:  # noqa: BLE001 - 通知失败不影响草稿
+            log.warning("空间：待审通知没发出去", exc_info=True)
         return {"status": "held", "detail": f"草稿 #{post_id} 待审：{review}"}
     return publish(store, guard, sender, matter["text"], matter["image"], now=stamp, reason="定时", claims=ledger)
 

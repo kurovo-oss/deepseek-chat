@@ -26,6 +26,11 @@ class FakeSender:
         self.ok = ok
         self.data = data if data is not None else {"tid": "T123", "time": 1}
         self.calls = []
+        self.sent = []
+
+    def send_private(self, user_id, text):
+        self.sent.append((user_id, text))
+        return True
 
     def request(self, action, payload):
         self.calls.append((action, payload))
@@ -331,6 +336,7 @@ def test_maybe_post_holds_claim_that_cannot_be_verified(tmp_path):
     rows = qzone.drafts(store)
     assert len(rows) == 1
     assert "他最近没说过这句话" in rows[0]["review"]
+    assert sender.sent and "草稿" in sender.sent[0][1]
     store.close()
 
 
