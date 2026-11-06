@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS qzone_posts (
 );
 """
 
-PROMPT = """你是「大肥鱼」，正在写今天的 QQ 空间说说。第一人称，像跟熟人说话，120~300 字。
+PROMPT = """你是「大肥鱼」，正在写今天的 QQ 空间说说。第一人称，像跟熟人说话，长度按下面【这条怎么写】来。
 
 写今天真正发生的一两件事，加上你当时的感受。不要标题、不要分点、不要"今天真是充实的一天"这种套话，
 不要提"AI""模型""用户"，不要 @ 人，不要放链接。
@@ -55,6 +55,9 @@ PROMPT = """你是「大肥鱼」，正在写今天的 QQ 空间说说。第一�
 
 【这轮别再写】
 {banned}
+
+【这条怎么写】
+{style_label}，{style_min}~{style_max} 字。{style_guide}
 
 同一件事别连着写：上面写过的场景、菜、物件，这条换掉，别又写同一锅汤。只输出说说正文。"""
 
@@ -101,6 +104,67 @@ def pick_image(store, settings, now: int) -> Path | None:
     path = Path(getattr(settings, "image_dir", Path("data/images"))) / str(row["rel_path"])
     return path if path.exists() else None
 
+
+
+
+STYLES = {
+    "mumble": {
+        "label": "随口碎碎念",
+        "min": 20,
+        "max": 90,
+        "guide": "像随手冒出来的一句话：一件小事、一个小念头，轻轻说完就好，不用解释意义。",
+    },
+    "feeling": {
+        "label": "小情绪",
+        "min": 20,
+        "max": 100,
+        "guide": "让此刻的心情决定语气，只说当下的感受，别编情绪的原因。",
+    },
+    "playful": {
+        "label": "俏皮吐槽",
+        "min": 20,
+        "max": 100,
+        "guide": "可以好奇、嘴硬、撒娇、轻微自嘲，像平时说话，别硬塞口癖。",
+    },
+    "serious": {
+        "label": "偶尔认真",
+        "min": 50,
+        "max": 200,
+        "guide": "难得认真说一件真正触动你的事，只谈一个点，别写成议论文。",
+    },
+}
+
+STYLE_ROTATION = ("mumble", "feeling", "playful", "mumble", "feeling", "mumble", "playful", "serious")
+
+_SUMMARY_TONE = re.compile(r"首先|其次|总之|归根结底|这让我意识到|由此可见|从.+角度来看")
+_CLAIMS = re.compile(r"我.{0,3}(?:拍|剪|投稿|上传)|线下见|加个微信|加微信")
+_SENSITIVE = re.compile(r"https?://|www\.|\b\d{6,}\b|[\w.+-]+@[\w-]+\.[\w.]+")
+
+
+def pick_style(store) -> str:
+    ensure(store)
+    with store._lock:  # noqa: SLF001
+        row = store._conn.execute(  # noqa: SLF001
+            "SELECT COUNT(*) AS n FROM qzone_posts WHERE status IN ('ok','dry_run')"
+        ).fetchone()
+    count = int(row["n"]) if row is not None else 0
+    return STYLE_ROTATION[count % len(STYLE_ROTATION)]
+
+
+def content_issue(text: str, style: str) -> str:
+    spec = STYLES[style]
+    body = (text or "").strip()
+    if _SUMMARY_TONE.search(body):
+        return "别用总结腔（首先/总之/这让我意识到这类）"
+    if _CLAIMS.search(body):
+        return "别写你做不到的事（拍摄/剪辑/投稿/线下见面）"
+    if _SENSITIVE.search(body):
+        return "别放链接、手机号或邮箱"
+    if len(body) < spec["min"]:
+        return f"太短了（{len(body)} 字，要 {spec['min']} 字以上）"
+    if len(body) > spec["max"]:
+        return f"太长了（{len(body)} 字，最多 {spec['max']} 字）"
+    return ""
 
 
 def _recent_block(store, limit: int = 2) -> str:
@@ -169,6 +233,8 @@ def _events_block(store, limit: int = 3) -> str:
 def draft(store, llm, settings, now: int | None = None) -> dict:
     stamp = int(now if now is not None else time.time())
     mood = ""
+    style = pick_style(store)
+    spec = STYLES[style]
     prompt = PROMPT.format(
         digest=digest_mod.recent_text(settings) or "（今天没聊多少）",
         life=life_mod.snippet(settings) or "（今天还没想好写什么）",
@@ -176,6 +242,10 @@ def draft(store, llm, settings, now: int | None = None) -> dict:
         mood=mood or "（还行）",
         recent=_recent_block(store),
         banned=_banned_topics(_recent_posts(store)),
+        style_label=spec["label"],
+        style_min=spec["min"],
+        style_max=spec["max"],
+        style_guide=spec["guide"],
     )
     recent_posts = _recent_posts(store)
     banned = _banned_list(recent_posts)
@@ -185,6 +255,19 @@ def draft(store, llm, settings, now: int | None = None) -> dict:
         max_tokens=600,
     )
     text = _clean(getattr(result, "text", "") or "")
+    issue = content_issue(text, style)
+    if issue:
+        fix = prompt + f"\n\n【重写】上一版的问题：{issue}。按上面的风格和字数重写。"
+        try:
+            again = llm.chat(
+                [{"role": "system", "content": fix}, {"role": "user", "content": "写吧。"}],
+                temperature=0.9,
+                max_tokens=600,
+            )
+            fixed = _clean(getattr(again, "text", "") or "")
+        except Exception:  # noqa: BLE001 - 重写失败就当这条不发了
+            fixed = ""
+        text = fixed if fixed and not content_issue(fixed, style) else ""
     repeated = [word for word in banned if word in text]
     if repeated:
         # 写了最近重复的事：再要一版，点名不许提

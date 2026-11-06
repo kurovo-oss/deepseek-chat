@@ -279,3 +279,38 @@ def test_draft_rewrites_when_it_still_writes_the_banned_topic(tmp_path):
     assert "重写" in llm.calls[1][0]["content"]
     store.close()
 
+def test_style_rotates_by_post_count(tmp_path):
+    store = Store(tmp_path / "chat.db")
+    qzone.ensure(store)
+
+    assert qzone.pick_style(store) == "mumble"
+    with store._lock:
+        for index in range(7):
+            store._conn.execute(
+                "INSERT INTO qzone_posts (content, status, created_at) VALUES (?,?,?)",
+                (f"第{index}条", "ok", 100),
+            )
+        store._conn.commit()
+    assert qzone.pick_style(store) == "serious"
+    store.close()
+
+
+def test_content_issue_flags_summary_tone_and_fake_claims():
+    assert "总结腔" in qzone.content_issue("首先我要说，这让我意识到很多事情。", "mumble")
+    assert "做不到" in qzone.content_issue("我今天拍了段视频，还剪了半天。", "mumble")
+    assert "太短" in qzone.content_issue("嗯。", "mumble")
+    assert qzone.content_issue("今天把窗帘洗了，晾了一下午，摸起来有太阳味。", "mumble") == ""
+
+
+def test_draft_skips_post_when_rewrite_still_fails(tmp_path):
+    store = Store(tmp_path / "chat.db")
+    qzone.ensure(store)
+    cfg = settings(tmp_path)
+    llm = RainLLM(["首先我得总结一下今天。", "总之，这让我意识到很多。"])
+
+    result = qzone.draft(store, llm, cfg, now=int(time.time()))
+
+    assert result["text"] == ""
+    assert len(llm.calls) == 2
+    store.close()
+
