@@ -11,6 +11,7 @@ import re
 import time
 from pathlib import Path
 
+from . import claims as claims_mod
 from . import digest as digest_mod
 from . import guard as guard_mod
 from . import growth as growth_mod
@@ -29,6 +30,8 @@ CREATE TABLE IF NOT EXISTS qzone_posts (
   tid        TEXT NOT NULL DEFAULT '',
   status     TEXT NOT NULL,
   error      TEXT NOT NULL DEFAULT '',
+  review     TEXT NOT NULL DEFAULT '',
+  claims     TEXT NOT NULL DEFAULT '[]',
   created_at INTEGER NOT NULL
 );
 """
@@ -67,6 +70,10 @@ def ensure(store) -> None:
         return
     with store._lock:  # noqa: SLF001
         store._conn.executescript(_SCHEMA)  # noqa: SLF001
+        columns = {row["name"] for row in store._conn.execute("PRAGMA table_info(qzone_posts)")}
+        for name, ddl in (("review", "TEXT NOT NULL DEFAULT ''"), ("claims", "TEXT NOT NULL DEFAULT '[]'")):
+            if name not in columns:
+                store._conn.execute(f"ALTER TABLE qzone_posts ADD COLUMN {name} {ddl}")  # noqa: S608
         store._conn.commit()  # noqa: SLF001
     store._qzone_ready = True
 
@@ -299,7 +306,7 @@ def _clean(raw: str) -> str:
 
 
 def publish(store, guard, sender, text: str, image: Path | None = None,
-            now: int | None = None, reason: str = "") -> dict:
+            now: int | None = None, reason: str = "", claims: list | None = None) -> dict:
     """过闸门再发。返回 {"status": ..., "detail": ...}。"""
     ensure(store)
     stamp = int(now if now is not None else time.time())
@@ -310,7 +317,7 @@ def publish(store, guard, sender, text: str, image: Path | None = None,
         return {"status": "denied", "detail": decision.reason}
     if decision.dry_run:
         guard.record("qzone", "post", target=reason, payload=text, result="dry_run", now=stamp)
-        _save(store, text, image, "", "dry_run", "", stamp)
+        _save(store, text, image, "", "dry_run", "", stamp, claims=claims)
         return {"status": "dry_run", "detail": "只写了草稿，没有真发"}
     images = []
     if image is not None and Path(image).exists():
@@ -322,22 +329,74 @@ def publish(store, guard, sender, text: str, image: Path | None = None,
     if ok:
         tid = str((data or {}).get("tid") or "")
         guard.record("qzone", "post", target=reason, payload=text, result="ok", now=stamp)
-        _save(store, text, image, tid, "ok", "", stamp)
+        _save(store, text, image, tid, "ok", "", stamp, claims=claims)
         return {"status": "ok", "detail": tid}
     error = str((data or {}).get("message") or (data or {}).get("wording") or "接口失败")
     guard.record("qzone", "post", target=reason, payload=text, result="failed", error=error, now=stamp)
-    _save(store, text, image, "", "failed", error, stamp)
+    _save(store, text, image, "", "failed", error, stamp, claims=claims)
     return {"status": "failed", "detail": error}
 
 
-def _save(store, text: str, image: Path | None, tid: str, status: str, error: str, now: int) -> None:
+def _save(store, text: str, image: Path | None, tid: str, status: str, error: str, now: int,
+          review: str = "", claims: list | None = None) -> int:
     images = json.dumps([str(image)] if image else [], ensure_ascii=False)
+    ledger = json.dumps(claims or [], ensure_ascii=False)
     with store._lock:  # noqa: SLF001
-        store._conn.execute(  # noqa: SLF001
-            "INSERT INTO qzone_posts (content, images, tid, status, error, created_at) VALUES (?,?,?,?,?,?)",
-            (text, images, tid, status, error, now),
+        cursor = store._conn.execute(  # noqa: SLF001
+            "INSERT INTO qzone_posts (content, images, tid, status, error, review, claims, created_at)"
+            " VALUES (?,?,?,?,?,?,?,?)",
+            (text, images, tid, status, error, review, ledger, now),
         )
         store._conn.commit()  # noqa: SLF001
+        return int(cursor.lastrowid or 0)
+
+
+def _get(store, post_id: int) -> dict | None:
+    ensure(store)
+    with store._lock:  # noqa: SLF001
+        row = store._conn.execute(  # noqa: SLF001
+            "SELECT * FROM qzone_posts WHERE id = ?", (int(post_id),)
+        ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def drafts(store, limit: int = 10) -> list[dict]:
+    ensure(store)
+    with store._lock:  # noqa: SLF001
+        rows = store._conn.execute(  # noqa: SLF001
+            "SELECT * FROM qzone_posts WHERE status = 'draft' ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _update(store, post_id: int, **fields) -> None:
+    if not fields:
+        return
+    keys = ", ".join(f"{name} = ?" for name in fields)
+    with store._lock:  # noqa: SLF001
+        store._conn.execute(  # noqa: SLF001
+            f"UPDATE qzone_posts SET {keys} WHERE id = ?",  # noqa: S608 - 列名是内部常量
+            (*fields.values(), int(post_id)),
+        )
+        store._conn.commit()  # noqa: SLF001
+
+
+def save_draft(store, matter: dict, now: int, claims: list, review: str) -> int:
+    ensure(store)
+    return _save(
+        store, matter["text"], matter.get("image"), "", "draft", "", now,
+        review=review, claims=claims,
+    )
+
+
+def delete_draft(store, post_id: int) -> bool:
+    ensure(store)
+    with store._lock:  # noqa: SLF001
+        cursor = store._conn.execute(  # noqa: SLF001
+            "DELETE FROM qzone_posts WHERE id = ? AND status = 'draft'", (int(post_id),)
+        )
+        store._conn.commit()  # noqa: SLF001
+    return int(cursor.rowcount or 0) > 0
 
 
 def last_posts(store, limit: int = 5) -> list[dict]:
@@ -349,6 +408,61 @@ def last_posts(store, limit: int = 5) -> list[dict]:
     return [dict(row) for row in rows]
 
 
+def _pending_draft(store, now: int) -> bool:
+    ensure(store)
+    with store._lock:  # noqa: SLF001
+        row = store._conn.execute(  # noqa: SLF001
+            "SELECT COUNT(*) AS n FROM qzone_posts WHERE status = 'draft' AND created_at >= ?",
+            (_today_start(now),),
+        ).fetchone()
+    return bool(row and int(row["n"]) > 0)
+
+
+def approve_draft(store, guard, sender, post_id: int, now: int | None = None) -> dict:
+    """把一条待审草稿过一遍 claim 校验，过了才发。"""
+    ensure(store)
+    stamp = int(now if now is not None else time.time())
+    row = _get(store, post_id)
+    if row is None:
+        return {"status": "missing", "detail": f"没有 #{post_id}"}
+    if row["status"] != "draft":
+        return {"status": "not_draft", "detail": f"#{post_id} 是 {row['status']}，不是草稿"}
+    ledger = claims_mod.verify(str(row["content"]), store, now=stamp)
+    bad = claims_mod.issues(ledger)
+    ledger_text = json.dumps(ledger, ensure_ascii=False)
+    if bad:
+        review = "；".join(claim["reason"] for claim in bad)
+        _update(store, post_id, review=review, claims=ledger_text)
+        guard.record("qzone", "approve", payload=str(row["content"]), result="held", error=review, now=stamp)
+        return {"status": "held", "detail": review}
+    decision = guard.check("qzone", "post", user_id=guard.settings.allow_user_id, now=stamp)
+    if not decision.allowed:
+        _update(store, post_id, review=decision.reason)
+        return {"status": "denied", "detail": decision.reason}
+    if decision.dry_run:
+        _update(store, post_id, status="dry_run", review="", claims=ledger_text)
+        return {"status": "dry_run", "detail": "只写了草稿，没有真发"}
+    images = []
+    try:
+        paths = json.loads(row["images"] or "[]")
+    except ValueError:
+        paths = []
+    for path in paths:
+        candidate = Path(str(path))
+        if candidate.exists():
+            images.append(candidate.resolve().as_uri())
+    ok, data = sender.request("send_qzone_msg", {"content": row["content"], "images": images, "ugc_right": 1})
+    if ok:
+        tid = str((data or {}).get("tid") or "")
+        _update(store, post_id, status="ok", tid=tid, error="", review="", claims=ledger_text)
+        guard.record("qzone", "post", payload=str(row["content"]), result="ok", now=stamp)
+        return {"status": "ok", "detail": tid}
+    error = str((data or {}).get("message") or (data or {}).get("wording") or "接口失败")
+    _update(store, post_id, status="failed", error=error, review="", claims=ledger_text)
+    guard.record("qzone", "post", payload=str(row["content"]), result="failed", error=error, now=stamp)
+    return {"status": "failed", "detail": error}
+
+
 def maybe_post(store, llm, settings, guard, sender, now: int | None = None) -> dict | None:
     """定时入口：窗口内、今天没超额度，就写一条并（试运行地）发。"""
     if not getattr(settings, "qzone_enabled", False):
@@ -358,12 +472,22 @@ def maybe_post(store, llm, settings, guard, sender, now: int | None = None) -> d
         return None
     if _posted_today(store, stamp) >= int(getattr(settings, "qzone_daily_max", 3)):
         return None
+    if _pending_draft(store, stamp):
+        return None
     if not guard.check("qzone", "post", user_id=settings.allow_user_id, now=stamp).allowed:
         return None
     matter = draft(store, llm, settings, now=stamp)
     if not matter["text"]:
         return None
-    return publish(store, guard, sender, matter["text"], matter["image"], now=stamp, reason="定时")
+    ledger = claims_mod.verify(matter["text"], store, now=stamp)
+    bad = claims_mod.issues(ledger)
+    if bad:
+        review = "；".join(claim["reason"] for claim in bad)
+        post_id = save_draft(store, matter, stamp, ledger, review)
+        guard.record("qzone", "post", target="定时", payload=matter["text"], result="held", error=review, now=stamp)
+        log.info("空间：草稿 #%s 待审（%s）", post_id, review)
+        return {"status": "held", "detail": f"草稿 #{post_id} 待审：{review}"}
+    return publish(store, guard, sender, matter["text"], matter["image"], now=stamp, reason="定时", claims=ledger)
 
 
 def tick_loop(store, llm, settings, guard, sender, stop_event, interval: float = 300.0) -> None:

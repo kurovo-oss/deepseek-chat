@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 import qqbot.engine as engine_mod
-from qqbot import growth
+from qqbot import growth, qzone
 from qqbot.config import Settings
 from qqbot.engine import FALLBACK_REPLIES, Engine, fallback_reply
 from qqbot.llm import ChatResult, LLMError
@@ -1781,4 +1781,23 @@ def test_life_command_shows_real_events(tmp_path):
 
     assert "今天真实发生" in reply
     assert "找你说过 1 次话" in reply
+
+def test_qzone_draft_commands_list_delete_and_approve(tmp_path):
+    env = build_env(tmp_path, qzone_enabled=True, qzone_dry_run=False)
+    pid = qzone.save_draft(
+        env.store,
+        {"text": "他说「周六来吃饭」，我一直记着，锅里还留着汤。", "image": None},
+        int(time.time()), [], "他最近没说过这句话",
+    )
+
+    listed = env.engine._handle_command("/空间 草稿", "100")
+    assert f"#{pid}" in listed
+    assert "他最近没说过这句话" in listed
+
+    held = env.engine._handle_command(f"/空间 发 {pid}", "100")
+    assert "没过事实校验" in held
+
+    deleted = env.engine._handle_command(f"/空间 删 {pid}", "100")
+    assert "删掉了" in deleted
+    assert qzone.drafts(env.store) == []
 

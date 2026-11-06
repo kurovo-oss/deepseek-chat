@@ -314,3 +314,69 @@ def test_draft_skips_post_when_rewrite_still_fails(tmp_path):
     assert len(llm.calls) == 2
     store.close()
 
+def _at(hour=21):
+    local = time.localtime()
+    return int(time.mktime((local.tm_year, local.tm_mon, local.tm_mday, hour, 0, 0, 0, 0, -1)))
+
+
+def test_maybe_post_holds_claim_that_cannot_be_verified(tmp_path):
+    cfg, store, g = env(tmp_path, qzone_dry_run=False)
+    sender = FakeSender()
+    llm = FakeLLM("他说「周六来吃饭」，我一直记着呢，锅里还留着汤。")
+
+    result = qzone.maybe_post(store, llm, cfg, g, sender, now=_at())
+
+    assert result["status"] == "held"
+    assert sender.calls == []
+    rows = qzone.drafts(store)
+    assert len(rows) == 1
+    assert "他最近没说过这句话" in rows[0]["review"]
+    store.close()
+
+
+def test_approve_draft_sends_and_marks_ok(tmp_path):
+    cfg, store, g = env(tmp_path, qzone_dry_run=False)
+    sender = FakeSender()
+    pid = qzone.save_draft(
+        store,
+        {"text": "今天把窗帘洗了，晾了一下午，摸起来有太阳味。", "image": None},
+        _at(), [], "",
+    )
+
+    result = qzone.approve_draft(store, g, sender, pid)
+
+    assert result["status"] == "ok"
+    assert sender.calls[0][0] == "send_qzone_msg"
+    assert qzone._get(store, pid)["status"] == "ok"
+    store.close()
+
+
+def test_delete_draft_only_removes_unpublished(tmp_path):
+    cfg, store, g = env(tmp_path)
+    pid = qzone.save_draft(store, {"text": "待审的一条", "image": None}, _at(), [], "")
+
+    assert qzone.delete_draft(store, pid) is True
+    assert qzone.delete_draft(store, pid) is False
+
+    published = qzone.publish(store, g, FakeSender(), "已经发的一条", None, reason="测试")
+    row = qzone.last_posts(store)[0]
+    assert row["status"] == published["status"]
+    assert qzone.delete_draft(store, row["id"]) is False
+    store.close()
+
+
+def test_draft_columns_are_added_to_old_database(tmp_path):
+    cfg = settings(tmp_path)
+    store = Store(cfg.db_path)
+    with store._lock:
+        store._conn.execute(
+            "CREATE TABLE qzone_posts (id INTEGER PRIMARY KEY, content TEXT, images TEXT DEFAULT '[]',"
+            " tid TEXT DEFAULT '', status TEXT, error TEXT DEFAULT '', created_at INTEGER)"
+        )
+        store._conn.commit()
+    qzone.ensure(store)
+
+    columns = {row["name"] for row in store._conn.execute("PRAGMA table_info(qzone_posts)")}
+    assert {"review", "claims"} <= columns
+    store.close()
+

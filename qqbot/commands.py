@@ -275,6 +275,38 @@ class CommandsMixin:
             guard = guard_mod.Guard(self.store, self.settings)
             self.guard = guard
         rest = (rest or "").strip()
+        if rest in ("草稿", "待审", "草稿箱"):
+            rows = qzone_mod.drafts(self.store, 5)
+            if not rows:
+                return "没有待审的草稿。"
+            lines = ["【待审草稿】"]
+            for row in rows:
+                when = time.strftime("%m-%d %H:%M", time.localtime(row["created_at"]))
+                review = (row.get("review") or "无备注").strip()
+                lines.append(f"#{row['id']} {when}\n{row['content'][:60]}\n原因：{review}")
+            lines.append("用法：/空间 发 12  通过    /空间 删 12  删除")
+            return "\n\n".join(lines)
+        if rest.startswith(("删", "删掉")):
+            match = re.search(r"\d+", rest)
+            if not match:
+                return "要删哪条？用法：/空间 删 12"
+            ok = qzone_mod.delete_draft(self.store, int(match.group(0)))
+            return "删掉了。" if ok else "没找到这条草稿（只能删未发布的）。"
+        if rest.startswith(("发 ", "发布 ", "通过 ")):
+            match = re.search(r"\d+", rest)
+            if not match:
+                return "要发哪条？用法：/空间 发 12"
+            result = qzone_mod.approve_draft(self.store, guard, self.sender, int(match.group(0)))
+            head = {
+                "ok": "发出去了",
+                "dry_run": "试运行：只存了草稿",
+                "denied": "没发",
+                "failed": "发送失败",
+                "held": "没过事实校验，继续待审",
+                "missing": "没找到",
+                "not_draft": "不是草稿",
+            }.get(result["status"], result["status"])
+            return f"{head}（{result['detail'][:120]}）"
         if rest in ("记录", "历史", "列表"):
             rows = qzone_mod.last_posts(self.store, 5)
             if not rows:
