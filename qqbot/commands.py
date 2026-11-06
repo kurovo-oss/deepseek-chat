@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import re
 import time
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from . import digest as digest_mod
@@ -110,7 +110,7 @@ class CommandsMixin:
             return self._browse_command()
         if head in ("/voice", "/语音"):
             return self._voice_command(rest, session)
-        if head == "/life":
+        if head in ("/life", "/生活"):
             return self._life_command(rest)
 
         if head in ("/查", "/search"):
@@ -734,11 +734,13 @@ class CommandsMixin:
                 pass
             with self._life_lock:
                 self._life_day = ""
-            text = life_mod.today(self.settings, self.llm)
+            text = life_mod.today(self.settings, self.llm, store=self.store)
             return ("今天改成这样了：\n" + text) if text else "没写出来，回头再试。"
         text = life_mod.snippet(self.settings)
         hand = projects_mod.describe(projects_mod.load(self.settings))
-        return (text or "今天还没写呢。") + "\n\n" + hand
+        events = life_mod.day_events(self.store, self.settings, date.today())
+        timeline = ("\n\n今天真实发生：\n- " + "\n- ".join(events)) if events else ""
+        return (text or "今天还没写呢。") + "\n\n" + hand + timeline
 
 
 

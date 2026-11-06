@@ -768,7 +768,7 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
             digest = digest_mod.recent_text(self.settings)
             if digest:
                 context = (context + "\n" + digest[:400]).strip()
-            life_mod.today(self.settings, self.llm, context=context)
+            life_mod.today(self.settings, self.llm, context=context, store=self.store)
             life_mod.prune(self.settings)
         except Exception:  # noqa: BLE001 - 生活线是加分项
             log.exception("生成生活线失败")

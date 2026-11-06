@@ -1770,3 +1770,15 @@ def test_memory_tidy_command_reports_counts(tmp_path, monkeypatch):
     assert "新记住 2 条" in text
     assert "清掉 3 条" in text
 
+def test_life_command_shows_real_events(tmp_path):
+    env = build_env(tmp_path, life_enabled=True, life_dir=tmp_path / "life")
+    folder = tmp_path / "life"
+    folder.mkdir()
+    (folder / (time.strftime("%Y-%m-%d") + ".md")).write_text("泡了第二杯茶", encoding="utf-8")
+    env.store.save_message("100", "user", "房间收拾得怎么样了")
+
+    reply = env.engine._handle_command("/生活", "100")
+
+    assert "今天真实发生" in reply
+    assert "找你说过 1 次话" in reply
+

@@ -335,3 +335,49 @@ def test_prompt_tells_her_to_stop_after_three_days(tmp_path):
     assert "最多连着推进 3 天" in prompt
     assert "至少两句写别的" in prompt
 
+class SeqLLM:
+    def __init__(self, texts):
+        self.texts = list(texts)
+        self.calls = []
+
+    def chat(self, messages, **kwargs):
+        self.calls.append((messages, kwargs))
+        return ChatResult(self.texts.pop(0) if self.texts else "", 1, 1, "fake")
+
+
+def test_today_sees_real_events(tmp_path):
+    settings = make_settings(tmp_path)
+    store = Store(tmp_path / "chat.db")
+    now = int(time.time())
+    store.save_message("100", "user", "房间收拾得怎么样了", created_at=now)
+    store.add_image("sha-1", "aa/one.png", "image/png", 10, tags=["猫"], source="user", created_at=now)
+    llm = FakeLLM()
+
+    life.today(settings, llm, store=store)
+
+    prompt = llm.calls[0][0][1]["content"]
+    assert "今天真实发生" in prompt
+    assert "最后一句是" in prompt
+    assert "收了 1 张图" in prompt
+    store.close()
+
+
+def test_today_rewrites_when_it_reuses_recent_topic(tmp_path):
+    settings = make_settings(tmp_path)
+    yesterday = date.fromtimestamp(time.time() - 86400)
+    path = Path(settings.life_dir) / f"{yesterday.isoformat()}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("今天挑的是：学做番茄牛腩\n牛腩炖了三锅\n锅边糊了一圈", encoding="utf-8")
+    llm = SeqLLM([
+        "今天挑的是：番茄牛腩\n牛腩又炖上了\n锅边还是糊的\n手边一只汤勺",
+        "今天挑的是：把窗帘洗了\n泡了第二杯茶\n楼下新开了面包店\n想问他晚上吃什么",
+    ])
+
+    text = life.today(settings, llm)
+
+    prompt = llm.calls[0][0][1]["content"]
+    assert "最近 7 天写过这些" in prompt
+    assert "上一版又写了" in llm.calls[1][0][1]["content"]
+    assert "牛腩" not in text
+    assert "窗帘" in text
+

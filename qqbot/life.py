@@ -94,6 +94,80 @@ def recent(settings, day: date, days: int = 2) -> str:
     return "最近两天已经写过这些，今天的别跟它们重复：\n- " + "\n- ".join(lines)
 
 
+COOLDOWN_DAYS = 7
+
+
+def _grams(text: str) -> set[str]:
+    words: set[str] = set()
+    for chunk in re.findall(r"[\u4e00-\u9fff]+", text or ""):
+        for index in range(len(chunk) - 1):
+            gram = chunk[index:index + 2]
+            if gram not in _STOP_GRAMS:
+                words.add(gram)
+    return words
+
+
+def recent_words(settings, day: date, days: int = COOLDOWN_DAYS) -> set[str]:
+    """最近几天日记里出现过的东西：今天别拿它们当主线。"""
+    words: set[str] = set()
+    for offset in range(1, days + 1):
+        text = _read(_day_path(settings, day.fromordinal(day.toordinal() - offset)))
+        # “今天挑的是：…”是模板，不是话题，别把它算进冷却词
+        body = "\n".join(
+            line for line in text.splitlines()
+            if not line.startswith(("今天挑的是", "今天开了件新事"))
+        )
+        words |= _grams(body)
+    return words
+
+
+def day_events(store, settings, day: date) -> list[str]:
+    """今天真实发生过的事——日记至少有一半要能对上，不能全靠编。"""
+    if store is None:
+        return []
+    start = int(time.mktime(day.timetuple()))
+    end = start + 86400
+    out: list[str] = []
+    try:
+        with store._lock:  # noqa: SLF001
+            messages = store._conn.execute(  # noqa: SLF001
+                "SELECT role, content FROM messages WHERE created_at >= ? AND created_at < ?"
+                " ORDER BY id DESC LIMIT 40",
+                (start, end),
+            ).fetchall()
+            images = store._conn.execute(  # noqa: SLF001
+                "SELECT tags, source FROM images WHERE created_at >= ? AND created_at < ?",
+                (start, end),
+            ).fetchall()
+            try:
+                posts = store._conn.execute(  # noqa: SLF001
+                    "SELECT content FROM qzone_posts WHERE created_at >= ? AND created_at < ?"
+                    " AND status IN ('ok','dry_run')",
+                    (start, end),
+                ).fetchall()
+            except Exception:  # noqa: BLE001 - 空间表可能还没建
+                posts = []
+    except Exception:  # noqa: BLE001 - 事件读失败不该挡住写日记
+        return []
+    mine = [row for row in messages if row["role"] == "user"]
+    if mine:
+        last = str(mine[0]["content"] or "").replace("\n", " ").strip()
+        out.append(f"他今天找你说过 {len(mine)} 次话，最后一句是「{last[:24]}」（别原样复述）")
+    tags: list[str] = []
+    for row in images:
+        try:
+            tags.extend(str(tag) for tag in json.loads(row["tags"] or "[]"))
+        except ValueError:
+            continue
+    if images:
+        label = "、".join(dict.fromkeys(tags))[:24]
+        out.append(f"你今天收了 {len(images)} 张图{f'（{label}）' if label else ''}")
+    if posts:
+        first = str(posts[0]["content"] or "").replace("\n", " ").strip()
+        out.append(f"你发过 {len(posts)} 条说说，开头是「{first[:20]}」")
+    return out
+
+
 def _day_path(settings, day: date) -> Path:
     return Path(settings.life_dir) / f"{day.isoformat()}.md"
 
@@ -202,7 +276,7 @@ def _world(settings) -> str:
     return "\n".join(parts)
 
 
-def today(settings, llm, context: str = "", clock=time.time) -> str:
+def today(settings, llm, context: str = "", clock=time.time, store=None) -> str:
     """生成今天的日子并落盘，同时更新她手上的事。已经生成过就直接返回。"""
     day = date.fromtimestamp(clock())
     path = _day_path(settings, day)
@@ -219,6 +293,13 @@ def today(settings, llm, context: str = "", clock=time.time) -> str:
     prompt = prompt.replace("{PROJECTS}", projects_mod.block(items, BUSY_THINGS))
     prompt = prompt.replace("{WORLD}", _world(settings))
     prompt = prompt.replace("{PAST}", recent(settings, day))
+    events = day_events(store, settings, day) if store is not None else []
+    if events:
+        prompt += "\n今天真实发生（四句里至少两句要能和这里对上）：\n- " + "\n- ".join(events)
+    words = recent_words(settings, day)
+    if words:
+        sample = "、".join(sorted(words)[:14])
+        prompt += f"\n最近 7 天写过这些，别再当今天的主线：{sample}"
 
     try:
         result = llm.chat(
@@ -237,7 +318,32 @@ def today(settings, llm, context: str = "", clock=time.time) -> str:
         log.exception("生成今天的日子失败")
         return ""
 
-    decision = parse_decision(result.text or "") or _salvage(result.text or "")
+    text0 = result.text or ""
+    decision = parse_decision(text0) or _salvage(text0)
+    body = "\n".join(decision["today"]) if decision is not None else _clean(text0)
+    hits = [word for word in _grams(body) if word in words]
+    if len(hits) >= 2:
+        ban = "、".join(sorted(hits)[:8])
+        retry_prompt = prompt + f"\n\n上一版又写了这些最近用过的东西：{ban}。这一版换个主线，别写它们。"
+        try:
+            again = llm.chat(
+                [
+                    {"role": "system", "content": "你在替一个角色安排今天并写日记。只输出一个 JSON。"},
+                    {"role": "user", "content": retry_prompt},
+                ],
+                temperature=0.95,
+                max_tokens=2000,
+            )
+        except Exception:  # noqa: BLE001 - 重写失败就用第一版
+            again = None
+        if again is not None:
+            candidate = again.text or ""
+            candidate_decision = parse_decision(candidate) or _salvage(candidate)
+            candidate_body = (
+                "\n".join(candidate_decision["today"]) if candidate_decision is not None else _clean(candidate)
+            )
+            if candidate_body and not [word for word in _grams(candidate_body) if word in words]:
+                result, decision, body = again, candidate_decision, candidate_body
     if decision is not None:
         lines = _clean("\n".join(decision["today"]))
         if not lines or len(lines.splitlines()) < 2:
