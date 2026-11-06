@@ -187,3 +187,44 @@ def test_pick_image_without_todays_image_is_none(tmp_path):
 
     assert qzone.pick_image(store, settings_, 1793868800) is None
 
+def test_draft_tells_her_not_to_repeat_recent_posts(tmp_path):
+    from qqbot.store import Store
+
+    store = Store(tmp_path / "chat.db")
+    qzone.ensure(store)
+    with store._lock:
+        store._conn.execute(
+            "INSERT INTO qzone_posts (content, status, created_at) VALUES (?,?,?)",
+            ("第三锅牛腩，汤终于浓了", "ok", 100),
+        )
+        store._conn.execute(
+            "INSERT INTO qzone_posts (content, status, created_at) VALUES (?,?,?)",
+            ("番茄膏挤多了，锅边糊了一圈", "ok", 200),
+        )
+        store._conn.commit()
+    llm = FakeLLM("今天翻了两页书，窗外下雨。")
+    cfg = settings(tmp_path)
+
+    qzone.draft(store, llm, cfg, now=int(time.time()))
+
+    prompt = llm.calls[0][0]["content"]
+    assert "第三锅牛腩" in prompt
+    assert "同一件事别连着写" in prompt
+    store.close()
+
+def test_draft_includes_todays_life(tmp_path):
+    store = Store(tmp_path / "chat.db")
+    qzone.ensure(store)
+    life_dir = tmp_path / "life"
+    life_dir.mkdir(parents=True, exist_ok=True)
+    cfg = settings(tmp_path, life_dir=life_dir)
+    (life_dir / (time.strftime("%Y-%m-%d") + ".md")).write_text(
+        "今天挑的是：把窗帘洗了\n泡了第二杯茶\n楼下新开了面包店", encoding="utf-8")
+    llm = FakeLLM("今天晒了窗帘。")
+
+    qzone.draft(store, llm, cfg, now=int(time.time()))
+
+    prompt = llm.calls[0][0]["content"]
+    assert "泡了第二杯茶" in prompt
+    store.close()
+

@@ -52,6 +52,11 @@ action 只能是 advance / start / pause / drop / done / none：
 - pause 先放下；drop 以后不做了；done 做完了；none 今天就想干点别的。
 - today 四句要具体、口语，像日记随手写的；不要写心情总结；
   前三句别提"他"，第四句可以。
+- 同一件事最多连着推进 3 天：上面写着"已经试了 3 次"的，今天就收尾（done）
+  或先放下（pause/drop），别第四天还选它，也别换个说法继续写同一锅东西。
+- today 四句里最多两句写手上的事，至少两句写别的：出门看到什么、跟谁说了话、
+  身体哪儿累、买到了什么、忽然想起什么。
+- 不要每天都让同一个物件当主角（比如连着几天都是那口锅、那碗汤）。
 - 不要出现"AI""模型""虚拟"这类字眼。"""
 
 WEEKDAYS = ("周一", "周二", "周三", "周四", "周五", "周六", "周日")
@@ -321,8 +326,8 @@ def snippet(settings, clock=time.time, budget: int = 220, repeat: int = 0) -> st
     text = _read(_day_path(settings, day))
     if not text:
         return ""
-    if repeat >= 4:
-        # 说第四遍以上：这一段先收起来，不然她一有机会就往上靠
+    if repeat >= 3:
+        # 说第三遍以上：这一段先收起来，不然她一有机会就往上靠
         return ""
     note = ""
     if repeat >= 2:

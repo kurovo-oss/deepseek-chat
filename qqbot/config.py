@@ -239,7 +239,7 @@ class Settings:
     # 对外渠道：默认全关、全试运行
     qzone_enabled: bool = False
     qzone_dry_run: bool = True
-    qzone_daily_max: int = 3
+    qzone_daily_max: int = 1
     qzone_image_enabled: bool = True
     douyin_profile: Path = Path("data/browser/douyin")
     douyin_cdp_port: int = 9222
@@ -460,7 +460,7 @@ class Settings:
     sticker_daily_max=_int(env, "STICKER_DAILY_MAX", 100, minimum=1),
     qzone_enabled=_bool(env, "QZONE_ENABLED", False),
     qzone_dry_run=_bool(env, "QZONE_DRY_RUN", True),
-    qzone_daily_max=_int(env, "QZONE_DAILY_MAX", 3, minimum=0),
+    qzone_daily_max=_int(env, "QZONE_DAILY_MAX", 1, minimum=0),
     qzone_image_enabled=_bool(env, "QZONE_IMAGE_ENABLED", True),
     douyin_profile=base_dir / env.get("DOUYIN_PROFILE", "data/browser/douyin").strip(),
     douyin_cdp_port=_int(env, "DOUYIN_CDP_PORT", 9222, minimum=1024),

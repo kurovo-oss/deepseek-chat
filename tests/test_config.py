@@ -122,3 +122,9 @@ def test_she_initiates_more_often_by_default(tmp_path):
     assert settings.proactive_max_per_day >= 4
     assert settings.proactive_idle_hours <= 8
     assert settings.proactive_min_gap_hours <= 3.5
+
+def test_qzone_daily_max_defaults_to_one(monkeypatch):
+    from qqbot.config import Settings
+
+    assert Settings.__dataclass_fields__["qzone_daily_max"].default == 1
+

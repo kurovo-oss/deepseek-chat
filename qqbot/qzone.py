@@ -1,4 +1,4 @@
-"""QQ 空间：一天最多三条，可以配一张当天发过的图，默认只写草稿（试运行）。
+"""QQ 空间：一天最多一条，可以配一张当天发过的图，默认只写草稿（试运行）。
 
 真发走 NapCat 的扩展动作 `send_qzone_msg`（需要 NapCat ≥ 4.18.42）。
 """
@@ -13,6 +13,7 @@ from pathlib import Path
 from . import digest as digest_mod
 from . import guard as guard_mod
 from . import growth as growth_mod
+from . import life as life_mod
 
 log = logging.getLogger("qqbot")
 
@@ -39,13 +40,19 @@ PROMPT = """你是「大肥鱼」，正在写今天的 QQ 空间说说。第一�
 【今天聊到的】
 {digest}
 
+【你今天】
+{life}
+
 【你记住的高光】
 {events}
 
 【你现在的心情】
 {mood}
 
-只输出说说正文。"""
+【最近两三条说说】
+{recent}
+
+同一件事别连着写：上面写过的场景、菜、物件，这条换掉，别又写同一锅汤。只输出说说正文。"""
 
 
 def ensure(store) -> None:
@@ -91,6 +98,19 @@ def pick_image(store, settings, now: int) -> Path | None:
     return path if path.exists() else None
 
 
+
+def _recent_block(store, limit: int = 2) -> str:
+    ensure(store)
+    with store._lock:  # noqa: SLF001
+        rows = store._conn.execute(  # noqa: SLF001
+            "SELECT content FROM qzone_posts WHERE status IN ('ok','dry_run')"
+            " ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    lines = [f"- {str(row['content']).strip()[:80]}" for row in rows if row["content"]]
+    return "\n".join(lines) or "（最近没发过）"
+
+
 def _events_block(store, limit: int = 3) -> str:
     try:
         events = growth_mod.recent(store, limit=limit)
@@ -105,8 +125,10 @@ def draft(store, llm, settings, now: int | None = None) -> dict:
     mood = ""
     prompt = PROMPT.format(
         digest=digest_mod.recent_text(settings) or "（今天没聊多少）",
+        life=life_mod.snippet(settings) or "（今天还没想好写什么）",
         events=_events_block(store),
         mood=mood or "（还行）",
+        recent=_recent_block(store),
     )
     result = llm.chat(
         [{"role": "system", "content": prompt}, {"role": "user", "content": "写吧。"}],

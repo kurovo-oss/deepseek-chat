@@ -278,9 +278,9 @@ def test_snippet_presses_when_she_repeats_herself(tmp_path):
     settings = make_settings(tmp_path)
     _with_stew(settings)
 
-    note = life.snippet(settings, repeat=3)
+    note = life.snippet(settings, repeat=2)
 
-    assert "已经说过 3 次" in note
+    assert "已经说过 2 次" in note
     assert "别提它" in note
 
 
@@ -288,7 +288,7 @@ def test_after_saying_it_too_often_the_note_is_withheld(tmp_path):
     settings = make_settings(tmp_path)
     _with_stew(settings)
 
-    assert life.snippet(settings, repeat=4) == ""
+    assert life.snippet(settings, repeat=3) == ""
 
 
 def test_snippet_is_quiet_the_first_couple_of_times(tmp_path):
@@ -319,3 +319,19 @@ def test_prompt_tells_her_what_she_cannot_do(tmp_path):
     prompt = llm.calls[0][0][1]["content"]
     assert "你现在做不到" in prompt
     assert "刷抖音" in prompt
+
+def test_prompt_tells_her_to_stop_after_three_days(tmp_path):
+    settings = make_settings(tmp_path)
+    projects.save(settings, [{
+        "title": "学做番茄牛腩", "status": "active", "note": "第三锅", "reason": "不服气",
+        "attempts": 3, "started": "2026-11-02", "touched": "2026-11-05",
+    }])
+    llm = FakeLLM()
+
+    life.today(settings, llm)
+
+    prompt = llm.calls[0][0][1]["content"]
+    assert "已经试了 3 次" in prompt
+    assert "最多连着推进 3 天" in prompt
+    assert "至少两句写别的" in prompt
+
