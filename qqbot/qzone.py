@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from pathlib import Path
 
@@ -51,6 +52,9 @@ PROMPT = """你是「大肥鱼」，正在写今天的 QQ 空间说说。第一�
 
 【最近两三条说说】
 {recent}
+
+【这轮别再写】
+{banned}
 
 同一件事别连着写：上面写过的场景、菜、物件，这条换掉，别又写同一锅汤。只输出说说正文。"""
 
@@ -111,6 +115,48 @@ def _recent_block(store, limit: int = 2) -> str:
     return "\n".join(lines) or "（最近没发过）"
 
 
+
+_STOP_GRAMS = frozenset((
+    "今天", "昨天", "明天", "上午", "下午", "晚上", "时候", "一个", "这个", "那个",
+    "自己", "他们", "我们", "什么", "有点", "还是", "已经", "然后", "就是", "觉得",
+    "起来", "出来", "看着", "不敢", "回来", "他说", "她说", "我发", "发了",
+))
+
+
+def _recent_posts(store, limit: int = 2) -> list[str]:
+    ensure(store)
+    with store._lock:  # noqa: SLF001
+        rows = store._conn.execute(  # noqa: SLF001
+            "SELECT content FROM qzone_posts WHERE status IN ('ok','dry_run')"
+            " ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [str(row["content"]).strip() for row in rows if row["content"]]
+
+
+def _banned_list(posts: list[str], limit: int = 5) -> list[str]:
+    """最近几条都在写的东西（比如连着几条的牛腩），这轮点名别写。"""
+    if len(posts) < 2:
+        return []
+    counts: dict[str, int] = {}
+    for post in posts:
+        seen = set()
+        for chunk in re.findall(r"[\u4e00-\u9fff]+", post):
+            for index in range(len(chunk) - 1):
+                gram = chunk[index:index + 2]
+                if gram in _STOP_GRAMS or gram in seen:
+                    continue
+                seen.add(gram)
+                counts[gram] = counts.get(gram, 0) + 1
+    shared = [gram for gram, count in counts.items() if count >= 2]
+    shared.sort(key=lambda gram: (-counts[gram], gram))
+    return shared[:limit]
+
+
+def _banned_topics(posts: list[str], limit: int = 5) -> str:
+    return "、".join(_banned_list(posts, limit)) or "（没有）"
+
+
 def _events_block(store, limit: int = 3) -> str:
     try:
         events = growth_mod.recent(store, limit=limit)
@@ -129,13 +175,32 @@ def draft(store, llm, settings, now: int | None = None) -> dict:
         events=_events_block(store),
         mood=mood or "（还行）",
         recent=_recent_block(store),
+        banned=_banned_topics(_recent_posts(store)),
     )
+    recent_posts = _recent_posts(store)
+    banned = _banned_list(recent_posts)
     result = llm.chat(
         [{"role": "system", "content": prompt}, {"role": "user", "content": "写吧。"}],
         temperature=0.85,
         max_tokens=600,
     )
     text = _clean(getattr(result, "text", "") or "")
+    repeated = [word for word in banned if word in text]
+    if repeated:
+        # 写了最近重复的事：再要一版，点名不许提
+        retry = prompt + "\n\n【重写】上一版又写了：" + "、".join(repeated) + "。这一版一个字都别提这些，换今天别的两件事写。"
+        try:
+            again = llm.chat(
+                [{"role": "system", "content": retry}, {"role": "user", "content": "写吧。"}],
+                temperature=0.95,
+                max_tokens=600,
+            )
+        except Exception:  # noqa: BLE001 - 重写失败就用第一版
+            again = None
+        retried = _clean(getattr(again, "text", "") or "") if again is not None else ""
+        still = [word for word in repeated if word in retried]
+        if retried and not still:
+            text = retried
     image = pick_image(store, settings, stamp) if getattr(settings, "qzone_image_enabled", True) else None
     return {"text": text, "image": image, "at": stamp}
 

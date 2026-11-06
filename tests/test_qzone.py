@@ -228,3 +228,54 @@ def test_draft_includes_todays_life(tmp_path):
     assert "泡了第二杯茶" in prompt
     store.close()
 
+def test_draft_bans_topics_repeated_in_recent_posts(tmp_path):
+    store = Store(tmp_path / "chat.db")
+    qzone.ensure(store)
+    with store._lock:
+        for content in ("第三锅牛腩，汤终于浓了", "牛腩又炖上了，盯着火不敢走"):
+            store._conn.execute(
+                "INSERT INTO qzone_posts (content, status, created_at) VALUES (?,?,?)",
+                (content, "ok", 100),
+            )
+        store._conn.commit()
+    cfg = settings(tmp_path)
+    llm = FakeLLM("今天翻了翻相册。")
+
+    qzone.draft(store, llm, cfg, now=int(time.time()))
+
+    prompt = llm.calls[0][0]["content"]
+    assert "这轮别再写" in prompt
+    assert "牛腩" in prompt.split("这轮别再写")[1].split("同一件事")[0]
+    store.close()
+
+class RainLLM:
+    def __init__(self, texts):
+        self.texts = list(texts)
+        self.calls = []
+
+    def chat(self, messages, **kwargs):
+        self.calls.append(messages)
+        text = self.texts.pop(0) if self.texts else ""
+        return ChatResult(text, 1, 1, "fake")
+
+
+def test_draft_rewrites_when_it_still_writes_the_banned_topic(tmp_path):
+    store = Store(tmp_path / "chat.db")
+    qzone.ensure(store)
+    with store._lock:
+        for content in ("第三锅牛腩，汤终于浓了", "牛腩又炖上了，盯着火不敢走"):
+            store._conn.execute(
+                "INSERT INTO qzone_posts (content, status, created_at) VALUES (?,?,?)",
+                (content, "ok", 100),
+            )
+        store._conn.commit()
+    cfg = settings(tmp_path)
+    llm = RainLLM(["牛腩终于收手了，我记下分量。", "今天去楼下超市，看见柿子上市，挑了俩软的。"])
+
+    result = qzone.draft(store, llm, cfg, now=int(time.time()))
+
+    assert "柿子" in result["text"]
+    assert "牛腩" not in result["text"]
+    assert "重写" in llm.calls[1][0]["content"]
+    store.close()
+
