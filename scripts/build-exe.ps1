@@ -1,6 +1,5 @@
-# Build the native Dafeiyu control panel (Dafeiyu.exe, Chinese display name) with the C# compiler shipped in Windows.
-# The exe is a real WinForms window: it starts scripts\supervise.ps1 hidden and
-# talks to the local control API with X-UI-Token. No browser is opened.
+# Build the native Dafeiyu shell (Dafeiyu.exe, Chinese display name) with the C# compiler shipped in Windows.
+# The shell hosts the existing web control panel in WebView2; no browser tab or address bar.
 #
 # Usage:  powershell -ExecutionPolicy Bypass -File scripts\build-exe.ps1
 
@@ -17,6 +16,12 @@ if (-not (Test-Path $csc)) {
 
 $sources = Get-ChildItem (Join-Path $PSScriptRoot "native") -Filter "*.cs" | ForEach-Object { $_.FullName }
 if ($sources.Count -eq 0) { throw "no native sources found" }
+$webviewCore = Join-Path $root "Microsoft.Web.WebView2.Core.dll"
+$webviewForms = Join-Path $root "Microsoft.Web.WebView2.WinForms.dll"
+$webviewLoader = Join-Path $root "WebView2Loader.dll"
+foreach ($file in @($webviewCore, $webviewForms, $webviewLoader)) {
+    if (-not (Test-Path $file)) { throw "missing WebView2 file: $file" }
+}
 $icon = Join-Path $root "qqbot\ui\assets\dafeiyu.ico"
 $name = ([string][char]0x5927) + ([char]0x80A5) + ([char]0x9C7C) + ".exe"
 $output = Join-Path $root $name
@@ -30,9 +35,10 @@ if (-not (Test-Path $icon)) {
     }
 }
 
-& $csc /nologo /target:winexe /codepage:65001 /optimize+ /platform:anycpu `
+& $csc /nologo /target:winexe /codepage:65001 /optimize+ /platform:x64 `
     "/win32icon:$icon" "/out:$output" `
-    /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Web.Extensions.dll `
+    /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll `
+    "/r:$webviewCore" "/r:$webviewForms" `
     $sources
 
 if ($LASTEXITCODE -ne 0) { throw "csc failed (exit $LASTEXITCODE)" }
