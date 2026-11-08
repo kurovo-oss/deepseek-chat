@@ -122,7 +122,7 @@ Function ConfigPageCreate
   ${NSD_CreateCheckbox} 0 190u 100% 12u "开机时自动启动机器人"
   Pop $AutoStartCheck
 
-  ${NSD_CreateLabel} 0 210u 100% 24u "QQ 登录需要 NapCat 扫码；安装完成后会打开使用说明。"
+  ${NSD_CreateLabel} 0 210u 100% 30u "QQ 登录由第三方 NapCat 扫码完成，自动化操作有账号风险，建议使用小号；详见安装目录的 SAFETY.md。"
   Pop $0
 
   nsDialogs::Show
@@ -223,6 +223,8 @@ keep_data:
   Delete "$INSTDIR\WebView2Loader.dll"
   Delete "$INSTDIR\README.md"
   Delete "$INSTDIR\LICENSE"
+  Delete "$INSTDIR\SAFETY.md"
+  Delete "$INSTDIR\THIRD-PARTY-NOTICES.md"
   Delete "$INSTDIR\.env.example"
   Delete "$INSTDIR\setup.env"
   Delete "$INSTDIR\Uninstall.exe"

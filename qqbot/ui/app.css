@@ -240,7 +240,7 @@ hr{border:0;border-top:1px dashed rgba(126,200,255,.12);margin:8px 0}
 .onb-result{min-height:18px;margin:4px 0 0;font-size:10px;line-height:1.6;color:#8fb3cc;overflow-wrap:anywhere}
 .onb-result.ok{color:var(--green)}
 .onb-result.bad{color:var(--rose)}
-.onb-hint{padding:10px 12px;border-left:2px solid rgba(90,215,255,.45);background:rgba(90,215,255,.045);border-radius:0 9px 9px 0;color:#8fb3cc;font-size:10px;line-height:1.75}
+.onb-hint{margin:0 0 12px;padding:10px 12px;border-left:2px solid rgba(90,215,255,.45);background:rgba(90,215,255,.045);border-radius:0 9px 9px 0;color:#8fb3cc;font-size:10px;line-height:1.75}
 .onboarding-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:9px;margin-top:18px;padding-top:14px;border-top:1px solid rgba(126,200,255,.1)}
 .onb-btn{height:36px;padding:0 15px;border-radius:10px;border:1px solid rgba(126,200,255,.2);background:rgba(90,215,255,.06);color:#cfe5f2;font:11px inherit;cursor:pointer;transition:.18s}
 .onb-btn:hover{border-color:rgba(90,215,255,.38);color:#f1fbff}

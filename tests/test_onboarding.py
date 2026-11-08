@@ -195,4 +195,5 @@ def test_ui_has_first_run_onboarding():
     assert "第一次打开" in html
     assert "/api/onboarding/test-model" in js
     assert "/api/onboarding/open-napcat" in js
+    assert "账号被限制" in js
     assert ".onboarding-panel" in css

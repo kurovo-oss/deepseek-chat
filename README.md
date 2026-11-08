@@ -10,6 +10,14 @@
 - 人格卡：[docs/persona/dafeiyu.md](docs/persona/dafeiyu.md)
 - 原生控制台设计：[docs/native-ui.md](docs/native-ui.md)
 - 交互演示（无后端）：[demo/index.html](demo/index.html)
+- 使用前必读：[SAFETY.md](SAFETY.md)
+- 第三方组件与素材：[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)
+
+## 使用前必读
+
+大肥鱼通过第三方 NapCat / QQ NT 连接 QQ，不是腾讯官方接口；自动回复、主动消息、空间和抖音操作都有账号被限制或封禁的风险。建议只用小号，并先看 [SAFETY.md](SAFETY.md)。
+
+模型 API Key 目前以明文保存在本机 `.env`，请使用单独的 Key、设置额度，不要把安装目录或 `.env` 发给别人。
 
 ## 当前状态：M1
 

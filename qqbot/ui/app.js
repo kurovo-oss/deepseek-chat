@@ -545,6 +545,7 @@
     body.append(el('p', 'onb-note', model.key_set
       ? `API Key 已保存（${model.key_hint}），不会在页面里显示明文。`
       : '还没有保存 API Key，请先去配置页填写。'));
+    body.append(el('div', 'onb-hint', '使用提醒：她通过第三方 NapCat 连接 QQ，自动化操作有账号被限制或封禁的风险，建议用小号；API Key 目前以明文保存在本机 .env，请单独申请并设置额度。'));
     body.append(el('p', 'onb-lead', '先点一次测试。只有真的调通模型，她才能开口说话。'));
 
     const result = el('p', `onb-result ${onboarding.testOk ? 'ok' : onboarding.testDetail ? 'bad' : ''}`.trim());

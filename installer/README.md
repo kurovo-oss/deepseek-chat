@@ -1,5 +1,7 @@
 # 安装版打包说明
 
+对外分发前先读 [SAFETY.md](../SAFETY.md) 和 [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md)：安装包会携带 NapCat / QQ NT 和第三方面板运行时，账号风险与授权范围需要由分发者自行确认。
+
 ## 构建
 
 NSIS 编译器放在 `tools\nsis\makensis.exe`，该目录不入库。构建脚本会把运行所需文件

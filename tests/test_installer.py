@@ -23,6 +23,8 @@ def test_installer_script_is_a_per_user_windows_installer():
     assert 'RMDir /r "$INSTDIR\\assets"' in script
     assert 'RMDir /r "$INSTDIR\\docs"' in script
     assert "IfSilent keep_data" in script
+    assert 'Delete "$INSTDIR\\SAFETY.md"' in script
+    assert 'Delete "$INSTDIR\\THIRD-PARTY-NOTICES.md"' in script
 
 
 def test_installer_build_is_reproducible():
@@ -31,6 +33,8 @@ def test_installer_build_is_reproducible():
     assert "build\\installer" in script
     assert "payload" in script
     assert "setup.env" in script
+    assert "SAFETY.md" in script
+    assert "THIRD-PARTY-NOTICES.md" in script
     assert "Dafeiyu-Setup-1.0.0.exe" in script
     assert "tools\\python" in script
     assert "NapCat-" in script

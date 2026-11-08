@@ -62,6 +62,8 @@ foreach ($name in @(
     "WebView2Loader.dll",
     "README.md",
     "LICENSE",
+    "SAFETY.md",
+    "THIRD-PARTY-NOTICES.md",
     ".env.example"
 )) {
     Copy-File $name
