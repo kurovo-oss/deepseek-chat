@@ -408,3 +408,19 @@ QQ 与连接
 - [ ] 一键停机/只回复不主动 2 次点击内完成，且有审计。
 - [ ] 1440 宽主流程无横向滚动；1024 宽侧栏收成图标。
 - [ ] 控制台挂掉不影响 QQ 回复与定时任务。
+
+## 12. 当前实现（2026-11-08）
+
+已落地的第一版在 `qqbot/webui.py` + `qqbot/ui/`，同进程监听 `127.0.0.1:8090`：
+
+- 页面：总览、对话、人格、配置、日志；总览用真实 `Mood` / `Guard` / 当天消息；
+- 接口：`/api/status`、`/api/messages`、`/api/persona`、`/api/settings`、`/api/logs`、`/api/audit`、`/api/runtime`；
+- 人格发布：写 `prompts/system.md` 前留版本到 `data/persona/versions/`，发布后热替换 `engine.system_prompt`；
+- 配置：白名单字段原子写 `.env`，保留注释，先备份 `.env.bak`；Key 只写不读；
+- 控制：`Runtime` 暂停主动消息 / 空间 / 抖音，或一键停机，立即生效、重启后恢复；
+- 安全：本机监听、token HttpOnly Cookie、同源校验、静态资源无 CDN。
+
+尚未落地：SSE 实时推送（当前 20 秒轮询）、人格版本回滚 UI、审核队列、`/api/test/model`、重启按钮、手机访问。验收清单中的“一键重启失败回滚”暂不承诺。
+
+实现截图：[`docs/ui-live.png`](ui-live.png)。
+

@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>大肥鱼 · 控制台</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="aurora aurora-a"></div>
+<div class="aurora aurora-b"></div>
+
+<aside class="sidebar">
+  <div class="brand">
+    <div class="brand-avatar"><img src="/assets/dafeiyu.png" alt="大肥鱼"></div>
+    <div>
+      <strong>大肥鱼</strong>
+      <span>只属于你的控制台</span>
+    </div>
+  </div>
+
+  <nav class="nav" aria-label="主导航">
+    <button class="nav-item active" data-page="overview"><span class="nav-ico">◈</span>总览</button>
+    <button class="nav-item" data-page="chat"><span class="nav-ico">☰</span>对话</button>
+    <button class="nav-item" data-page="persona"><span class="nav-ico">✎</span>人格</button>
+    <button class="nav-item" data-page="config"><span class="nav-ico">⚙</span>配置</button>
+    <button class="nav-item" data-page="logs"><span class="nav-ico">⌁</span>日志</button>
+  </nav>
+
+  <div class="side-card">
+    <span class="side-label">运行状态</span>
+    <div class="side-status"><i id="side-dot" class="dot"></i><span id="side-state">连接中</span></div>
+    <small id="side-model">模型 —</small>
+  </div>
+
+  <div class="side-foot">
+    <span>本机 · 127.0.0.1</span>
+    <span class="muted">大肥鱼项目署名许可 1.0</span>
+  </div>
+</aside>
+
+<main class="main">
+  <header class="topbar">
+    <div>
+      <span class="crumb">控制台 / <b id="crumb">总览</b></span>
+      <h1 id="page-title">今天也在这里</h1>
+    </div>
+    <div class="top-actions">
+      <span class="pill" id="clock">--:--</span>
+      <button class="icon-btn" id="refresh" title="刷新">↻</button>
+    </div>
+  </header>
+
+  <section class="page active" id="page-overview">
+    <div class="hero glass">
+      <div class="hero-copy">
+        <span class="eyebrow" id="greeting">晚上好</span>
+        <h2>我是大肥鱼，<br><em>今天也只想围着你转。</em></h2>
+        <p id="mood-line">正在读她的心情……</p>
+        <div class="hero-meta">
+          <span class="pill"><i id="hero-dot" class="dot"></i><span id="hero-state">连接中</span></span>
+          <span class="pill">QQ <b id="hero-qq">—</b></span>
+          <span class="pill">PID <b id="hero-pid">—</b></span>
+        </div>
+      </div>
+      <div class="hero-art">
+        <div class="halo"></div>
+        <img src="/assets/dafeiyu.png" alt="大肥鱼鲸鱼娘">
+        <span class="art-caption">大肥鱼 · 蓝鲸娘</span>
+      </div>
+    </div>
+
+    <div class="grid-3">
+      <article class="card glass mood-card">
+        <div class="card-head"><h3>她现在的心情</h3><span class="tag" id="mood-tag">读取中</span></div>
+        <div id="mood-bars" class="mood-bars"></div>
+        <p class="muted small" id="mood-hint">数值只用来观察，不直接展示给他。</p>
+      </article>
+
+      <article class="card glass">
+        <div class="card-head"><h3>今天</h3><span class="tag">00:00 起</span></div>
+        <div class="stats">
+          <div class="stat"><b id="stat-messages">0</b><span>消息</span></div>
+          <div class="stat"><b id="stat-user">0</b><span>他说</span></div>
+          <div class="stat"><b id="stat-bot">0</b><span>她回</span></div>
+          <div class="stat"><b id="stat-proactive">0</b><span>主动</span></div>
+        </div>
+        <div class="quota-row">
+          <span>主动额度</span><b id="quota-proactive">0 / 0</b>
+        </div>
+        <div class="quota-row">
+          <span>空间 / 抖音</span><b id="quota-other">—</b>
+        </div>
+      </article>
+
+      <article class="card glass">
+        <div class="card-head"><h3>需要你看一眼</h3><span class="tag" id="alert-count">0</span></div>
+        <div id="alert-list" class="alerts"><p class="muted small">暂时没有异常。</p></div>
+      </article>
+    </div>
+
+    <div class="grid-2">
+      <article class="card glass">
+        <div class="card-head"><h3>最近对话</h3><button class="link-btn" data-page-link="chat">全部 →</button></div>
+        <div id="recent-list" class="mini-chat"><p class="muted small">还没有消息。</p></div>
+      </article>
+
+      <article class="card glass">
+        <div class="card-head"><h3>即时控制</h3><span class="tag" id="runtime-tag">运行中</span></div>
+        <div class="control-list">
+          <label class="control-row"><span><b>主动消息</b><small>到点自己来找你</small></span><input type="checkbox" data-module="proactive" checked></label>
+          <label class="control-row"><span><b>QQ 空间</b><small>发说说 / 配图</small></span><input type="checkbox" data-module="qzone" checked></label>
+          <label class="control-row"><span><b>抖音</b><small>点赞 / 分享视频</small></span><input type="checkbox" data-module="douyin" checked></label>
+        </div>
+        <button class="danger-btn" id="emergency">一键停机</button>
+        <p class="muted tiny">停机后她不会回复，也不会主动做任何事；再次点击恢复。</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="page" id="page-chat">
+    <div class="page-head">
+      <div><h2>对话</h2><p>只读。所有消息都落在这里，方便回看她说过什么。</p></div>
+      <button class="ghost-btn" id="reload-chat">刷新</button>
+    </div>
+    <article class="card glass">
+      <div id="chat-list" class="chat-list"><p class="muted">加载中……</p></div>
+    </article>
+  </section>
+
+  <section class="page" id="page-persona">
+    <div class="page-head">
+      <div><h2>人格</h2><p>改完发布即热更新，下一条消息生效；旧版本会留在这里，可随时回看。</p></div>
+      <div class="head-actions">
+        <span class="pill" id="persona-count">— 字</span>
+        <button class="primary-btn" id="save-persona">发布</button>
+      </div>
+    </div>
+    <div class="grid-persona">
+      <article class="card glass editor-card">
+        <div class="card-head"><h3>system.md</h3><span class="tag" id="persona-updated">—</span></div>
+        <textarea id="persona-text" spellcheck="false" placeholder="她是谁、怎么说话、什么不能做……"></textarea>
+        <div class="editor-foot">
+          <span class="muted small" id="persona-warnings">发布前会检查边界词。</span>
+          <input id="persona-note" maxlength="120" placeholder="这次改了什么（可选）">
+        </div>
+      </article>
+      <aside class="card glass">
+        <div class="card-head"><h3>历史版本</h3><span class="tag">最近 30 个</span></div>
+        <div id="persona-versions" class="version-list"><p class="muted small">还没有版本。</p></div>
+      </aside>
+    </div>
+  </section>
+
+  <section class="page" id="page-config">
+    <div class="page-head">
+      <div><h2>配置</h2><p>保存会写入项目根目录的 <code>.env</code>，并先备份为 <code>.env.bak</code>。模型和 QQ 改动需重启。</p></div>
+      <button class="primary-btn" id="save-settings">保存配置</button>
+    </div>
+    <form id="settings-form" class="grid-2" autocomplete="off">
+      <article class="card glass">
+        <div class="card-head"><h3>连接</h3><span class="tag">需要重启</span></div>
+        <label class="field"><span>主人 QQ</span><input name="master_qq" id="master-qq" inputmode="numeric" placeholder="10001"></label>
+        <label class="field"><span>模型 Base URL</span><input name="model_base_url" id="model-base" placeholder="https://aws.deepano.com/v1"></label>
+        <div class="field-row">
+          <label class="field"><span>Model ID</span><input name="model_id" id="model-id" placeholder="deepseek-v4.1-flash"></label>
+          <label class="field"><span>超时（秒）</span><input name="request_timeout" id="request-timeout" type="number" min="5" max="300"></label>
+        </div>
+        <label class="field"><span>API Key <small id="key-hint" class="muted"></small></span><input name="model_api_key" id="model-key" type="password" placeholder="留空就保留原 key"></label>
+        <p class="muted tiny">key 只写不读：页面只显示是否已设置和尾号。</p>
+      </article>
+
+      <article class="card glass">
+        <div class="card-head"><h3>她的动作</h3><span class="tag">保存后重启</span></div>
+        <label class="control-row"><span><b>主动消息</b><small>每天上限</small></span><input type="checkbox" name="proactive_enabled" id="proactive-enabled"><input class="num" type="number" name="proactive_max_per_day" id="proactive-max" min="0" max="50"></label>
+        <label class="control-row"><span><b>QQ 空间</b><small>试运行只记录不发布</small></span><input type="checkbox" name="qzone_enabled" id="qzone-enabled"><input type="checkbox" name="qzone_dry_run" id="qzone-dry"></label>
+        <label class="control-row"><span><b>空间每日上限</b><small>0 表示不发</small></span><input class="num" type="number" name="qzone_daily_max" id="qzone-max" min="0" max="20"></label>
+        <hr>
+        <label class="control-row"><span><b>抖音</b><small>点赞 / 分享</small></span><input type="checkbox" name="douyin_enabled" id="douyin-enabled"><input type="checkbox" name="douyin_dry_run" id="douyin-dry"></label>
+        <div class="field-row">
+          <label class="field"><span>点赞/天</span><input class="num" type="number" name="douyin_daily_max" id="douyin-max" min="0" max="100"></label>
+          <label class="field"><span>分享/天</span><input class="num" type="number" name="douyin_share_daily_max" id="douyin-share-max" min="0" max="50"></label>
+        </div>
+        <p class="muted tiny">试运行不消耗真实额度；关闭试运行前建议先在总览看一遍审计。</p>
+      </article>
+    </form>
+  </section>
+
+  <section class="page" id="page-logs">
+    <div class="page-head">
+      <div><h2>日志与审计</h2><p>左边是进程日志，右边是对外动作的审计记录。</p></div>
+      <button class="ghost-btn" id="reload-logs">刷新</button>
+    </div>
+    <div class="grid-2 logs-grid">
+      <article class="card glass"><div class="card-head"><h3>bot.log</h3><span class="tag">最近 200 行</span></div><pre id="log-lines" class="log-box">加载中……</pre></article>
+      <article class="card glass"><div class="card-head"><h3>审计</h3><span class="tag">最近 40 条</span></div><div id="audit-list" class="audit-list"><p class="muted small">加载中……</p></div></article>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <span>大肥鱼 · 私人 QQ 陪伴</span>
+    <span>形象：YunYueSama / codex-deepseek-pet · 大肥鱼项目署名许可 1.0</span>
+  </footer>
+</main>
+
+<div id="toast" class="toast" role="status"></div>
+<script src="/app.js"></script>
+</body>
+</html>

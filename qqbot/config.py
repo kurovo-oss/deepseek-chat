@@ -117,6 +117,9 @@ class Settings:
     adapter_token: str = ""
     listen_host: str = "127.0.0.1"
     listen_port: int = 8080
+    ui_enabled: bool = True
+    ui_host: str = "127.0.0.1"
+    ui_port: int = 8090
     reply_max_chars: int = 300
     reply_max_bubbles: int = 5
     segment_delay_ms: int = 1500
@@ -357,6 +360,9 @@ class Settings:
             adapter_token=env.get("ADAPTER_TOKEN", "").strip(),
             listen_host=env.get("LISTEN_HOST", "127.0.0.1").strip(),
             listen_port=_int(env, "LISTEN_PORT", 8080),
+            ui_enabled=_bool(env, "UI_ENABLED", True),
+            ui_host=env.get("UI_HOST", "127.0.0.1").strip(),
+            ui_port=_int(env, "UI_PORT", 8090, minimum=1024),
             reply_max_chars=_int(env, "REPLY_MAX_CHARS", 300, minimum=40),
             reply_max_bubbles=_int(env, "REPLY_MAX_BUBBLES", 5, minimum=1),
             segment_delay_ms=_int(env, "SEGMENT_DELAY_MS", 1500, minimum=0),

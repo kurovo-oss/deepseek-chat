@@ -567,8 +567,10 @@ def maybe_post(store, llm, settings, guard, sender, now: int | None = None, mood
     return publish(store, guard, sender, matter["text"], matter["image"], now=stamp, reason="定时", claims=ledger)
 
 
-def tick_loop(store, llm, settings, guard, sender, stop_event, interval: float = 300.0, mood=None) -> None:
+def tick_loop(store, llm, settings, guard, sender, stop_event, interval: float = 300.0, mood=None, runtime=None) -> None:
     while not stop_event.wait(interval):
+        if runtime is not None and not runtime.enabled("qzone"):
+            continue
         try:
             result = maybe_post(store, llm, settings, guard, sender, mood=mood)
             if result is not None:

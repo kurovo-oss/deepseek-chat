@@ -19,6 +19,20 @@
 
 代价：她不再有凭空的小日子，生活线更像「今天真实发生」的记录。这是主人 2026-11-08 明确选的取舍。
 
+### 本地控制台（2026-11-08）
+
+`qqbot/webui.py` 起一个只监听 `127.0.0.1:8090` 的同进程控制台，静态页在 `qqbot/ui/`：
+
+- 总览读真实的 `Mood`、`Guard` 和当天消息，显示心情、额度、异常与最近对话；
+- 人格页发布 `prompts/system.md` 后直接替换 `engine.system_prompt`，下一条消息生效，同时留版本到 `data/persona/versions/`；
+- 配置页只允许白名单字段，写 `.env` 前备份 `.env.bak`，API Key 只写不读；
+- 即时控制通过 `Runtime` 暂停主动消息 / 空间 / 抖音，或一键停机；重启进程后恢复；
+- token 首启生成到 `data/ui-token`，日志打印一次访问地址。
+
+已实现的接口集中在 `/api/status`、`/api/messages`、`/api/persona`、`/api/settings`、
+`/api/logs`、`/api/audit`、`/api/runtime`。设计稿里的 SSE、审核队列、人格回滚 UI
+和重启按钮还没做，当前版本先保证「能看、能改、能停」。
+
 ---
 
 ## 里程碑

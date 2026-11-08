@@ -1,0 +1,716 @@
+"""本地控制台：只监听 127.0.0.1，给主人看状态、改人格、改配置。
+
+设计约束：
+- 同进程线程：能直接读 engine.mood / guard，暂停开关立即生效；
+- 标准库实现：不引 Web 框架，静态文件从 qqbot/ui/ 读；
+- 密钥只写不读：GET 只返回 has_key / 尾号；
+- 所有写操作要求同源 + 登录 Cookie，配置改动先备份 .env。
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import re
+import secrets
+import shutil
+import threading
+import time
+import urllib.parse
+from collections import Counter, deque
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+from . import config as config_mod
+from .mood import mood_line
+from .runtime import MODULES, Runtime
+
+log = logging.getLogger("qqbot.webui")
+
+SESSION_COOKIE = "dafeiyu_ui"
+MAX_BODY = 200_000
+UI_DIR = Path(__file__).with_name("ui")
+PERSONA_MIN_CHARS = 200
+PERSONA_MAX_CHARS = 40_000
+
+MIME = {
+    ".html": "text/html; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".js": "application/javascript; charset=utf-8",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".svg": "image/svg+xml",
+    ".ico": "image/x-icon",
+}
+
+# 只允许改这些，不开放任意键
+SETTING_KEYS = {
+    "master_qq": "ALLOW_USER_ID",
+    "model_base_url": "MODEL_BASE_URL",
+    "model_id": "MODEL_ID",
+    "model_api_key": "MODEL_API_KEY",
+    "request_timeout": "REQUEST_TIMEOUT",
+    "proactive_enabled": "PROACTIVE_ENABLED",
+    "proactive_max_per_day": "PROACTIVE_MAX_PER_DAY",
+    "qzone_enabled": "QZONE_ENABLED",
+    "qzone_dry_run": "QZONE_DRY_RUN",
+    "qzone_daily_max": "QZONE_DAILY_MAX",
+    "douyin_enabled": "DOUYIN_ENABLED",
+    "douyin_dry_run": "DOUYIN_DRY_RUN",
+    "douyin_daily_max": "DOUYIN_DAILY_MAX",
+    "douyin_share_daily_max": "DOUYIN_SHARE_DAILY_MAX",
+}
+
+_SECRET_FIELDS = {"model_api_key"}
+
+
+def _atomic_write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _atomic_bytes(path: Path, data: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_bytes(data)
+    os.replace(tmp, path)
+
+
+def _env_quote(value: object) -> str:
+    text = str(value)
+    if text == "":
+        return '""'
+    if re.search(r"[\s#\"']", text):
+        return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    return text
+
+
+def _write_env(path: Path, updates: dict[str, str]) -> None:
+    """保留注释和顺序，只替换指定键。"""
+    old = path.read_text(encoding="utf-8") if path.exists() else ""
+    lines = old.splitlines()
+    seen: set[str] = set()
+    out: list[str] = []
+    for line in lines:
+        match = re.match(r"^(\s*(?:export\s+)?)([A-Za-z_][A-Za-z0-9_]*)(\s*=\s*)(.*)$", line)
+        if match and match.group(2) in updates:
+            key = match.group(2)
+            out.append(f"{match.group(1)}{key}={_env_quote(updates[key])}")
+            seen.add(key)
+        else:
+            out.append(line)
+    if seen != set(updates):
+        if out and out[-1].strip():
+            out.append("")
+        for key, value in updates.items():
+            if key not in seen:
+                out.append(f"{key}={_env_quote(value)}")
+    backup = path.with_name(path.name + ".bak")
+    if path.exists():
+        shutil.copy2(path, backup)
+    _atomic_write(path, "\n".join(out) + "\n")
+
+
+def _today_start(now: int) -> int:
+    lt = time.localtime(now)
+    return int(time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1)))
+
+
+def _persona_paths(settings) -> tuple[Path, Path, Path]:
+    base = Path(settings.base_dir)
+    return (
+        Path(settings.system_prompt_file),
+        base / "data" / "persona" / "versions",
+        base / "data" / "persona" / "versions.json",
+    )
+
+
+def read_persona(settings) -> dict:
+    path, versions_dir, index_path = _persona_paths(settings)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        text = ""
+    versions = []
+    try:
+        entries = json.loads(index_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        entries = []
+    for item in entries[:30]:
+        if isinstance(item, dict) and item.get("file"):
+            versions.append(
+                {
+                    "file": item["file"],
+                    "at": item.get("at", 0),
+                    "chars": item.get("chars", 0),
+                    "note": item.get("note", ""),
+                }
+            )
+    return {
+        "text": text,
+        "chars": len(text),
+        "tokens": max(1, int(len(text) / 1.7)),
+        "updated_at": int(path.stat().st_mtime) if path.exists() else 0,
+        "versions": versions,
+        "warnings": persona_warnings(text),
+    }
+
+
+def persona_warnings(text: str) -> list[str]:
+    warnings = []
+    for word, label in (("不编", "缺少“不编造”边界"), ("线下", "缺少“不线下”边界"), ("做不到", "缺少能力边界")):
+        if word not in text:
+            warnings.append(label)
+    return warnings
+
+
+def save_persona(settings, engine, text: str, note: str = "") -> dict:
+    text = (text or "").strip()
+    if len(text) < PERSONA_MIN_CHARS:
+        raise ValueError(f"人格太短（至少 {PERSONA_MIN_CHARS} 字）")
+    if len(text) > PERSONA_MAX_CHARS:
+        raise ValueError(f"人格太长（最多 {PERSONA_MAX_CHARS} 字）")
+    missing = persona_warnings(text)
+    if len(missing) >= 3:
+        raise ValueError("缺少安全边界：至少写清“不编造 / 不线下 / 能力边界”中的一条")
+    path, versions_dir, index_path = _persona_paths(settings)
+    stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime())
+    version = f"{stamp}-{int(time.time() * 1000) % 1000:03d}"
+    versions_dir.mkdir(parents=True, exist_ok=True)
+    _atomic_write(versions_dir / f"{version}.md", text)
+    try:
+        entries = json.loads(index_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        entries = []
+    entries.insert(
+        0,
+        {
+            "file": f"{version}.md",
+            "at": int(time.time()),
+            "chars": len(text),
+            "note": (note or "")[:120],
+        },
+    )
+    _atomic_write(index_path, json.dumps(entries[:50], ensure_ascii=False, indent=2))
+    _atomic_write(path, text)
+    engine.system_prompt = text
+    return {"ok": True, "version": version, "chars": len(text), "warnings": persona_warnings(text)}
+
+
+def settings_payload(settings) -> dict:
+    env_path = Path(settings.base_dir) / ".env"
+    has_key = bool(settings.model_api_key)
+    hint = ""
+    if has_key:
+        key = settings.model_api_key
+        hint = key[:3] + "…" + key[-4:] if len(key) > 8 else "已设置"
+    return {
+        "master_qq": str(settings.allow_user_id),
+        "model": {
+            "base_url": settings.model_base_url,
+            "id": settings.model_id,
+            "api_key_set": has_key,
+            "api_key_hint": hint,
+            "timeout": settings.request_timeout,
+        },
+        "behavior": {
+            "proactive_enabled": bool(settings.proactive_enabled),
+            "proactive_max_per_day": settings.proactive_max_per_day,
+            "qzone_enabled": bool(settings.qzone_enabled),
+            "qzone_dry_run": bool(settings.qzone_dry_run),
+            "qzone_daily_max": settings.qzone_daily_max,
+            "douyin_enabled": bool(settings.douyin_enabled),
+            "douyin_dry_run": bool(settings.douyin_dry_run),
+            "douyin_daily_max": settings.douyin_daily_max,
+            "douyin_share_daily_max": settings.douyin_share_daily_max,
+        },
+        "env_path": str(env_path),
+        "env_exists": env_path.exists(),
+    }
+
+
+def _as_bool(value, name: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    raise ValueError(f"{name} 必须是布尔值")
+
+
+def _as_int(value, name: str, low: int, high: int) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} 必须是整数") from exc
+    if not low <= number <= high:
+        raise ValueError(f"{name} 必须在 {low}~{high} 之间")
+    return number
+
+
+def _as_text(value, name: str, max_len: int = 300) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{name} 必须是字符串")
+    text = value.strip()
+    if not text or len(text) > max_len:
+        raise ValueError(f"{name} 不能为空，且不超过 {max_len} 字")
+    return text
+
+
+def save_settings(settings, payload: dict) -> dict:
+    updates: dict[str, str] = {}
+    for field, raw in payload.items():
+        if field not in SETTING_KEYS:
+            continue
+        if field == "master_qq":
+            text = _as_text(raw, "主人 QQ", 20)
+            if not text.isdigit() or not 5 <= len(text) <= 12:
+                raise ValueError("主人 QQ 必须是 5~12 位数字")
+            updates["ALLOW_USER_ID"] = text
+        elif field == "model_base_url":
+            text = _as_text(raw, "Base URL", 500).rstrip("/")
+            parsed = urllib.parse.urlsplit(text)
+            if parsed.scheme not in ("http", "https") or not parsed.netloc:
+                raise ValueError("Base URL 必须是 http(s) 地址")
+            updates["MODEL_BASE_URL"] = text
+        elif field == "model_id":
+            text = _as_text(raw, "Model ID", 100)
+            if not re.fullmatch(r"[A-Za-z0-9._:/-]+", text):
+                raise ValueError("Model ID 只能包含字母、数字和 . _ : / -")
+            updates["MODEL_ID"] = text
+        elif field == "model_api_key":
+            if raw in ("", None):
+                continue
+            text = _as_text(raw, "API Key", 300)
+            updates["MODEL_API_KEY"] = text
+        elif field == "request_timeout":
+            updates["REQUEST_TIMEOUT"] = str(_as_int(raw, "超时", 5, 300))
+        elif field in ("proactive_enabled", "qzone_enabled", "qzone_dry_run", "douyin_enabled", "douyin_dry_run"):
+            updates[SETTING_KEYS[field]] = "true" if _as_bool(raw, field) else "false"
+        elif field == "proactive_max_per_day":
+            updates["PROACTIVE_MAX_PER_DAY"] = str(_as_int(raw, "主动消息上限", 0, 50))
+        elif field == "qzone_daily_max":
+            updates["QZONE_DAILY_MAX"] = str(_as_int(raw, "空间上限", 0, 20))
+        elif field == "douyin_daily_max":
+            updates["DOUYIN_DAILY_MAX"] = str(_as_int(raw, "抖音点赞上限", 0, 100))
+        elif field == "douyin_share_daily_max":
+            updates["DOUYIN_SHARE_DAILY_MAX"] = str(_as_int(raw, "抖音分享上限", 0, 50))
+    if not updates:
+        raise ValueError("没有可保存的字段")
+    env_path = Path(settings.base_dir) / ".env"
+    _write_env(env_path, updates)
+    return {"ok": True, "saved": sorted(updates), "restart_required": True}
+
+
+def tail_log(settings, limit: int = 200) -> list[str]:
+    path = Path(settings.log_dir) / "bot.log"
+    if not path.exists():
+        path = Path(settings.base_dir) / "logs" / "bot.log"
+    if not path.exists():
+        return []
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as handle:
+            return list(deque(handle, maxlen=max(1, min(limit, 1000))))
+    except OSError:
+        return []
+
+
+def build_status(engine, runtime: Runtime | None = None, now: int | None = None) -> dict:
+    stamp = int(now if now is not None else time.time())
+    settings = engine.settings
+    store = engine.store
+    start = _today_start(stamp)
+    try:
+        rows = store.messages_between(start, stamp + 1, limit=3000)
+    except Exception:  # noqa: BLE001 - 控制台不能因为统计失败整页挂
+        rows = []
+    roles = Counter(row.get("role") for row in rows)
+    origins = Counter(row.get("origin") for row in rows)
+    try:
+        proactive_today = store.count_proactive_since(start)
+    except Exception:  # noqa: BLE001
+        proactive_today = 0
+
+    mood_values: dict = {}
+    mood_text = ""
+    if getattr(engine, "mood", None) is not None:
+        try:
+            mood_values = engine.mood.snapshot(stamp)
+            mood_text = mood_line(mood_values)
+        except Exception:  # noqa: BLE001
+            mood_values = {}
+    guard_status: dict = {}
+    if getattr(engine, "guard", None) is not None:
+        try:
+            guard_status = engine.guard.status(stamp)
+        except Exception:  # noqa: BLE001
+            guard_status = {}
+    recent = []
+    try:
+        recent = store.recent_messages(str(settings.allow_user_id), 8)
+    except Exception:  # noqa: BLE001
+        recent = []
+    persona = read_persona(settings)
+
+    alerts = []
+    qzone = guard_status.get("qzone", {})
+    if qzone.get("circuit_open"):
+        alerts.append({"level": "bad", "title": "空间已熔断", "detail": "连续失败，30 分钟后重试"})
+    if qzone and qzone.get("enabled") and qzone.get("used_today", 0) >= (qzone.get("daily_quota") or 0):
+        alerts.append({"level": "warn", "title": "空间今日额度已用完", "detail": f"{qzone.get('used_today')} / {qzone.get('daily_quota')}"})
+    douyin = guard_status.get("douyin", {})
+    if douyin.get("circuit_open"):
+        alerts.append({"level": "bad", "title": "抖音已熔断", "detail": "连续失败，30 分钟后重试"})
+    if not persona["text"]:
+        alerts.append({"level": "bad", "title": "人格文件为空", "detail": "prompts/system.md 读不到"})
+    if runtime is not None and runtime.emergency:
+        alerts.append({"level": "bad", "title": "控制台已停机", "detail": "回复和所有主动动作都停了"})
+
+    return {
+        "now": stamp,
+        "pid": os.getpid(),
+        "uptime": max(0, int(time.time() - PROCESS_STARTED)),
+        "master_qq": str(settings.allow_user_id),
+        "model": settings.model_id,
+        "mood": {
+            "values": mood_values,
+            "line": mood_text,
+        },
+        "today": {
+            "messages": len(rows),
+            "user": roles.get("user", 0),
+            "bot": roles.get("assistant", 0),
+            "proactive": proactive_today,
+            "proactive_max": settings.proactive_max_per_day,
+            "qzone": origins.get("qzone", 0),
+            "douyin": origins.get("douyin", 0) + origins.get("douyin_share", 0),
+        },
+        "guard": guard_status,
+        "runtime": runtime.snapshot() if runtime is not None else {"emergency": False, "paused": {}},
+        "persona": {
+            "chars": persona["chars"],
+            "tokens": persona["tokens"],
+            "updated_at": persona["updated_at"],
+            "warnings": persona["warnings"],
+        },
+        "messages": [_message_row(row) for row in recent],
+        "alerts": alerts,
+    }
+
+
+def _message_row(row: dict) -> dict:
+    return {
+        "id": row.get("id"),
+        "role": row.get("role"),
+        "content": row.get("content") or "",
+        "origin": row.get("origin") or "reply",
+        "created_at": row.get("created_at") or 0,
+        "send_state": row.get("send_state") or "",
+    }
+
+
+PROCESS_STARTED = time.time()
+
+
+class WebUI:
+    def __init__(self, engine, settings, runtime: Runtime | None = None) -> None:
+        self.engine = engine
+        self.settings = settings
+        self.runtime = runtime
+        self.base = Path(settings.base_dir)
+        self.token = self._load_token()
+        self.httpd: ThreadingHTTPServer | None = None
+        self.thread: threading.Thread | None = None
+
+    def _load_token(self) -> str:
+        path = self.base / "data" / "ui-token"
+        try:
+            token = path.read_text(encoding="ascii").strip()
+        except OSError:
+            token = ""
+        if len(token) < 24:
+            token = secrets.token_urlsafe(24)
+            _atomic_write(path, token + "\n")
+        return token
+
+    def start(self):
+        host = getattr(self.settings, "ui_host", "127.0.0.1")
+        port = int(getattr(self.settings, "ui_port", 8090))
+        try:
+            self.httpd = ThreadingHTTPServer((host, port), make_handler(self))
+        except OSError as exc:
+            log.warning("控制台没起来（%s:%s）：%s", host, port, exc)
+            return None
+        self.httpd.daemon_threads = True
+        self.thread = threading.Thread(target=self.httpd.serve_forever, name="webui", daemon=True)
+        self.thread.start()
+        log.info("控制台：http://%s:%s/?token=%s", host, port, self.token)
+        return self
+
+    def stop(self) -> None:
+        if self.httpd is not None:
+            self.httpd.shutdown()
+            self.httpd.server_close()
+            self.httpd = None
+
+    # ---------------- API ----------------
+
+    def _audit(self, action: str, target: str = "", result: str = "ok", error: str = "") -> None:
+        guard = getattr(self.engine, "guard", None)
+        if guard is None or not hasattr(guard, "record"):
+            return
+        try:
+            guard.record("ui", action, target=target, result=result, error=error)
+        except Exception:  # noqa: BLE001 - 审计失败不能影响页面动作
+            log.info("控制台审计写入失败", exc_info=True)
+
+    def api_status(self) -> dict:
+        return build_status(self.engine, self.runtime)
+
+    def api_messages(self, limit: int = 50) -> dict:
+        rows = self.engine.store.recent_messages(str(self.settings.allow_user_id), max(1, min(limit, 100)))
+        return {"messages": [_message_row(row) for row in rows]}
+
+    def api_persona(self) -> dict:
+        return read_persona(self.settings)
+
+    def api_save_persona(self, body: dict) -> dict:
+        result = save_persona(self.settings, self.engine, str(body.get("text", "")), str(body.get("note", "")))
+        self._audit("publish_persona", target=str(result.get("version", "")), result="ok")
+        return result
+
+    def api_settings(self) -> dict:
+        return settings_payload(self.settings)
+
+    def api_save_settings(self, body: dict) -> dict:
+        result = save_settings(self.settings, body)
+        self._audit("save_settings", target=",".join(result.get("saved", [])), result="ok")
+        return result
+
+    def api_logs(self, limit: int = 200) -> dict:
+        return {"lines": tail_log(self.settings, limit)}
+
+    def api_audit(self, limit: int = 40) -> dict:
+        guard = getattr(self.engine, "guard", None)
+        rows = guard.recent(max(1, min(limit, 200))) if guard is not None else []
+        return {"items": rows}
+
+    def api_runtime(self, body: dict) -> dict:
+        if self.runtime is None:
+            raise ValueError("运行时控制未启用")
+        if "emergency" in body:
+            on = _as_bool(body["emergency"], "emergency")
+            self.runtime.set_emergency(on)
+            self._audit("emergency", target="on" if on else "off")
+        elif "resume_all" in body and body["resume_all"]:
+            self.runtime.resume_all()
+            self._audit("resume_all")
+        elif "module" in body:
+            module = str(body["module"])
+            if module not in MODULES:
+                raise ValueError("未知模块")
+            paused = _as_bool(body.get("paused"), "paused")
+            self.runtime.set_paused(module, paused)
+            self._audit("pause" if paused else "resume", target=module)
+        else:
+            raise ValueError("缺少动作")
+        return self.runtime.snapshot()
+
+
+def make_handler(app: WebUI):
+
+    class Handler(BaseHTTPRequestHandler):
+        server_version = "dafeiyu-ui/0.1"
+
+        # ---------- auth ----------
+        def _cookie_token(self) -> str:
+            raw = self.headers.get("Cookie") or ""
+            for part in raw.split(";"):
+                name, _, value = part.strip().partition("=")
+                if name == SESSION_COOKIE:
+                    return value
+            return ""
+
+        def _query_token(self) -> str:
+            query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            return (query.get("token") or [""])[0]
+
+        def _authed(self) -> bool:
+            token = self._cookie_token() or self.headers.get("X-UI-Token") or ""
+            return secrets.compare_digest(token, app.token)
+
+        def _redirect_login(self) -> None:
+            self.send_response(302)
+            self.send_header("Location", "/")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def _check_auth(self) -> bool:
+            if self._authed():
+                return True
+            query_token = self._query_token()
+            if query_token and secrets.compare_digest(query_token, app.token):
+                path = urllib.parse.urlsplit(self.path).path or "/"
+                self.send_response(302)
+                self.send_header("Location", path)
+                self.send_header(
+                    "Set-Cookie",
+                    f"{SESSION_COOKIE}={app.token}; Path=/; HttpOnly; SameSite=Strict",
+                )
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return False
+            if self.path.split("?")[0] in ("/", "/index.html"):
+                self._serve_login()
+                return False
+            self._json({"error": "unauthorized"}, 401)
+            return False
+
+        def _serve_login(self) -> None:
+            body = LOGIN_HTML.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _same_origin(self) -> bool:
+            origin = self.headers.get("Origin") or ""
+            host = self.headers.get("Host") or ""
+            if origin:
+                return origin == f"http://{host}"
+            return (self.headers.get("Sec-Fetch-Site") or "") in ("same-origin", "none")
+
+        # ---------- responses ----------
+        def _json(self, payload: dict, status: int = 200) -> None:
+            body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _error(self, exc: Exception, status: int = 400) -> None:
+            self._json({"error": str(exc)[:300]}, status)
+
+        def _read_json(self) -> dict:
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                length = 0
+            if length > MAX_BODY:
+                raise ValueError("请求体太大")
+            raw = self.rfile.read(length) if length else b"{}"
+            try:
+                data = json.loads(raw.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise ValueError("请求体不是 JSON") from exc
+            if not isinstance(data, dict):
+                raise ValueError("请求体必须是对象")
+            return data
+
+        def _serve_static(self) -> None:
+            path = urllib.parse.unquote(urllib.parse.urlsplit(self.path).path)
+            rel = "index.html" if path in ("/", "/index.html") else path.lstrip("/")
+            target = (UI_DIR / rel).resolve()
+            try:
+                target.relative_to(UI_DIR.resolve())
+            except ValueError:
+                self.send_error(404)
+                return
+            if not target.is_file():
+                self.send_error(404)
+                return
+            data = target.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", MIME.get(target.suffix.lower(), "application/octet-stream"))
+            self.send_header("Cache-Control", "no-cache" if target.suffix == ".html" else "public, max-age=300")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        # ---------- routes ----------
+        def do_GET(self) -> None:  # noqa: N802
+            if not self._check_auth():
+                return
+            path = urllib.parse.urlsplit(self.path).path
+            try:
+                if path == "/api/status":
+                    self._json(app.api_status())
+                elif path == "/api/messages":
+                    limit = int((urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get("limit") or ["50"])[0])
+                    self._json(app.api_messages(limit))
+                elif path == "/api/persona":
+                    self._json(app.api_persona())
+                elif path == "/api/settings":
+                    self._json(app.api_settings())
+                elif path == "/api/logs":
+                    limit = int((urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get("limit") or ["200"])[0])
+                    self._json(app.api_logs(limit))
+                elif path == "/api/audit":
+                    self._json(app.api_audit())
+                elif path == "/health":
+                    self._json({"ok": True})
+                else:
+                    self._serve_static()
+            except Exception as exc:  # noqa: BLE001
+                log.exception("控制台 GET 失败")
+                self._error(exc, 500)
+
+        def do_PUT(self) -> None:  # noqa: N802
+            if not self._check_auth():
+                return
+            if not self._same_origin():
+                self._error(ValueError("跨站请求被拒绝"), 403)
+                return
+            path = urllib.parse.urlsplit(self.path).path
+            try:
+                body = self._read_json()
+                if path == "/api/persona":
+                    self._json(app.api_save_persona(body))
+                elif path == "/api/settings":
+                    self._json(app.api_save_settings(body))
+                elif path == "/api/runtime":
+                    self._json(app.api_runtime(body))
+                else:
+                    self._json({"error": "not found"}, 404)
+            except ValueError as exc:
+                self._error(exc, 400)
+            except Exception as exc:  # noqa: BLE001
+                log.exception("控制台 PUT 失败")
+                self._error(exc, 500)
+
+        def do_POST(self) -> None:  # noqa: N802
+            self.do_PUT()
+
+        def log_message(self, fmt: str, *args) -> None:
+            log.debug("%s - %s", self.address_string(), fmt % args)
+
+    return Handler
+
+
+LOGIN_HTML = """<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>大肥鱼 · 控制台</title>
+<style>
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:radial-gradient(900px 600px at 70% 0,rgba(90,215,255,.18),transparent 60%),#05111f;color:#eaf6ff;font:14px/1.6 "Microsoft YaHei UI",system-ui;font-family:"Microsoft YaHei UI",system-ui}
+.box{width:min(380px,90vw);padding:28px;border:1px solid rgba(126,200,255,.2);border-radius:20px;background:rgba(12,36,58,.72);backdrop-filter:blur(18px);box-shadow:0 20px 60px rgba(0,0,0,.4)}
+h1{margin:0 0 4px;font-size:20px}p{margin:0 0 18px;color:#8fb3cc;font-size:12px}
+input{width:100%;box-sizing:border-box;height:42px;padding:0 12px;border-radius:11px;border:1px solid rgba(126,200,255,.2);background:rgba(3,14,24,.5);color:#eaf6ff;outline:none}
+button{margin-top:12px;width:100%;height:42px;border:0;border-radius:11px;background:linear-gradient(135deg,#b9f0ff,#5ad7ff);color:#04202c;font-weight:700;cursor:pointer}
+code{color:#5ad7ff;font-size:11px}
+</style>
+<div class="box"><h1>大肥鱼控制台</h1><p>输入启动日志里的访问 token，只在本机使用。</p>
+<input id="t" placeholder="粘贴 token" autofocus><button onclick="location.href='/?token='+encodeURIComponent(document.getElementById('t').value.trim())">进入</button>
+<p style="margin-top:14px">token 在 <code>data/ui-token</code>，启动日志也会打印一次。</p></div>
+</html>"""
+
+
+def start_webui(engine, settings, runtime: Runtime | None = None):
+    if not getattr(settings, "ui_enabled", True):
+        return None
+    return WebUI(engine, settings, runtime).start()

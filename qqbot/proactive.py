@@ -57,6 +57,7 @@ class ProactiveScheduler:
         clock=time.time,
         prompt: str = "",
         scheduled_prompt: str = "",
+        runtime=None,
     ) -> None:
         self.engine = engine
         self.store = store
@@ -64,6 +65,7 @@ class ProactiveScheduler:
         self._clock = clock
         self.prompt = prompt
         self.scheduled_prompt = scheduled_prompt
+        self.runtime = runtime
         self.last_reason = ""  # /proactive 排查用
 
     @property
@@ -87,6 +89,8 @@ class ProactiveScheduler:
         settings = self.settings
         if not settings.proactive_enabled:
             return None, "关闭"
+        if self.runtime is not None and not self.runtime.enabled("proactive"):
+            return None, "控制台暂停"
 
         hour = datetime.fromtimestamp(now).hour
         if not settings.proactive_start_hour <= hour < settings.proactive_end_hour:
@@ -314,9 +318,11 @@ def start_scheduler(
     stop_event: threading.Event,
     prompt: str = "",
     scheduled_prompt: str = "",
+    runtime=None,
 ) -> ProactiveScheduler:
     scheduler = ProactiveScheduler(
-        engine, store, settings, prompt=prompt, scheduled_prompt=scheduled_prompt
+        engine, store, settings, prompt=prompt, scheduled_prompt=scheduled_prompt,
+        runtime=runtime,
     )
     thread = threading.Thread(
         target=scheduler.run, args=(stop_event,), name="proactive", daemon=True

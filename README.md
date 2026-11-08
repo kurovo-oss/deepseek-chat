@@ -64,6 +64,25 @@ powershell -ExecutionPolicy Bypass -File scripts\stop-bot.ps1              # 停
 > 再拉起机器人；机器人进程退出 15 秒后自动重启，日志在 `logs\supervise.log`。
 > 协议端要管理员权限，掉线后仍需手动 `scripts\restart-napcat.ps1`，免得半夜弹 UAC。
 
+## 本地控制台
+
+机器人启动后，同进程起一个只监听本机的控制台：
+
+```text
+http://127.0.0.1:8090
+```
+
+首次启动会生成 `data/ui-token`，启动日志里也会打印一次带 token 的地址。
+控制台可以看总览、对话、人格、配置和日志；人格发布后立即生效，
+模型 / QQ 配置保存到 `.env` 后需要重启机器人。
+
+- 只监听 `127.0.0.1`，token 用 HttpOnly Cookie 保存；
+- 密钥只写不读，页面只显示是否设置和尾号；
+- 改配置前会把 `.env` 备份为 `.env.bak`；
+- 总览里的“即时控制”可以暂停主动消息 / 空间 / 抖音，或一键停机，不用重启。
+
+关闭控制台：`.env` 里设 `UI_ENABLED=false`。端口冲突时机器人照常跑，只会在日志里警告。
+
 ## 数据都在哪
 
 **全部在项目目录内**，不往 C 盘写运行时数据：
@@ -71,6 +90,8 @@ powershell -ExecutionPolicy Bypass -File scripts\stop-bot.ps1              # 停
 | 内容 | 位置 |
 |---|---|
 | 对话与记忆 | `data/chat.db`（SQLite） |
+| 控制台 token | `data/ui-token`（首启自动生成，只在本机用） |
+| 人格历史版本 | `data/persona/versions/`（发布时自动留档） |
 | 日志 | `logs/bot.log`（滚动 5MB × 4） |
 | 图库 | `assets/seed-images/`（占位图，可替换） |
 | 表情库 | `data/stickers/<情绪桶>/`（约 2900 张 / 270MB；`scripts\fetch-stickers.py` 从公开 CDN 全量拉取） |

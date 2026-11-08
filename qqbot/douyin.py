@@ -569,7 +569,7 @@ def run_once(store, settings, guard, sender, browser: Browser, now: int | None =
     return result
 
 
-def tick_loop(store, settings, guard, sender, stop_event, interval: float = 1200.0, mood=None, llm=None) -> None:
+def tick_loop(store, settings, guard, sender, stop_event, interval: float = 1200.0, mood=None, llm=None, runtime=None) -> None:
     browser = Browser(settings)
     def notify(text: str) -> None:
         try:
@@ -578,6 +578,8 @@ def tick_loop(store, settings, guard, sender, stop_event, interval: float = 1200
             log.info("抖音提醒没发出去", exc_info=True)
 
     while not stop_event.wait(interval):
+        if runtime is not None and not runtime.enabled("douyin"):
+            continue
         try:
             result = run_once(store, settings, guard, sender, browser, notify=notify, mood=mood, llm=llm)
             if result["liked"] or result["shared"] or result["skipped"] or result["dry_run"] or result["error"]:

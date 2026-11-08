@@ -89,6 +89,7 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
         images: Any = None,
         memory: Any = None,
         collector: Any = None,
+        runtime: Any = None,
     ) -> None:
         self.settings = settings
         self.store = store
@@ -98,6 +99,7 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
         self.images = images
         self.memory = memory
         self.collector = collector
+        self.runtime = runtime
         # 主动消息调度器建好后由 main 注入：/proactive 用它手动试一句
         self.proactive_trigger = None
         # 做梦器同样由 main 注入：/dream 手动整理一次
@@ -158,6 +160,10 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
 
         text = message.text.strip()
         if not text and not message.images:
+            return
+
+        if self.runtime is not None and self.runtime.emergency:
+            log.info("控制台已停机，忽略这条消息")
             return
 
         session = str(message.user_id)

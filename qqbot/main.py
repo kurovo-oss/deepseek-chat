@@ -38,8 +38,10 @@ from .memory import Memory
 from .onebot import HttpSender
 from .proactive import start_scheduler
 from .replay import start_replayer
+from .runtime import Runtime
 from .store import Store
 from .watchdog import start_watchdog
+from .webui import start_webui
 
 log = logging.getLogger("qqbot")
 
@@ -82,7 +84,7 @@ def wait_for_network(
         sleep(interval)
 
 
-def build_engine(settings) -> Engine:
+def build_engine(settings, runtime=None) -> Engine:
     store = Store(settings.db_path)
     guard = guard_mod.Guard(store, settings)
     llm = LLMClient(
@@ -140,6 +142,7 @@ def build_engine(settings) -> Engine:
         images=images,
         memory=memory,
         collector=collector,
+        runtime=runtime,
     )
 
 
@@ -352,7 +355,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
-    engine = build_engine(settings)
+    runtime = Runtime()
+    engine = build_engine(settings, runtime=runtime)
     dispatcher = MessageDispatcher(engine)
     try:
         server = ThreadingHTTPServer(
@@ -411,6 +415,7 @@ def main(argv: list[str] | None = None) -> int:
             stop_event,
             prompt=load_optional_prompt(settings.proactive_prompt_file),
             scheduled_prompt=load_optional_prompt(settings.scheduled_prompt_file),
+            runtime=runtime,
         )
         # /proactive 手动触发，方便立刻验证效果（不用等 72 小时）
         engine.proactive_trigger = scheduler.force
@@ -432,7 +437,7 @@ def main(argv: list[str] | None = None) -> int:
         threading.Thread(
             target=qzone_mod.tick_loop,
             args=(engine.store, engine.llm, settings, engine.guard, engine.sender, stop_event),
-            kwargs={"mood": engine.mood},
+            kwargs={"mood": engine.mood, "runtime": runtime},
             name="qzone",
             daemon=True,
         ).start()
@@ -447,7 +452,7 @@ def main(argv: list[str] | None = None) -> int:
         threading.Thread(
             target=douyin_mod.tick_loop,
             args=(engine.store, settings, engine.guard, engine.sender, stop_event),
-            kwargs={"mood": engine.mood, "llm": engine.llm},
+            kwargs={"mood": engine.mood, "llm": engine.llm, "runtime": runtime},
             name="douyin",
             daemon=True,
         ).start()
@@ -478,6 +483,8 @@ def main(argv: list[str] | None = None) -> int:
             daemon=True,
         ).start()
 
+    ui = start_webui(engine, settings, runtime)
+
     log.info(
         "已启动：监听 http://%s:%s/event ，模型 %s（日志 %s）",
         settings.listen_host,
@@ -491,6 +498,8 @@ def main(argv: list[str] | None = None) -> int:
         log.info("收到中断，正在退出")
     finally:
         stop_event.set()
+        if ui is not None:
+            ui.stop()
         server.server_close()
         engine.store.close()
     return 0
