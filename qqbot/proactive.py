@@ -95,6 +95,8 @@ class ProactiveScheduler:
         hour = datetime.fromtimestamp(now).hour
         if not settings.proactive_start_hour <= hour < settings.proactive_end_hour:
             return None, "不在时段"
+        if settings.in_quiet_hours(now):
+            return None, "免打扰时段"
 
         if (
             self.store.count_proactive_since(self.midnight(now))

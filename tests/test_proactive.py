@@ -12,6 +12,7 @@ from qqbot.engine import Engine
 from qqbot.llm import ChatResult, LLMError
 from qqbot.memory import parse_events
 from qqbot.proactive import ProactiveScheduler
+from qqbot.runtime import Runtime
 from qqbot.store import Store
 
 
@@ -98,6 +99,26 @@ def test_blocks_outside_hours(tmp_path):
     seed_silence(env)
     assert env.scheduler.gate(ts(10, 28, 7)) is None  # 早上 7 点
     assert env.scheduler.gate(ts(10, 28, 23, 30)) is None  # 深夜
+    env.store.close()
+
+
+def test_blocks_in_quiet_hours(tmp_path):
+    env = build(tmp_path, proactive_quiet_start_hour=14, proactive_quiet_end_hour=15)
+    seed_silence(env)
+    assert env.scheduler.gate(ts(10, 28, 14, 10)) is None
+    assert env.scheduler.gate(ts(10, 28, 15, 10)) == "followup"
+    env.store.close()
+
+
+def test_blocks_when_today_mute_is_on(tmp_path):
+    env = build(tmp_path)
+    seed_silence(env)
+    runtime = Runtime()
+    runtime.set_proactive_mute(int(time.time()) + 3600)
+    scheduler = ProactiveScheduler(
+        env.engine, env.store, env.settings, runtime=runtime, prompt=""
+    )
+    assert scheduler.gate(ts(10, 28, 14)) is None
     env.store.close()
 
 

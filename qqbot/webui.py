@@ -15,6 +15,8 @@ import os
 import re
 import secrets
 import shutil
+import socket
+import sys
 import threading
 import time
 import urllib.parse
@@ -24,6 +26,8 @@ from pathlib import Path
 
 from . import config as config_mod
 from . import onboarding as onboarding_mod
+from . import persona_templates
+from . import proactive_mute
 from .mood import mood_line
 from .runtime import MODULES, Runtime
 
@@ -54,6 +58,8 @@ SETTING_KEYS = {
     "request_timeout": "REQUEST_TIMEOUT",
     "proactive_enabled": "PROACTIVE_ENABLED",
     "proactive_max_per_day": "PROACTIVE_MAX_PER_DAY",
+    "proactive_quiet_start_hour": "PROACTIVE_QUIET_START_HOUR",
+    "proactive_quiet_end_hour": "PROACTIVE_QUIET_END_HOUR",
     "qzone_enabled": "QZONE_ENABLED",
     "qzone_dry_run": "QZONE_DRY_RUN",
     "qzone_daily_max": "QZONE_DAILY_MAX",
@@ -220,6 +226,8 @@ def settings_payload(settings) -> dict:
         "behavior": {
             "proactive_enabled": bool(settings.proactive_enabled),
             "proactive_max_per_day": settings.proactive_max_per_day,
+            "proactive_quiet_start_hour": settings.proactive_quiet_start_hour,
+            "proactive_quiet_end_hour": settings.proactive_quiet_end_hour,
             "qzone_enabled": bool(settings.qzone_enabled),
             "qzone_dry_run": bool(settings.qzone_dry_run),
             "qzone_daily_max": settings.qzone_daily_max,
@@ -290,6 +298,10 @@ def save_settings(settings, payload: dict) -> dict:
             updates[SETTING_KEYS[field]] = "true" if _as_bool(raw, field) else "false"
         elif field == "proactive_max_per_day":
             updates["PROACTIVE_MAX_PER_DAY"] = str(_as_int(raw, "主动消息上限", 0, 50))
+        elif field == "proactive_quiet_start_hour":
+            updates["PROACTIVE_QUIET_START_HOUR"] = str(_as_int(raw, "免打扰开始时间", 0, 23))
+        elif field == "proactive_quiet_end_hour":
+            updates["PROACTIVE_QUIET_END_HOUR"] = str(_as_int(raw, "免打扰结束时间", 0, 23))
         elif field == "qzone_daily_max":
             updates["QZONE_DAILY_MAX"] = str(_as_int(raw, "空间上限", 0, 20))
         elif field == "douyin_daily_max":
@@ -298,6 +310,10 @@ def save_settings(settings, payload: dict) -> dict:
             updates["DOUYIN_SHARE_DAILY_MAX"] = str(_as_int(raw, "抖音分享上限", 0, 50))
     if not updates:
         raise ValueError("没有可保存的字段")
+    quiet_start = int(updates.get("PROACTIVE_QUIET_START_HOUR", getattr(settings, "proactive_quiet_start_hour", 23)))
+    quiet_end = int(updates.get("PROACTIVE_QUIET_END_HOUR", getattr(settings, "proactive_quiet_end_hour", 8)))
+    if quiet_start == quiet_end:
+        raise ValueError("免打扰开始和结束不能是同一个小时")
     env_path = Path(settings.base_dir) / ".env"
     _write_env(env_path, updates)
     return {"ok": True, "saved": sorted(updates), "restart_required": True}
@@ -311,12 +327,95 @@ def tail_log(settings, limit: int = 200) -> list[str]:
         return []
     try:
         with path.open("r", encoding="utf-8", errors="replace") as handle:
-            return list(deque(handle, maxlen=max(1, min(limit, 1000))))
+            return list(deque(handle, maxlen=max(1, min(limit, 5000))))
     except OSError:
         return []
 
 
-def build_status(engine, runtime: Runtime | None = None, now: int | None = None) -> dict:
+def _check_port(host: str, port: int, timeout: float = 0.4) -> dict:
+    host = "127.0.0.1" if host in ("", "0.0.0.0", "::") else host
+    try:
+        with socket.create_connection((host, int(port)), timeout=timeout):
+            return {"host": host, "port": int(port), "ok": True, "detail": "可以连接"}
+    except OSError as exc:
+        return {"host": host, "port": int(port), "ok": False, "detail": str(exc)[:120] or "连接失败"}
+
+
+def _url_port(url: str, default: int) -> tuple[str, int]:
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        return parsed.hostname or "127.0.0.1", int(parsed.port or default)
+    except (ValueError, AttributeError):
+        return "127.0.0.1", default
+
+
+def diagnostics_payload(settings) -> dict:
+    adapter_host, adapter_port = _url_port(getattr(settings, "adapter_api_url", ""), 3001)
+    napcat = onboarding_mod.napcat_state(settings)
+    ports = [
+        {"name": "控制台", **_check_port(getattr(settings, "ui_host", "127.0.0.1"), int(settings.ui_port))},
+        {"name": "事件上报", **_check_port(getattr(settings, "listen_host", "127.0.0.1"), int(settings.listen_port))},
+        {"name": "OneBot API", **_check_port(adapter_host, adapter_port)},
+        {"name": "NapCat WebUI", **_check_port("127.0.0.1", int(napcat.get("port") or 6099))},
+    ]
+    log_path = Path(settings.log_dir) / "bot.log"
+    if not log_path.exists():
+        log_path = Path(settings.base_dir) / "logs" / "bot.log"
+    return {
+        "ports": ports,
+        "model": {
+            "configured": bool(settings.model_api_key and settings.model_base_url and settings.model_id),
+            "base_url": settings.model_base_url,
+            "id": settings.model_id,
+            "key_hint": onboarding_mod.key_hint(settings.model_api_key),
+        },
+        "log": {
+            "path": str(log_path),
+            "exists": log_path.exists(),
+            "bytes": log_path.stat().st_size if log_path.exists() else 0,
+            "updated_at": int(log_path.stat().st_mtime) if log_path.exists() else 0,
+        },
+        "data_dir": str(settings.base_dir),
+        "python": sys.version.split()[0],
+    }
+
+
+def export_diagnostics(settings, guard=None) -> dict:
+    stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime())
+    lines = [
+        "大肥鱼诊断包",
+        f"导出时间：{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}",
+        f"数据目录：{settings.base_dir}",
+        f"模型：{settings.model_id} / {settings.model_base_url}",
+        f"API Key：{onboarding_mod.key_hint(settings.model_api_key) or '未设置'}",
+        "",
+        "## 进程日志（最后 2000 行）",
+        "",
+    ]
+    lines.extend(line.rstrip("\n") for line in tail_log(settings, 2000))
+    lines.extend(["", "## 审计（最近 200 条）", ""])
+    if guard is not None and hasattr(guard, "recent"):
+        try:
+            for item in guard.recent(200):
+                lines.append(
+                    f"{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(int(item.get('at') or 0)))} "
+                    f"{item.get('module', '')}/{item.get('action', '')} "
+                    f"target={item.get('target', '')} result={item.get('result', '')} "
+                    f"{item.get('error', '')}"
+                )
+        except Exception:  # noqa: BLE001
+            lines.append("（审计读取失败）")
+    else:
+        lines.append("（没有审计记录）")
+    content = "\n".join(lines) + "\n"
+    return {
+        "filename": f"dafeiyu-diagnostics-{stamp}.txt",
+        "content": content,
+        "bytes": len(content.encode("utf-8")),
+    }
+
+
+def build_status(engine, runtime: Runtime | None = None, now: int | None = None, adapter: dict | None = None) -> dict:
     stamp = int(now if now is not None else time.time())
     settings = engine.settings
     store = engine.store
@@ -331,6 +430,18 @@ def build_status(engine, runtime: Runtime | None = None, now: int | None = None)
         proactive_today = store.count_proactive_since(start)
     except Exception:  # noqa: BLE001
         proactive_today = 0
+    session = str(settings.allow_user_id)
+    try:
+        last_bot_at = store.last_message_time(session, "assistant")
+    except Exception:  # noqa: BLE001
+        last_bot_at = None
+    try:
+        last_user_at = store.last_message_time(session, "user")
+    except Exception:  # noqa: BLE001
+        last_user_at = None
+
+    if adapter is None:
+        adapter = {"online": False, "nickname": "", "user_id": "", "checked": False}
 
     mood_values: dict = {}
     mood_text = ""
@@ -373,6 +484,11 @@ def build_status(engine, runtime: Runtime | None = None, now: int | None = None)
         "uptime": max(0, int(time.time() - PROCESS_STARTED)),
         "master_qq": str(settings.allow_user_id),
         "model": settings.model_id,
+        "adapter": adapter,
+        "last": {
+            "bot_at": last_bot_at,
+            "user_at": last_user_at,
+        },
         "mood": {
             "values": mood_values,
             "line": mood_text,
@@ -387,6 +503,14 @@ def build_status(engine, runtime: Runtime | None = None, now: int | None = None)
             "douyin": origins.get("douyin", 0) + origins.get("douyin_share", 0),
         },
         "guard": guard_status,
+        "proactive": {
+            "enabled": bool(settings.proactive_enabled),
+            "max_per_day": settings.proactive_max_per_day,
+            "quiet_start_hour": settings.proactive_quiet_start_hour,
+            "quiet_end_hour": settings.proactive_quiet_end_hour,
+            "muted_today": bool(runtime.proactive_muted()) if runtime is not None else False,
+            "muted_until": runtime.proactive_mute_until() if runtime is not None else 0,
+        },
         "runtime": runtime.snapshot() if runtime is not None else {"emergency": False, "paused": {}},
         "persona": {
             "chars": persona["chars"],
@@ -410,6 +534,21 @@ def _message_row(row: dict) -> dict:
     }
 
 
+def _card_row(card: dict) -> dict:
+    return {
+        "id": card.get("id"),
+        "kind": card.get("kind") or "fact",
+        "summary": card.get("summary") or "",
+        "detail": card.get("detail") or "",
+        "importance": float(card.get("importance") or 0),
+        "confirmed": bool(card.get("confirmed", True)),
+        "pinned": bool(card.get("pinned")),
+        "hit_count": int(card.get("hit_count") or 0),
+        "created_at": int(card.get("created_at") or 0),
+        "updated_at": int(card.get("updated_at") or 0),
+    }
+
+
 PROCESS_STARTED = time.time()
 
 
@@ -422,6 +561,9 @@ class WebUI:
         self.token = self._load_token()
         self.httpd: ThreadingHTTPServer | None = None
         self.thread: threading.Thread | None = None
+        self._adapter_lock = threading.Lock()
+        self._adapter_cache: dict = {}
+        self._adapter_checked_at = 0.0
 
     def _load_token(self) -> str:
         path = self.base / "data" / "ui-token"
@@ -465,15 +607,140 @@ class WebUI:
         except Exception:  # noqa: BLE001 - 审计失败不能影响页面动作
             log.info("控制台审计写入失败", exc_info=True)
 
+    def _adapter_status(self) -> dict:
+        """查一次 QQ 协议端登录态，缓存 5 秒，避免总览轮询把协议端打满。"""
+        now = time.monotonic()
+        with self._adapter_lock:
+            if self._adapter_cache and now - self._adapter_checked_at < 5.0:
+                return dict(self._adapter_cache)
+            sender = getattr(self.engine, "sender", None)
+            try:
+                api_url = getattr(sender, "api_url", "") if sender is not None else ""
+                if api_url:
+                    host, port = _url_port(str(api_url), 3001)
+                    if not _check_port(host, port, timeout=0.25)["ok"]:
+                        state = {"online": False, "nickname": "", "user_id": "", "checked": True}
+                    else:
+                        state = onboarding_mod.adapter_state(self.settings, sender)
+                else:
+                    state = onboarding_mod.adapter_state(self.settings, sender)
+            except Exception:  # noqa: BLE001 - 状态查不到就显示离线，不挡页面
+                log.info("QQ 状态检查失败", exc_info=True)
+                state = {"online": False, "nickname": "", "user_id": "", "checked": True}
+            self._adapter_cache = state
+            self._adapter_checked_at = now
+            return dict(state)
+
     def api_status(self) -> dict:
-        return build_status(self.engine, self.runtime)
+        return build_status(self.engine, self.runtime, adapter=self._adapter_status())
+
 
     def api_messages(self, limit: int = 50) -> dict:
         rows = self.engine.store.recent_messages(str(self.settings.allow_user_id), max(1, min(limit, 100)))
         return {"messages": [_message_row(row) for row in rows]}
 
+    def api_memory(self, query: str = "", status: str = "active") -> dict:
+        status = status if status in ("active", "archived") else "active"
+        store = self.engine.store
+        cards = [_card_row(card) for card in store.list_cards(status=status, limit=300)]
+        needle = str(query or "").strip().casefold()
+        if needle:
+            cards = [
+                card
+                for card in cards
+                if needle in card["summary"].casefold() or needle in card["detail"].casefold()
+            ]
+        cards.sort(key=lambda card: (not card["pinned"], -card["updated_at"], -card["id"]))
+        return {
+            "items": cards,
+            "query": str(query or ""),
+            "counts": {
+                "active": store.count_cards(status="active"),
+                "archived": store.count_cards(status="archived"),
+            },
+            "total": len(cards),
+        }
+
+    def api_memory_update(self, body: dict) -> dict:
+        store = self.engine.store
+        card_id = _as_int(body.get("id"), "记忆编号", 1, 10**9)
+        card = store.get_card(card_id)
+        if card is None:
+            raise ValueError("这条记忆已经不在了")
+        updates: dict = {}
+        if "summary" in body:
+            updates["summary"] = _as_text(body.get("summary"), "记忆内容", 500)
+        if "detail" in body:
+            detail = body.get("detail")
+            if not isinstance(detail, str):
+                raise ValueError("备注必须是字符串")
+            if len(detail) > 2000:
+                raise ValueError("备注最多 2000 字")
+            updates["detail"] = detail.strip()
+        if "importance" in body:
+            try:
+                importance = float(body.get("importance"))
+            except (TypeError, ValueError) as exc:
+                raise ValueError("重要度必须是数字") from exc
+            if not 0.0 <= importance <= 1.0:
+                raise ValueError("重要度必须在 0~1 之间")
+            updates["importance"] = importance
+        if updates:
+            store.update_card(card_id, **updates)
+        if "pinned" in body:
+            store.set_pinned(card_id, _as_bool(body.get("pinned"), "pinned"))
+        if "confirmed" in body:
+            store.set_confirmed(card_id, _as_bool(body.get("confirmed"), "confirmed"))
+        self._audit("edit_memory", target=str(card_id), result="ok")
+        return {"ok": True, "item": _card_row(store.get_card(card_id) or {})}
+
+    def api_memory_correct(self, body: dict) -> dict:
+        """“你记错了”：用主人给的新说法替换旧卡片，不保留错误内容。"""
+        store = self.engine.store
+        card_id = _as_int(body.get("id"), "记忆编号", 1, 10**9)
+        card = store.get_card(card_id)
+        if card is None:
+            raise ValueError("这条记忆已经不在了")
+        summary = _as_text(body.get("summary"), "新的说法", 500)
+        store.update_card(card_id, summary=summary)
+        self._audit("correct_memory", target=str(card_id), error=str(card.get("summary") or "")[:120])
+        return {"ok": True, "item": _card_row(store.get_card(card_id) or {})}
+
+    def api_memory_delete(self, body: dict) -> dict:
+        card_id = _as_int(body.get("id"), "记忆编号", 1, 10**9)
+        if not self.engine.store.delete_card(card_id):
+            raise ValueError("这条记忆已经不在了")
+        self._audit("delete_memory", target=str(card_id))
+        return {"ok": True}
+
     def api_persona(self) -> dict:
         return read_persona(self.settings)
+
+    def api_persona_templates(self) -> dict:
+        return {"items": persona_templates.list_templates(self.settings)}
+
+    def api_persona_preview(self, body: dict) -> dict:
+        template = persona_templates.render(self.settings, str(body.get("template_id") or ""))
+        template["warnings"] = persona_warnings(template["text"])
+        return template
+
+    def api_persona_apply(self, body: dict) -> dict:
+        template = persona_templates.render(self.settings, str(body.get("template_id") or ""))
+        result = save_persona(
+            self.settings,
+            self.engine,
+            template["text"],
+            note=f"模板：{template['name']}",
+        )
+        result["template"] = {"id": template["id"], "name": template["name"]}
+        self._audit("apply_persona_template", target=template["id"], result="ok")
+        return result
+
+    def api_persona_restore(self) -> dict:
+        text = persona_templates.default_text(self.settings)
+        result = save_persona(self.settings, self.engine, text, note="恢复默认")
+        self._audit("restore_persona", target="default", result="ok")
+        return result
 
     def api_save_persona(self, body: dict) -> dict:
         result = save_persona(self.settings, self.engine, str(body.get("text", "")), str(body.get("note", "")))
@@ -496,6 +763,15 @@ class WebUI:
         rows = guard.recent(max(1, min(limit, 200))) if guard is not None else []
         return {"items": rows}
 
+    def api_diagnostics(self) -> dict:
+        return diagnostics_payload(self.settings)
+
+    def api_export_diagnostics(self) -> dict:
+        guard = getattr(self.engine, "guard", None)
+        result = export_diagnostics(self.settings, guard)
+        self._audit("export_diagnostics", target=result["filename"])
+        return result
+
     def api_runtime(self, body: dict) -> dict:
         if self.runtime is None:
             raise ValueError("运行时控制未启用")
@@ -516,6 +792,23 @@ class WebUI:
         else:
             raise ValueError("缺少动作")
         return self.runtime.snapshot()
+
+    def api_proactive_mute(self, body: dict) -> dict:
+        if self.runtime is None:
+            raise ValueError("运行时控制未启用")
+        muted = _as_bool(body.get("muted"), "muted")
+        if muted:
+            if not self.settings.proactive_enabled:
+                raise ValueError("主动消息总开关是关闭的，先在配置里打开")
+            payload = proactive_mute.set_today(self.settings)
+            self.runtime.set_proactive_mute(int(payload["until"]))
+            self._audit("mute_today", target="proactive")
+        else:
+            proactive_mute.clear(self.settings)
+            self.runtime.set_proactive_mute(0)
+            self._audit("unmute_today", target="proactive")
+        return {"ok": True, "muted": muted, "runtime": self.runtime.snapshot()}
+
 
     def api_onboarding(self) -> dict:
         return onboarding_mod.build_state(self.settings, getattr(self.engine, "sender", None))
@@ -677,8 +970,14 @@ def make_handler(app: WebUI):
                 elif path == "/api/messages":
                     limit = int((urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get("limit") or ["50"])[0])
                     self._json(app.api_messages(limit))
+                elif path == "/api/memory":
+                    query = (urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get("q") or [""])[0]
+                    status = (urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get("status") or ["active"])[0]
+                    self._json(app.api_memory(query, status))
                 elif path == "/api/persona":
                     self._json(app.api_persona())
+                elif path == "/api/persona/templates":
+                    self._json(app.api_persona_templates())
                 elif path == "/api/settings":
                     self._json(app.api_settings())
                 elif path == "/api/logs":
@@ -686,6 +985,10 @@ def make_handler(app: WebUI):
                     self._json(app.api_logs(limit))
                 elif path == "/api/audit":
                     self._json(app.api_audit())
+                elif path == "/api/diagnostics":
+                    self._json(app.api_diagnostics())
+                elif path == "/api/diagnostics/export":
+                    self._json(app.api_export_diagnostics())
                 elif path == "/api/onboarding":
                     self._json(app.api_onboarding())
                 elif path == "/health":
@@ -707,10 +1010,24 @@ def make_handler(app: WebUI):
                 body = self._read_json()
                 if path == "/api/persona":
                     self._json(app.api_save_persona(body))
+                elif path == "/api/memory/update":
+                    self._json(app.api_memory_update(body))
+                elif path == "/api/memory/correct":
+                    self._json(app.api_memory_correct(body))
+                elif path == "/api/memory/delete":
+                    self._json(app.api_memory_delete(body))
+                elif path == "/api/persona/preview":
+                    self._json(app.api_persona_preview(body))
+                elif path == "/api/persona/apply":
+                    self._json(app.api_persona_apply(body))
+                elif path == "/api/persona/restore":
+                    self._json(app.api_persona_restore())
                 elif path == "/api/settings":
                     self._json(app.api_save_settings(body))
                 elif path == "/api/runtime":
                     self._json(app.api_runtime(body))
+                elif path == "/api/proactive/mute":
+                    self._json(app.api_proactive_mute(body))
                 elif path == "/api/onboarding/test-model":
                     self._json(app.api_test_model(body))
                 elif path == "/api/onboarding/start-napcat":

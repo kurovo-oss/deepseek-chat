@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import threading
+import time
 
 
 MODULES = ("proactive", "qzone", "douyin")
@@ -16,13 +17,31 @@ class Runtime:
         self._lock = threading.RLock()
         self._paused: set[str] = set()
         self._emergency = False
+        self._proactive_mute_until = 0
 
     def paused(self, module: str) -> bool:
         with self._lock:
             return self._emergency or module in self._paused
 
     def enabled(self, module: str) -> bool:
+        if module == "proactive" and self._proactive_muted():
+            return False
         return not self.paused(module)
+
+    def _proactive_muted(self, now: float | None = None) -> bool:
+        with self._lock:
+            return int(self._proactive_mute_until) > int(now if now is not None else time.time())
+
+    def set_proactive_mute(self, until: int) -> None:
+        with self._lock:
+            self._proactive_mute_until = max(0, int(until))
+
+    def proactive_muted(self, now: float | None = None) -> bool:
+        return self._proactive_muted(now)
+
+    def proactive_mute_until(self) -> int:
+        with self._lock:
+            return int(self._proactive_mute_until)
 
     def set_paused(self, module: str, paused: bool) -> bool:
         if module not in MODULES:
@@ -48,6 +67,8 @@ class Runtime:
             return {
                 "emergency": self._emergency,
                 "paused": {name: self._emergency or name in self._paused for name in MODULES},
+                "proactive_muted": int(self._proactive_mute_until) > int(time.time()),
+                "proactive_muted_until": int(self._proactive_mute_until),
             }
 
     def resume_all(self) -> None:

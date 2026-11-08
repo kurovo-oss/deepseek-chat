@@ -37,6 +37,7 @@ from .logsetup import setup_logging
 from .memory import Memory
 from .onebot import HttpSender
 from .proactive import start_scheduler
+from . import proactive_mute
 from .replay import start_replayer
 from .runtime import Runtime
 from .store import Store
@@ -356,6 +357,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     runtime = Runtime()
+    if proactive_mute.restore(settings, runtime):
+        log.info("今天已设置“别找我了”，主动消息保持静默")
     engine = build_engine(settings, runtime=runtime)
     dispatcher = MessageDispatcher(engine)
     try:

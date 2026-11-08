@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
-<title>大肥鱼 · 控制台</title>
+<title>大肥鱼 · 她今天怎么样</title>
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
@@ -20,11 +20,13 @@
   </div>
 
   <nav class="nav" aria-label="主导航">
-    <button class="nav-item active" data-page="overview"><span class="nav-ico">◈</span>总览</button>
+    <button class="nav-item active" data-page="overview"><span class="nav-ico">◈</span>她今天怎么样</button>
     <button class="nav-item" data-page="chat"><span class="nav-ico">☰</span>对话</button>
+    <button class="nav-item" data-page="memory"><span class="nav-ico">❖</span>记忆</button>
     <button class="nav-item" data-page="persona"><span class="nav-ico">✎</span>人格</button>
     <button class="nav-item" data-page="config"><span class="nav-ico">⚙</span>配置</button>
     <button class="nav-item" data-page="logs"><span class="nav-ico">⌁</span>日志</button>
+    <button class="nav-item" data-page="diagnostics"><span class="nav-ico">✚</span>诊断</button>
   </nav>
 
   <div class="side-card">
@@ -42,8 +44,8 @@
 <main class="main">
   <header class="topbar">
     <div>
-      <span class="crumb">控制台 / <b id="crumb">总览</b></span>
-      <h1 id="page-title">今天也在这里</h1>
+      <span class="crumb">首页 / <b id="crumb">她今天怎么样</b></span>
+      <h1 id="page-title">她今天怎么样</h1>
     </div>
     <div class="top-actions">
       <span class="pill" id="clock">--:--</span>
@@ -58,7 +60,14 @@
         <h2>我是大肥鱼，<br><em>今天也只想围着你转。</em></h2>
         <div class="hero-meta">
           <span class="pill"><i id="hero-dot" class="dot"></i><span id="hero-state">连接中</span></span>
-          <span class="pill">QQ <b id="hero-qq">—</b></span>
+          <span class="pill" id="adapter-pill"><i id="adapter-dot" class="dot"></i><span id="adapter-state">QQ 连接中</span></span>
+          <span class="pill">主人 QQ <b id="hero-qq">—</b></span>
+        </div>
+        <div class="hero-times">
+          <div><span>她最后说话</span><b id="last-bot">—</b></div>
+          <div><span>你最后说话</span><b id="last-user">—</b></div>
+          <div class="hero-switch"><span>主动消息</span><label class="switch"><input type="checkbox" data-module="proactive" checked><i></i></label></div>
+          <button class="ghost-btn mute-today" type="button">今天别找我了</button>
         </div>
       </div>
       <div class="hero-art">
@@ -125,6 +134,19 @@
     </article>
   </section>
 
+  <section class="page" id="page-memory">
+    <div class="page-head">
+      <div><h2>她记住的事</h2><p>这里是她长期记忆里的卡片。写错了就点“记错了”，改成你希望她记住的说法；删掉就真的不再提。</p></div>
+      <button class="ghost-btn" id="reload-memory">刷新</button>
+    </div>
+    <div class="memory-toolbar">
+      <input id="memory-search" type="search" placeholder="搜她记住的事，比如“香菜”">
+      <span class="pill" id="memory-count">— 条</span>
+    </div>
+    <div class="memory-hint">带“待确认”的是她猜的；你在这里改过之后，会按新说法记住。</div>
+    <div id="memory-list" class="memory-list"><p class="muted">加载中……</p></div>
+  </section>
+
   <section class="page" id="page-persona">
     <div class="page-head">
       <div><h2>人格</h2><p>改完发布即热更新，下一条消息生效；旧版本会留在这里，可随时回看。</p></div>
@@ -133,6 +155,24 @@
         <button class="primary-btn" id="save-persona">发布</button>
       </div>
     </div>
+    <article class="card glass template-card">
+      <div class="card-head">
+        <h3>人格模板</h3>
+        <div class="head-actions">
+          <span class="tag">切换会先留旧版本</span>
+          <button class="ghost-btn" id="restore-persona" type="button">恢复默认</button>
+        </div>
+      </div>
+      <div id="persona-templates" class="template-list"><p class="muted small">加载中……</p></div>
+      <div id="persona-preview" class="template-preview" hidden>
+        <div class="card-head"><h3 id="persona-preview-title">预览</h3><span class="tag" id="persona-preview-count">— 字</span></div>
+        <pre id="persona-preview-text"></pre>
+        <div class="memory-editor-foot">
+          <button class="primary-btn" id="persona-preview-apply" type="button">使用这套</button>
+          <button class="ghost-btn" id="persona-preview-close" type="button">先不改</button>
+        </div>
+      </div>
+    </article>
     <div class="grid-persona">
       <article class="card glass editor-card">
         <div class="card-head"><h3>system.md</h3><span class="tag" id="persona-updated">—</span></div>
@@ -169,7 +209,19 @@
 
       <article class="card glass">
         <div class="card-head"><h3>她的动作</h3><span class="tag">保存后重启</span></div>
-        <label class="control-row"><span><b>主动消息</b><small>每天上限</small></span><input type="checkbox" name="proactive_enabled" id="proactive-enabled"><input class="num" type="number" name="proactive_max_per_day" id="proactive-max" min="0" max="50"></label>
+        <div class="control-row"><span><b>主动消息</b><small>让她偶尔先开口</small></span><input type="checkbox" name="proactive_enabled" id="proactive-enabled"></div>
+        <div class="range-row">
+          <span>频率</span>
+          <input type="range" id="proactive-max" min="0" max="20" step="1" value="5" aria-label="每天主动消息上限">
+          <b id="proactive-max-label">5 条/天</b>
+        </div>
+        <div class="field-row">
+          <label class="field"><span>免打扰开始</span><input type="time" id="proactive-quiet-start" step="3600"></label>
+          <label class="field"><span>免打扰结束</span><input type="time" id="proactive-quiet-end" step="3600"></label>
+        </div>
+        <p class="muted tiny">免打扰时段内她不会主动找你；可以跨午夜，比如 23:00 到 08:00。</p>
+        <button class="ghost-btn mute-today" type="button">今天别找我了</button>
+        <p class="muted tiny mute-state" id="proactive-mute-state">今天还没有静默。</p>
         <label class="control-row"><span><b>QQ 空间</b><small>试运行只记录不发布</small></span><input type="checkbox" name="qzone_enabled" id="qzone-enabled"><input type="checkbox" name="qzone_dry_run" id="qzone-dry"></label>
         <label class="control-row"><span><b>空间每日上限</b><small>0 表示不发</small></span><input class="num" type="number" name="qzone_daily_max" id="qzone-max" min="0" max="20"></label>
         <hr>
@@ -181,6 +233,36 @@
         <p class="muted tiny">试运行不消耗真实额度；关闭试运行前建议先在总览看一遍审计。</p>
       </article>
     </form>
+  </section>
+
+  <section class="page" id="page-diagnostics">
+    <div class="page-head">
+      <div><h2>诊断</h2><p>端口、模型、日志都在这一页。出问题时先导出诊断包，再动手改配置。</p></div>
+      <div class="head-actions">
+        <button class="ghost-btn" id="diagnostics-refresh" type="button">重新检查</button>
+        <button class="primary-btn" id="diagnostics-export" type="button">导出日志</button>
+      </div>
+    </div>
+    <div class="grid-2">
+      <article class="card glass">
+        <div class="card-head"><h3>端口</h3><span class="tag">本机 127.0.0.1</span></div>
+        <div id="diag-ports" class="diag-list"><p class="muted small">检查中……</p></div>
+      </article>
+      <article class="card glass">
+        <div class="card-head"><h3>模型连通性</h3><button class="ghost-btn" id="diag-test-model" type="button">测试一次</button></div>
+        <p class="muted small" id="diag-model-info">—</p>
+        <p class="diag-result" id="diag-model-result">还没有测试。</p>
+      </article>
+      <article class="card glass">
+        <div class="card-head"><h3>日志</h3><span class="tag" id="diag-log-size">—</span></div>
+        <p class="muted small" id="diag-log-path">—</p>
+        <p class="muted tiny">导出包含进程日志、审计记录和模型配置；不包含 API Key 明文。</p>
+      </article>
+      <article class="card glass">
+        <div class="card-head"><h3>运行环境</h3><span class="tag">本机</span></div>
+        <div id="diag-env" class="diag-list"><p class="muted small">读取中……</p></div>
+      </article>
+    </div>
   </section>
 
   <section class="page" id="page-logs">
@@ -205,7 +287,7 @@
     <div class="onboarding-top">
       <div>
         <span class="eyebrow">第一次打开</span>
-        <h2 id="onboarding-title">先把两件事连上</h2>
+        <h2 id="onboarding-title">引导</h2>
       </div>
       <button class="ghost-btn" id="onboarding-later" type="button">稍后再说</button>
     </div>

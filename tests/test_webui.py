@@ -208,6 +208,8 @@ def test_runtime_controls_pause_and_emergency():
     assert runtime.snapshot() == {
         "emergency": False,
         "paused": {"proactive": False, "qzone": False, "douyin": False},
+        "proactive_muted": False,
+        "proactive_muted_until": 0,
     }
     with pytest.raises(ValueError):
         runtime.set_paused("unknown", True)

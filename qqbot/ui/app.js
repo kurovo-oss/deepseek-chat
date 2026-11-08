@@ -24,11 +24,13 @@
   };
 
   const PAGE_TITLE = {
-    overview: ['今天也在这里', '总览'],
+    overview: ['她今天怎么样', '首页'],
     chat: ['', '对话'],
+    memory: ['她记住的事', '记忆'],
     persona: ['她是谁，由你写', '人格'],
     config: ['把连接和边界调好', '配置'],
     logs: ['她都做了什么', '日志'],
+    diagnostics: ['她哪儿不舒服', '诊断'],
   };
 
   const ORIGIN_LABEL = {
@@ -56,6 +58,19 @@
       ? { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }
       : { hour: '2-digit', minute: '2-digit' };
     return d.toLocaleString('zh-CN', opt);
+  }
+
+  function fmtWhen(ts) {
+    if (!ts) return '还没有';
+    const d = new Date(ts * 1000);
+    const now = new Date();
+    const sameDay = d.toDateString() === now.toDateString();
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    const time = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    if (sameDay) return `今天 ${time}`;
+    if (d.toDateString() === yesterday.toDateString()) return `昨天 ${time}`;
+    return d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }) + ` ${time}`;
   }
 
   function greeting() {
@@ -107,9 +122,11 @@
     $('#crumb').textContent = crumb;
     if (location.hash !== `#${page}`) history.replaceState(null, '', `#${page}`);
     if (page === 'chat') loadChat();
+    if (page === 'memory') loadMemory();
     if (page === 'persona') loadPersona();
     if (page === 'config') loadSettings();
     if (page === 'logs') loadLogs();
+    if (page === 'diagnostics') loadDiagnostics();
   }
 
   function renderStatus(data) {
@@ -117,12 +134,19 @@
     const alarm = data.runtime.emergency;
     const badAlert = (data.alerts || []).some((a) => a.level === 'bad');
     const kind = alarm || badAlert ? 'bad' : 'ok';
+    const adapter = data.adapter || {};
     setDot($('#side-dot'), kind);
     setDot($('#hero-dot'), kind);
+    setDot($('#adapter-dot'), adapter.online ? 'ok' : 'bad');
     $('#side-state').textContent = alarm ? '已停机' : badAlert ? '有异常' : '运行中';
-    $('#hero-state').textContent = alarm ? '已停机' : '在线';
-    $('#side-model').textContent = `模型 ${data.model || '—'}`;
+    $('#hero-state').textContent = alarm ? '已停机' : '运行中';
+    $('#adapter-state').textContent = adapter.online
+      ? (adapter.nickname ? `${adapter.nickname} 在线` : 'QQ 在线')
+      : 'QQ 未登录';
+    $('#side-model').textContent = `QQ ${adapter.online ? '在线' : '离线'} · 模型 ${data.model || '—'}`;
     $('#hero-qq').textContent = data.master_qq || '—';
+    $('#last-bot').textContent = fmtWhen(data.last && data.last.bot_at);
+    $('#last-user').textContent = fmtWhen(data.last && data.last.user_at);
     $('#greeting').textContent = greeting();
 
     const values = (data.mood && data.mood.values) || {};
@@ -193,10 +217,23 @@
     }
 
     const runtime = data.runtime || { paused: {} };
-    $$('#page-overview .control-row input[data-module]').forEach((box) => {
+    const proactive = data.proactive || {};
+    $$('#page-overview input[data-module]').forEach((box) => {
       box.checked = !(runtime.paused && runtime.paused[box.dataset.module]);
       box.disabled = runtime.emergency;
     });
+    $$('.mute-today').forEach((button) => {
+      const muted = !!proactive.muted_today;
+      button.classList.toggle('on', muted);
+      button.textContent = muted ? '恢复今天主动' : '今天别找我了';
+      button.disabled = !!runtime.emergency;
+    });
+    const muteState = $('#proactive-mute-state');
+    if (muteState) {
+      muteState.textContent = proactive.muted_today
+        ? `今天已静默，到 ${fmtTime(proactive.muted_until || 0, true)} 恢复。`
+        : '今天还没有静默。';
+    }
     $('#runtime-tag').textContent = runtime.emergency ? '已停机' : '运行中';
     const emergency = $('#emergency');
     emergency.textContent = runtime.emergency ? '恢复运行' : '一键停机';
@@ -244,6 +281,137 @@
     }
   }
 
+  const MEMORY_KIND = {
+    fact: '事实',
+    preference: '喜好',
+    event: '经历',
+    relation: '关系',
+    identity: '身份',
+    plan: '计划',
+    emotion: '情绪',
+    other: '记忆',
+  };
+
+  function memoryKind(kind) {
+    return MEMORY_KIND[kind] || kind || '记忆';
+  }
+
+  function renderMemoryItem(item) {
+    const card = el('article', 'memory-card');
+    const head = el('div', 'memory-card-head');
+    head.append(el('span', 'memory-kind', memoryKind(item.kind)));
+    if (item.pinned) head.append(el('span', 'memory-badge pin', '钉住'));
+    if (!item.confirmed) head.append(el('span', 'memory-badge', '待确认'));
+    head.append(el('span', 'tag', `#${item.id}`));
+    card.append(head);
+    card.append(el('p', 'memory-summary', item.summary || '（空）'));
+    if (item.detail) card.append(el('p', 'memory-detail', item.detail));
+    const meta = el('div', 'memory-meta');
+    meta.append(el('span', '', `重要度 ${Number(item.importance || 0).toFixed(2)}`));
+    meta.append(el('span', '', `被想起 ${item.hit_count || 0} 次`));
+    meta.append(el('span', '', item.updated_at ? `更新 ${fmtTime(item.updated_at, true)}` : ''));
+    card.append(meta);
+    const actions = el('div', 'memory-actions');
+    const edit = el('button', '', '修改');
+    edit.type = 'button';
+    edit.addEventListener('click', () => startMemoryEdit(card, item, 'edit'));
+    const wrong = el('button', '', '记错了');
+    wrong.type = 'button';
+    wrong.addEventListener('click', () => startMemoryEdit(card, item, 'correct'));
+    const remove = el('button', 'danger', '删除');
+    remove.type = 'button';
+    remove.addEventListener('click', () => deleteMemory(item));
+    actions.append(edit, wrong, remove);
+    card.append(actions);
+    return card;
+  }
+
+  function startMemoryEdit(card, item, mode) {
+    card.replaceChildren();
+    const editor = el('div', 'memory-editor');
+    editor.append(el('p', 'memory-hint', mode === 'correct'
+      ? '她记错了？写下正确的说法，旧的会被替换掉。'
+      : '修改这条记忆，保存后下一条消息生效。'));
+    const summary = el('textarea');
+    summary.value = item.summary || '';
+    summary.placeholder = mode === 'correct' ? '正确说法，比如：他其实不讨厌香菜' : '她记住的事';
+    editor.append(summary);
+    let detail = null;
+    if (mode === 'edit') {
+      detail = el('input');
+      detail.value = item.detail || '';
+      detail.placeholder = '备注（可选）';
+      editor.append(detail);
+    }
+    const foot = el('div', 'memory-editor-foot');
+    const save = el('button', 'primary-btn', mode === 'correct' ? '改成这个' : '保存');
+    save.type = 'button';
+    const cancel = el('button', 'ghost-btn', '取消');
+    cancel.type = 'button';
+    cancel.addEventListener('click', () => loadMemory());
+    save.addEventListener('click', async () => {
+      const text = summary.value.trim();
+      if (!text) {
+        toast('先写一条她该记住的事', true);
+        return;
+      }
+      save.disabled = true;
+      save.textContent = '保存中…';
+      try {
+        if (mode === 'correct') {
+          await api('/api/memory/correct', { method: 'POST', body: { id: item.id, summary: text } });
+          toast('改好了，她以后按新的说法记');
+        } else {
+          await api('/api/memory/update', {
+            method: 'POST',
+            body: { id: item.id, summary: text, detail: detail ? detail.value : undefined },
+          });
+          toast('记忆已更新');
+        }
+        await loadMemory();
+      } catch (err) {
+        toast(err.message, true);
+      } finally {
+        save.disabled = false;
+      }
+    });
+    foot.append(save, cancel);
+    editor.append(foot);
+    card.append(editor);
+    summary.focus();
+  }
+
+  async function deleteMemory(item) {
+    if (!window.confirm(`删掉「${item.summary}」？她会真的忘记这件事。`)) return;
+    try {
+      await api('/api/memory/delete', { method: 'POST', body: { id: item.id } });
+      toast('删掉了，这件事她不再提');
+      await loadMemory();
+    } catch (err) {
+      toast(err.message, true);
+    }
+  }
+
+  async function loadMemory() {
+    const list = $('#memory-list');
+    list.replaceChildren(el('p', 'muted', '加载中……'));
+    const query = ($('#memory-search').value || '').trim();
+    try {
+      const data = await api(`/api/memory?q=${encodeURIComponent(query)}`);
+      const items = data.items || [];
+      const counts = data.counts || {};
+      $('#memory-count').textContent = `${items.length} 条 / 共 ${counts.active ?? 0} 条`;
+      list.replaceChildren();
+      if (!items.length) {
+        list.append(el('p', 'muted', query ? '没有搜到这条记忆。' : '她还没记住什么，多聊聊就会有了。'));
+        return;
+      }
+      items.forEach((item) => list.append(renderMemoryItem(item)));
+    } catch (err) {
+      list.replaceChildren(el('p', 'muted', err.message));
+    }
+  }
+
   function renderVersions(versions) {
     const list = $('#persona-versions');
     list.replaceChildren();
@@ -272,6 +440,87 @@
         ? `提醒：${data.warnings.join('；')}`
         : '边界词齐全。';
       renderVersions(data.versions);
+      await loadPersonaTemplates();
+    } catch (err) {
+      toast(err.message, true);
+    }
+  }
+
+  let previewTemplateId = '';
+  let previewTemplateName = '';
+
+  async function loadPersonaTemplates() {
+    const list = $('#persona-templates');
+    if (!list) return;
+    try {
+      const data = await api('/api/persona/templates');
+      list.replaceChildren();
+      (data.items || []).forEach((item) => {
+        const card = el('div', 'template-item');
+        card.append(el('b', '', item.name));
+        card.append(el('p', '', item.description || ''));
+        const actions = el('div', 'memory-actions');
+        const preview = el('button', '', '预览');
+        preview.type = 'button';
+        preview.addEventListener('click', () => previewPersonaTemplate(item.id));
+        const apply = el('button', '', '用这套');
+        apply.type = 'button';
+        apply.addEventListener('click', () => applyPersonaTemplate(item.id, item.name));
+        actions.append(preview, apply);
+        card.append(actions);
+        list.append(card);
+      });
+    } catch (err) {
+      list.replaceChildren(el('p', 'muted small', err.message));
+    }
+  }
+
+  async function previewPersonaTemplate(templateId) {
+    try {
+      const data = await api('/api/persona/preview', {
+        method: 'POST',
+        body: { template_id: templateId },
+      });
+      previewTemplateId = templateId;
+      previewTemplateName = data.name || templateId;
+      const panel = $('#persona-preview');
+      panel.hidden = false;
+      $('#persona-preview-title').textContent = `预览 · ${data.name}`;
+      $('#persona-preview-count').textContent = `${data.chars || 0} 字`;
+      $('#persona-preview-text').textContent = data.text || '';
+      panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } catch (err) {
+      toast(err.message, true);
+    }
+  }
+
+  async function applyPersonaTemplate(templateId, name) {
+    try {
+      const data = await api('/api/persona/apply', {
+        method: 'POST',
+        body: { template_id: templateId },
+      });
+      toast(`已切换到「${name || data.template?.name || templateId}」，下一条消息生效`);
+      $('#persona-preview').hidden = true;
+      previewTemplateId = '';
+      previewTemplateName = '';
+      await loadPersona();
+      await loadStatus(true);
+    } catch (err) {
+      toast(err.message, true);
+    }
+  }
+
+  async function restorePersona() {
+    if (!window.confirm('恢复到安装时的默认人格？当前版本会先留档。')) return;
+    try {
+      const data = await api('/api/persona/restore', { method: 'POST', body: {} });
+      toast(`已恢复默认人格（${data.version}）`);
+      $('#persona-preview').hidden = true;
+      previewTemplateId = '';
+      previewTemplateName = '';
+      await loadPersona();
+      await loadStatus(true);
     } catch (err) {
       toast(err.message, true);
     }
@@ -312,7 +561,11 @@
     $('#model-key').value = '';
     $('#key-hint').textContent = model.api_key_set ? `已设置（${model.api_key_hint}）` : '未设置';
     $('#proactive-enabled').checked = !!behavior.proactive_enabled;
-    $('#proactive-max').value = behavior.proactive_max_per_day ?? 5;
+    const maxPerDay = Math.max(0, Math.min(20, Number(behavior.proactive_max_per_day ?? 5)));
+    $('#proactive-max').value = maxPerDay;
+    $('#proactive-max-label').textContent = `${maxPerDay} 条/天`;
+    $('#proactive-quiet-start').value = `${String(behavior.proactive_quiet_start_hour ?? 23).padStart(2, '0')}:00`;
+    $('#proactive-quiet-end').value = `${String(behavior.proactive_quiet_end_hour ?? 8).padStart(2, '0')}:00`;
     $('#qzone-enabled').checked = !!behavior.qzone_enabled;
     $('#qzone-dry').checked = !!behavior.qzone_dry_run;
     $('#qzone-max').value = behavior.qzone_daily_max ?? 1;
@@ -341,6 +594,8 @@
       request_timeout: Number($('#request-timeout').value),
       proactive_enabled: $('#proactive-enabled').checked,
       proactive_max_per_day: Number($('#proactive-max').value),
+      proactive_quiet_start_hour: Number(($('#proactive-quiet-start').value || '23:00').split(':')[0]),
+      proactive_quiet_end_hour: Number(($('#proactive-quiet-end').value || '08:00').split(':')[0]),
       qzone_enabled: $('#qzone-enabled').checked,
       qzone_dry_run: $('#qzone-dry').checked,
       qzone_daily_max: Number($('#qzone-max').value),
@@ -351,6 +606,12 @@
     };
     const key = $('#model-key').value.trim();
     if (key) payload.model_api_key = key;
+    if (payload.proactive_quiet_start_hour === payload.proactive_quiet_end_hour) {
+      toast('免打扰开始和结束不能是同一个小时', true);
+      button.disabled = false;
+      button.textContent = '保存配置';
+      return;
+    }
     try {
       const data = await api('/api/settings', { method: 'PUT', body: payload });
       $('#model-key').value = '';
@@ -394,6 +655,93 @@
     }
   }
 
+  function formatBytes(size) {
+    const value = Number(size) || 0;
+    if (value < 1024) return `${value} B`;
+    if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+    return `${(value / 1024 / 1024).toFixed(1)} MB`;
+  }
+
+  function diagRow(title, detail, ok) {
+    const row = el('div', 'diag-row' + (ok ? '' : ' bad'));
+    const body = el('div');
+    body.append(el('b', '', title), el('small', '', detail || ''));
+    row.append(body, el('em', '', ok ? '正常' : '异常'));
+    return row;
+  }
+
+  async function loadDiagnostics() {
+    const ports = $('#diag-ports');
+    const env = $('#diag-env');
+    ports.replaceChildren(el('p', 'muted small', '检查中……'));
+    env.replaceChildren(el('p', 'muted small', '读取中……'));
+    try {
+      const data = await api('/api/diagnostics');
+      ports.replaceChildren();
+      (data.ports || []).forEach((item) => {
+        ports.append(diagRow(`${item.name} :${item.port}`, item.detail, item.ok));
+      });
+      const model = data.model || {};
+      $('#diag-model-info').textContent = `${model.id || '未填写'} · ${model.base_url || '未填写'}\nAPI Key：${model.key_hint || '未设置'}`;
+      const log = data.log || {};
+      $('#diag-log-path').textContent = log.path || '—';
+      $('#diag-log-size').textContent = log.exists ? formatBytes(log.bytes) : '还没有日志';
+      env.replaceChildren();
+      env.append(diagRow('Python', data.python || '—', true));
+      env.append(diagRow('数据目录', data.data_dir || '—', true));
+      env.append(diagRow('模型已配置', model.configured ? '是' : '否', !!model.configured));
+    } catch (err) {
+      ports.replaceChildren(el('p', 'muted small', err.message));
+      env.replaceChildren(el('p', 'muted small', err.message));
+    }
+  }
+
+  async function testDiagnosticsModel() {
+    const button = $('#diag-test-model');
+    const result = $('#diag-model-result');
+    button.disabled = true;
+    button.textContent = '测试中…';
+    result.className = 'diag-result';
+    result.textContent = '正在请求模型，只发一次最小请求……';
+    try {
+      const data = await api('/api/onboarding/test-model', { method: 'POST', body: {} });
+      result.className = `diag-result ${data.ok ? 'ok' : 'bad'}`;
+      result.textContent = data.ok
+        ? `连接成功：${data.model_id || ''}，${data.latency_ms} ms`
+        : `失败：${data.detail || '未知错误'}`;
+    } catch (err) {
+      result.className = 'diag-result bad';
+      result.textContent = err.message;
+    } finally {
+      button.disabled = false;
+      button.textContent = '测试一次';
+    }
+  }
+
+  async function exportDiagnostics() {
+    const button = $('#diagnostics-export');
+    button.disabled = true;
+    button.textContent = '打包中…';
+    try {
+      const data = await api('/api/diagnostics/export');
+      const blob = new Blob([data.content || ''], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = data.filename || 'dafeiyu-diagnostics.txt';
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      toast(`已导出 ${data.filename || '诊断包'}`);
+    } catch (err) {
+      toast(err.message, true);
+    } finally {
+      button.disabled = false;
+      button.textContent = '导出日志';
+    }
+  }
+
   async function toggleModule(box) {
     const module = box.dataset.module;
     const paused = !box.checked;
@@ -416,6 +764,17 @@
     try {
       await api('/api/runtime', { method: 'PUT', body: { emergency: on } });
       toast(on ? '已停机：她不再回复，也不主动做事' : '已恢复运行');
+      await loadStatus(true);
+    } catch (err) {
+      toast(err.message, true);
+    }
+  }
+
+  async function toggleMuteToday() {
+    const muted = !!(state.status && state.status.proactive && state.status.proactive.muted_today);
+    try {
+      await api('/api/proactive/mute', { method: 'POST', body: { muted: !muted } });
+      toast(muted ? '今天就到这里，她不会再主动找你' : '好，今天还是会去找你');
       await loadStatus(true);
     } catch (err) {
       toast(err.message, true);
@@ -687,20 +1046,45 @@
   function init() {
     $$('.nav-item').forEach((btn) => btn.addEventListener('click', () => switchPage(btn.dataset.page)));
     $$('[data-page-link]').forEach((btn) => btn.addEventListener('click', () => switchPage(btn.dataset.pageLink)));
-    $$('#page-overview .control-row input[data-module]').forEach((box) => {
+    $$('#page-overview input[data-module]').forEach((box) => {
       box.addEventListener('change', () => toggleModule(box));
     });
     $('#emergency').addEventListener('click', toggleEmergency);
+    $$('.mute-today').forEach((button) => button.addEventListener('click', toggleMuteToday));
+    $('#proactive-max').addEventListener('input', (event) => {
+      $('#proactive-max-label').textContent = `${event.target.value} 条/天`;
+    });
     $('#refresh').addEventListener('click', () => {
       loadStatus();
       if (state.page === 'chat') loadChat();
+      if (state.page === 'memory') loadMemory();
       if (state.page === 'persona') loadPersona();
       if (state.page === 'config') loadSettings();
       if (state.page === 'logs') loadLogs();
+      if (state.page === 'diagnostics') loadDiagnostics();
     });
+    $('#diagnostics-refresh').addEventListener('click', loadDiagnostics);
+    $('#diagnostics-export').addEventListener('click', exportDiagnostics);
+    $('#diag-test-model').addEventListener('click', testDiagnosticsModel);
     $('#reload-chat').addEventListener('click', loadChat);
+    $('#reload-memory').addEventListener('click', loadMemory);
+    let memorySearchTimer = null;
+    $('#memory-search').addEventListener('input', () => {
+      clearTimeout(memorySearchTimer);
+      memorySearchTimer = setTimeout(loadMemory, 280);
+    });
     $('#reload-logs').addEventListener('click', loadLogs);
     $('#save-persona').addEventListener('click', savePersona);
+    $('#restore-persona').addEventListener('click', restorePersona);
+    $('#persona-preview-close').addEventListener('click', () => {
+      $('#persona-preview').hidden = true;
+      previewTemplateId = '';
+      previewTemplateName = '';
+    });
+    $('#persona-preview-apply').addEventListener('click', () => {
+      if (!previewTemplateId) return;
+      applyPersonaTemplate(previewTemplateId, previewTemplateName);
+    });
     $('#save-settings').addEventListener('click', saveSettings);
     $('#onboarding-later').addEventListener('click', finishOnboardingLater);
     $('#persona-text').addEventListener('input', (event) => {

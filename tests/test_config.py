@@ -42,6 +42,30 @@ def test_defaults(tmp_path):
     assert settings.window_char_budget == int(4000 / 0.6)
 
 
+def test_proactive_quiet_hours_config(tmp_path):
+    settings = Settings.from_env(
+        {
+            "ALLOW_USER_ID": "123",
+            "MODEL_API_KEY": "k",
+            "PROACTIVE_QUIET_START_HOUR": "22",
+            "PROACTIVE_QUIET_END_HOUR": "7",
+        },
+        tmp_path,
+    )
+    assert settings.proactive_quiet_start_hour == 22
+    assert settings.proactive_quiet_end_hour == 7
+    with pytest.raises(ConfigError):
+        Settings.from_env(
+            {
+                "ALLOW_USER_ID": "123",
+                "MODEL_API_KEY": "k",
+                "PROACTIVE_QUIET_START_HOUR": "8",
+                "PROACTIVE_QUIET_END_HOUR": "8",
+            },
+            tmp_path,
+        )
+
+
 def test_loads_dotenv_file(tmp_path):
     (tmp_path / ".env").write_text("ALLOW_USER_ID=42\nMODEL_API_KEY=kk\n", encoding="utf-8")
     settings = load_settings(base_dir=tmp_path, env={})

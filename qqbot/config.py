@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
@@ -130,6 +131,8 @@ class Settings:
     proactive_max_per_day: int = 5
     proactive_start_hour: int = 9
     proactive_end_hour: int = 23
+    proactive_quiet_start_hour: int = 23
+    proactive_quiet_end_hour: int = 8
     proactive_min_gap_hours: float = 3.0
     proactive_quiet_minutes: int = 30
     proactive_idle_hours: float = 5.0
@@ -309,6 +312,17 @@ class Settings:
     def context_hard_char_budget(self) -> int:
         return max(1, int(self.context_hard_token_budget / 0.6))
 
+    def in_quiet_hours(self, now: float | None = None) -> bool:
+        """免打扰时段，支持跨午夜（例如 23 点到次日 8 点）。"""
+        hour = time.localtime(now if now is not None else time.time()).tm_hour
+        start = int(self.proactive_quiet_start_hour)
+        end = int(self.proactive_quiet_end_hour)
+        if start == end:
+            return False
+        if start < end:
+            return start <= hour < end
+        return hour >= start or hour < end
+
     @classmethod
     def from_env(cls, env: Mapping[str, str], base_dir: Path) -> "Settings":
         missing = [k for k in REQUIRED_KEYS if not str(env.get(k, "")).strip()]
@@ -346,6 +360,13 @@ class Settings:
         if start_hour >= end_hour:
             raise ConfigError("PROACTIVE_START_HOUR 必须小于 PROACTIVE_END_HOUR")
 
+        quiet_start = _int(env, "PROACTIVE_QUIET_START_HOUR", 23, minimum=0)
+        quiet_end = _int(env, "PROACTIVE_QUIET_END_HOUR", 8, minimum=0)
+        if quiet_start > 23 or quiet_end > 23:
+            raise ConfigError("PROACTIVE_QUIET_START_HOUR / PROACTIVE_QUIET_END_HOUR 必须在 0~23 之间")
+        if quiet_start == quiet_end:
+            raise ConfigError("免打扰开始时和结束不能相同")
+
         return cls(
             allow_user_id=allow_user_id,
             model_api_key=str(env["MODEL_API_KEY"]).strip(),
@@ -373,6 +394,8 @@ class Settings:
             proactive_max_per_day=_int(env, "PROACTIVE_MAX_PER_DAY", 5),
             proactive_start_hour=start_hour,
             proactive_end_hour=end_hour,
+            proactive_quiet_start_hour=quiet_start,
+            proactive_quiet_end_hour=quiet_end,
             proactive_min_gap_hours=_float(env, "PROACTIVE_MIN_GAP_HOURS", 3.0),
             proactive_quiet_minutes=_int(
                 env, "PROACTIVE_QUIET_MINUTES", 30, minimum=0

@@ -41,6 +41,16 @@ def test_installer_build_is_reproducible():
     assert not any(byte > 127 for byte in (ROOT / "installer" / "build-installer.ps1").read_bytes())
 
 
+def test_installer_ships_safe_default_persona():
+    build = (ROOT / "installer" / "build-installer.ps1").read_text(encoding="utf-8")
+    assert "defaults\\prompts" in build
+    default = ROOT / "defaults" / "prompts" / "system.md"
+    text = default.read_text(encoding="utf-8")
+    assert "不编造" in text
+    assert "线下" in text
+    assert "做不到" in text
+
+
 def test_installer_does_not_ship_local_data_or_secrets():
     build = (ROOT / "installer" / "build-installer.ps1").read_text(encoding="utf-8")
     # 安装包只复制白名单目录；data、logs、.env 不在复制列表中。

@@ -37,7 +37,9 @@ function Copy-File {
 }
 
 Copy-Tree (Join-Path $root "qqbot") (Join-Path $payload "qqbot") @("__pycache__", ".pytest_cache")
-Copy-Tree (Join-Path $root "prompts") (Join-Path $payload "defaults\prompts")
+$defaultPrompts = Join-Path $root "defaults\prompts"
+if (-not (Test-Path $defaultPrompts)) { $defaultPrompts = Join-Path $root "prompts" }
+Copy-Tree $defaultPrompts (Join-Path $payload "defaults\prompts")
 Copy-Tree (Join-Path $root "scripts") (Join-Path $payload "scripts") @("__pycache__")
 Copy-Tree (Join-Path $root "docs") (Join-Path $payload "docs")
 if (Test-Path (Join-Path $root "assets")) {
