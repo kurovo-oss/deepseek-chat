@@ -21,6 +21,14 @@ class FakeLLM:
         return ChatResult(self.text, 10, 10, "fake")
 
 
+class FakeMood:
+    def __init__(self, **values):
+        self.values = values
+
+    def snapshot(self, now=None):
+        return self.values
+
+
 class FakeSender:
     def __init__(self, ok=True, data=None):
         self.ok = ok
@@ -72,6 +80,16 @@ def test_draft_strips_prefix_and_blank_lines(tmp_path):
     assert matter["text"].startswith("今天他给我看了他写的代码")
     assert "\n\n" not in matter["text"]
     assert "说说：" not in matter["text"]
+
+
+def test_draft_puts_mood_in_the_prompt(tmp_path):
+    cfg, store, _ = env(tmp_path)
+    llm = FakeLLM()
+
+    qzone.draft(store, llm, cfg, mood=FakeMood(miss=0.9, warmth=0.5, tired=0.1))
+
+    prompt = "\n".join(message["content"] for message in llm.calls[0])
+    assert "很想他" in prompt
 
 
 def test_dry_run_does_not_touch_the_api(tmp_path):

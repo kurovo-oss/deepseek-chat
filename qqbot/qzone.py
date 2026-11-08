@@ -16,6 +16,7 @@ from . import digest as digest_mod
 from . import guard as guard_mod
 from . import growth as growth_mod
 from . import life as life_mod
+from . import mood as mood_mod
 
 log = logging.getLogger("qqbot")
 
@@ -280,9 +281,9 @@ def _events_block(store, limit: int = 3) -> str:
     return "\n".join(lines) or "（今天没什么特别的）"
 
 
-def draft(store, llm, settings, now: int | None = None) -> dict:
+def draft(store, llm, settings, now: int | None = None, mood=None) -> dict:
     stamp = int(now if now is not None else time.time())
-    mood = ""
+    mood_text = mood_mod.mood_line(mood.snapshot(stamp)) if mood is not None else ""
     style = pick_style(store)
     spec = STYLES[style]
     prompt = PROMPT.format(
@@ -290,7 +291,7 @@ def draft(store, llm, settings, now: int | None = None) -> dict:
         digest=digest_mod.recent_text(settings, days=1) or "（今天没聊多少）",
         life=life_mod.snippet(settings) or "（今天还没写什么）",
         events=_events_block(store),
-        mood=mood or "（还行）",
+        mood=mood_text or "（还行）",
         recent=_recent_block(store),
         banned=_banned_topics(_recent_posts(store)),
         style_label=spec["label"],
@@ -526,7 +527,7 @@ def approve_draft(store, guard, sender, post_id: int, now: int | None = None) ->
     return {"status": "failed", "detail": error}
 
 
-def maybe_post(store, llm, settings, guard, sender, now: int | None = None) -> dict | None:
+def maybe_post(store, llm, settings, guard, sender, now: int | None = None, mood=None) -> dict | None:
     """定时入口：窗口内、今天没超额度，就写一条并（试运行地）发。"""
     if not getattr(settings, "qzone_enabled", False):
         return None
@@ -543,7 +544,7 @@ def maybe_post(store, llm, settings, guard, sender, now: int | None = None) -> d
         return None
     if not guard.check("qzone", "post", user_id=settings.allow_user_id, now=stamp).allowed:
         return None
-    matter = draft(store, llm, settings, now=stamp)
+    matter = draft(store, llm, settings, now=stamp, mood=mood)
     if not matter["text"]:
         return None
     ledger = claims_mod.verify(matter["text"], store, now=stamp)
@@ -566,10 +567,10 @@ def maybe_post(store, llm, settings, guard, sender, now: int | None = None) -> d
     return publish(store, guard, sender, matter["text"], matter["image"], now=stamp, reason="定时", claims=ledger)
 
 
-def tick_loop(store, llm, settings, guard, sender, stop_event, interval: float = 300.0) -> None:
+def tick_loop(store, llm, settings, guard, sender, stop_event, interval: float = 300.0, mood=None) -> None:
     while not stop_event.wait(interval):
         try:
-            result = maybe_post(store, llm, settings, guard, sender)
+            result = maybe_post(store, llm, settings, guard, sender, mood=mood)
             if result is not None:
                 log.info("空间：%s（%s）", result["status"], result["detail"][:60])
         except Exception:  # noqa: BLE001 - 空间失败不该拖垮主进程

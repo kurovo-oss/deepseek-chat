@@ -20,6 +20,7 @@ from pathlib import Path
 
 from . import cdp as cdp_mod
 from . import guard as guard_mod
+from . import mood as mood_mod
 
 log = logging.getLogger("qqbot")
 
@@ -226,17 +227,48 @@ def interesting(text: str) -> bool:
     return any(word in (text or "") for word in SHARE_KEYWORDS)
 
 
-def share_text(text: str, aweme_id: str) -> str:
+def mood_plan(values: dict[str, float] | None) -> dict:
+    """她的情绪决定这轮刷不刷、刷几条、分享时先说什么。
+
+    - 累到 TIRED_LIMIT：这一轮不刷（省得她越刷越累，也省浏览器）
+    - 很想他：只刷两条，分享时先带一句"想你了"
+    - 心情好：可以多刷两条、多分享一条
+    """
+    values = values or {}
+    tired = float(values.get("tired", 0.0))
+    miss = float(values.get("miss", 0.0))
+    warmth = float(values.get("warmth", 0.0))
+    if tired >= mood_mod.TIRED_LIMIT:
+        return {"skip": True, "label": "累", "max_likes": 0, "max_shares": 0,
+                "prefix": "", "reason": "太累了，今天不刷"}
+    if miss >= mood_mod.MISS_LIMIT:
+        return {"skip": False, "label": "想他", "max_likes": 2, "max_shares": 1,
+                "prefix": "想你了，刷到这个就想到你。", "reason": ""}
+    if warmth >= 0.6:
+        return {"skip": False, "label": "暖", "max_likes": 5, "max_shares": 2,
+                "prefix": "今天心情好，这个看得我笑出声。", "reason": ""}
+    return {"skip": False, "label": "平", "max_likes": 5, "max_shares": 2,
+            "prefix": "", "reason": ""}
+
+
+def share_text(text: str, aweme_id: str, prefix: str = "") -> str:
     line = (text or "").strip()[:40] or "刷到一个有点意思的"
-    return f"{line}\nhttps://www.douyin.com/video/{aweme_id}"
+    body = f"{prefix}\n{line}" if prefix else line
+    return f"{body}\nhttps://www.douyin.com/video/{aweme_id}"
 
 
 def run_once(store, settings, guard, sender, browser: Browser, now: int | None = None,
-             notify=None) -> dict:
+             notify=None, mood=None) -> dict:
     """刷一轮：读推荐 → 点赞 → 挑有趣的分享。返回统计。"""
     stamp = int(now if now is not None else time.time())
-    result = {"liked": 0, "shared": 0, "skipped": 0, "dry_run": 0, "error": ""}
+    result = {"liked": 0, "shared": 0, "skipped": 0, "dry_run": 0, "mood": "", "error": ""}
     if not getattr(settings, "douyin_enabled", False):
+        return result
+    plan = mood_plan(mood.snapshot(stamp) if mood is not None else None)
+    result["mood"] = plan["label"]
+    if plan["skip"]:
+        result["error"] = plan["reason"]
+        log.info("抖音：%s", plan["reason"])
         return result
     try:
         pid_path = pid_file(settings)
@@ -271,6 +303,8 @@ def run_once(store, settings, guard, sender, browser: Browser, now: int | None =
         for item in feed:
             if item["id"] in today:
                 continue
+            if result["liked"] + result["dry_run"] >= plan["max_likes"]:
+                break
             decision = guard.check("douyin", "like", target=item["id"],
                                    user_id=settings.allow_user_id, now=stamp)
             if not decision.allowed:
@@ -295,12 +329,16 @@ def run_once(store, settings, guard, sender, browser: Browser, now: int | None =
                 result["error"] = "like_failed"
                 break
             result["liked"] += 1
-            if interesting(item.get("text", "")):
+            if result["shared"] < plan["max_shares"] and interesting(item.get("text", "")):
                 share = guard.check("douyin_share", "share", target=item["id"],
                                     user_id=settings.allow_user_id, now=stamp)
                 ok_send = False
                 if share.allowed:
-                    text = share_text(item.get("text", ""), item["id"])
+                    text = share_text(
+                        item.get("text", ""),
+                        item["id"],
+                        prefix=plan["prefix"] if result["shared"] == 0 else "",
+                    )
                     if share.dry_run:
                         guard.record("douyin_share", "share", target=item["id"], payload=text,
                                      result="dry_run", now=stamp)
@@ -318,7 +356,7 @@ def run_once(store, settings, guard, sender, browser: Browser, now: int | None =
     return result
 
 
-def tick_loop(store, settings, guard, sender, stop_event, interval: float = 1200.0) -> None:
+def tick_loop(store, settings, guard, sender, stop_event, interval: float = 1200.0, mood=None) -> None:
     browser = Browser(settings)
     def notify(text: str) -> None:
         try:
@@ -328,11 +366,12 @@ def tick_loop(store, settings, guard, sender, stop_event, interval: float = 1200
 
     while not stop_event.wait(interval):
         try:
-            result = run_once(store, settings, guard, sender, browser, notify=notify)
+            result = run_once(store, settings, guard, sender, browser, notify=notify, mood=mood)
             if result["liked"] or result["shared"] or result["skipped"] or result["dry_run"] or result["error"]:
                 log.info(
-                    "抖音：点赞 %d、分享 %d、跳过 %d、试运行 %d%s",
-                    result["liked"], result["shared"], result["skipped"], result["dry_run"],
+                    "抖音（%s）：点赞 %d、分享 %d、跳过 %d、试运行 %d%s",
+                    result["mood"] or "平", result["liked"], result["shared"],
+                    result["skipped"], result["dry_run"],
                     f"（{result['error']}）" if result["error"] else "",
                 )
         except Exception:  # noqa: BLE001

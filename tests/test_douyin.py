@@ -40,12 +40,22 @@ class FakePage:
 class FakeBrowser:
     def __init__(self, page):
         self.page = page
+        self.starts = 0
 
     def start(self):
+        self.starts += 1
         return self.page
 
     def stop(self):
         pass
+
+
+class FakeMood:
+    def __init__(self, **values):
+        self.values = values
+
+    def snapshot(self, now=None):
+        return self.values
 
 
 class FakeSender:
@@ -181,6 +191,54 @@ def test_share_text_keeps_link():
 
     assert "猫猫做饭" in text
     assert "https://www.douyin.com/video/999" in text
+
+
+def test_share_text_can_carry_a_mood_prefix():
+    text = douyin.share_text("猫猫做饭", "999", prefix="想你了。")
+
+    assert text.startswith("想你了。")
+    assert "猫猫做饭" in text
+
+
+def test_tired_mood_skips_scrolling_entirely(tmp_path, monkeypatch):
+    monkeypatch.setattr(time, "sleep", lambda seconds: None)
+    cfg, store, gate = env(tmp_path)
+    page = FakePage(feed=[{"id": "888", "text": "猫猫"}])
+    browser = FakeBrowser(page)
+
+    result = douyin.run_once(
+        store, cfg, gate, FakeSender(), browser, now=int(time.time()),
+        mood=FakeMood(tired=0.9),
+    )
+
+    assert result["mood"] == "累"
+    assert result["liked"] == 0
+    assert "太累" in result["error"]
+    assert browser.starts == 0
+    assert page.visited == []
+    store.close()
+
+
+def test_missing_him_limits_the_round_and_warms_the_share(tmp_path, monkeypatch):
+    monkeypatch.setattr(time, "sleep", lambda seconds: None)
+    cfg, store, gate = env(tmp_path, douyin_dry_run=False)
+    sender = FakeSender()
+    page = FakePage(feed=[
+        {"id": "901", "text": "一只猫在门口等主人"},
+        {"id": "902", "text": "小狗学会握手"},
+        {"id": "903", "text": "猫猫偷吃被抓"},
+    ])
+
+    result = douyin.run_once(
+        store, cfg, gate, sender, FakeBrowser(page), now=int(time.time()),
+        mood=FakeMood(miss=0.9),
+    )
+
+    assert result["mood"] == "想他"
+    assert result["liked"] == 2
+    assert result["shared"] == 1
+    assert sender.sent[0][1].startswith("想你了")
+    store.close()
 
 def test_stop_browser_without_pidfile_is_false(tmp_path):
     cfg = settings(tmp_path)

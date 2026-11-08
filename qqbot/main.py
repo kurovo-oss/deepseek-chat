@@ -424,10 +424,15 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     engine.guard = guard_mod.Guard(engine.store, settings)
+    if settings.mood_enabled:
+        engine.mood = Mood(engine.store, settings)
+        log.info("情绪状态：%s", engine.mood.line())
+
     if settings.qzone_enabled:
         threading.Thread(
             target=qzone_mod.tick_loop,
             args=(engine.store, engine.llm, settings, engine.guard, engine.sender, stop_event),
+            kwargs={"mood": engine.mood},
             name="qzone",
             daemon=True,
         ).start()
@@ -442,6 +447,7 @@ def main(argv: list[str] | None = None) -> int:
         threading.Thread(
             target=douyin_mod.tick_loop,
             args=(engine.store, settings, engine.guard, engine.sender, stop_event),
+            kwargs={"mood": engine.mood},
             name="douyin",
             daemon=True,
         ).start()
@@ -463,10 +469,6 @@ def main(argv: list[str] | None = None) -> int:
             if engine.store.last_dream_at()
             else "还没做过",
         )
-
-    if settings.mood_enabled:
-        engine.mood = Mood(engine.store, settings)
-        log.info("情绪状态：%s", engine.mood.line())
 
     if settings.digest_enabled:
         threading.Thread(
