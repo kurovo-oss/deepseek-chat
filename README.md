@@ -64,6 +64,27 @@ powershell -ExecutionPolicy Bypass -File scripts\stop-bot.ps1              # 停
 > 再拉起机器人；机器人进程退出 15 秒后自动重启，日志在 `logs\supervise.log`。
 > 协议端要管理员权限，掉线后仍需手动 `scripts\restart-napcat.ps1`，免得半夜弹 UAC。
 
+## 一键启动（大肥鱼.exe）
+
+![启动器](docs/exe-launcher.png)
+
+双击项目根目录的 **`大肥鱼.exe`**：
+
+- 自动检查 Python / 启动脚本；
+- 后台用 `scripts\supervise.ps1` 拉起协议端和机器人（已有进程不会重复启动）；
+- 等控制台端口就绪后，自动用 token 打开 `http://127.0.0.1:8090`；
+- 小窗口里有「打开控制台」「启动」「停止机器人」「看日志」；关闭窗口不会停止机器人。
+
+这是**项目专用启动器**：Python、NapCat、素材仍在项目目录，exe 只负责一键串联，不会把运行时解压到 C 盘。项目目录移动后 exe 仍可用，只要和 `qqbot\`、`tools\`、`scripts\` 在同一层。
+
+重新编译（不需要联网）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build-exe.ps1
+```
+
+首次冷启动可能需要 20–40 秒（NapCat 登录 + 模型自检）；如果窗口提示启动较慢，点「看日志」。
+
 ## 本地控制台
 
 机器人启动后，同进程起一个只监听本机的控制台：
