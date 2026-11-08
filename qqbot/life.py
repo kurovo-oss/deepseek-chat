@@ -1,13 +1,9 @@
-"""她的"生活线"。
+"""她的「生活线」：只记今天真实发生过的事。
 
-为什么要有它：没有生活线的角色，每句话都挂在他身上——他说什么她答什么，
-像客服，不像一个有自己日子的人。真人聊天会突然冒一句"我刚吃了个超酸的橘子"。
+以前她每天自己挑一件事（做菜、收拾屋子）写日记，那些都是编的。
+2026-11-08 起改成「只写有真实依据的」：没有真实素材就不生成，空间也不硬发。
 
-**现在是她自己选的**：以前这里是一份写死的菜单（`BUSY_THINGS` 按日期轮换），
-她负责把指定那件事写成日记——那是填表。现在每天她自己决定推进哪件事、
-开新的还是放下，并说一句为什么；选择落到 `qqbot.projects`，明天还在。
-
-存 `data/life/YYYY-MM-DD.md`，随 system prompt 注入。她想用就用，不想用也没关系。
+存 `data/life/YYYY-MM-DD.md`，随 system prompt 注入。
 """
 
 from __future__ import annotations
@@ -20,66 +16,32 @@ from datetime import date
 from pathlib import Path
 
 from . import capability as capability_mod
-from . import projects as projects_mod
 
 log = logging.getLogger("qqbot")
 
-# 只输出几行短句：长了会被模型当成"设定"照抄，反而更假
-PROMPT = """你在给一个角色写"她今天的日子"，用她自己的口吻。
+PROMPT = """你在替「大肥鱼」写今天的小记，第一人称，口语，像随手记下来的。
 
-角色：18 岁，有点娇羞、有点馋，手上总有点小事。住在他附近，白天一个人待着。
+只能写下面【今天真实发生】里出现过的事，以及她当时的感受。
+不要编任何没发生的事：没出门就别写出门，没做饭就别写做饭，没买东西就别写买东西，没见谁就别写见谁。
+不要写她的项目、计划、家务安排；不要提"AI""模型""用户"。
+2~4 行，每行一句，不要标题、不要编号、不要总结。
 
-{WORLD}
+【今天真实发生】
+{EVENTS}
 
-**你不是在填别人给的表。** 今天做什么、推进哪件事、要不要开一件新的、
-要不要把某件放下——你自己定；选完说清楚为什么，别只是为了不一样而不一样。
+【他今天说的话（可以引用，别整段复读）】
+{QUOTES}
+"""
 
-{PROJECTS}
-
-今天：{DATE}（{WEEKDAY}）。
-{CONTEXT}
-{PAST}
-
-只输出一个 JSON，不要解释、不要代码块：
-{{"action": "advance",
- "project": "手上那件事的名字",
- "note": "今天到哪一步了，一句，最多 20 字",
- "reason": "为什么今天选它，第一人称，一句，最多 20 字",
- "today": ["今天做了什么", "遇到的小麻烦", "现在手边有什么", "想跟他提的一件小事"]}}
-
-action 只能是 advance / start / pause / drop / done / none：
-- advance 推进一件已有的；start 开一件新的（project 写新名字）；
-- pause 先放下；drop 以后不做了；done 做完了；none 今天就想干点别的。
-- today 四句要具体、口语，像日记随手写的；不要写心情总结；
-  前三句别提"他"，第四句可以。
-- 同一件事最多连着推进 3 天：上面写着"已经试了 3 次"的，今天就收尾（done）
-  或先放下（pause/drop），别第四天还选它，也别换个说法继续写同一锅东西。
-- 收尾/放下那天，一句话交代结果就够了，别把四句都拿去复盘它；其余三句写今天别的。
-- today 四句里最多两句写手上的事，至少两句写别的：出门看到什么、跟谁说了话、
-  身体哪儿累、买到了什么、忽然想起什么。
-- 不要每天都让同一个物件当主角（比如连着几天都是那口锅、那碗汤）。
-- 不要出现"AI""模型""虚拟"这类字眼。"""
-
-WEEKDAYS = ("周一", "周二", "周三", "周四", "周五", "周六", "周日")
-
-# 她可以开的新事：只是灵感，不是菜单
-BUSY_THINGS = (
-    "学做一道没做过的菜",
-    "把房间重新布置一下",
-    "改简历，想换个工作",
-    "追完那部剧",
-    "给朋友挑生日礼物",
-    "研究怎么冲咖啡",
-    "把相册整理进硬盘",
-    "把那盆快死的绿萝救回来",
+# 她不能凭空写的东西：只有他真的在聊天里提过/发生过，才算数。
+# 命中这些词、但今天的真实素材里没有，就判为编造，重写；再犯就丢掉这一天。
+_LIFE_PROPS = (
+    "房间", "书桌", "桌子", "椅子", "阳台", "窗帘", "厨房", "锅", "灶", "碗",
+    "洗衣", "晾", "拖把", "扫地", "抹布", "纸箱", "胶带", "螺丝", "拼图",
+    "牛腩", "汤", "做菜", "超市", "便利店", "下楼", "出门", "上班", "公司",
+    "地铁", "公交", "快递", "绿萝", "咖啡", "面包", "电视剧", "猫", "狗",
+    "被子", "枕头", "衣柜", "冰箱", "买菜", "做饭",
 )
-
-
-def busy_things(day: date, count: int = 2) -> str:
-    """按日期给几条"可以试试的新事"当灵感。不再决定她今天做什么。"""
-    start = day.toordinal()
-    picked = [BUSY_THINGS[(start + index) % len(BUSY_THINGS)] for index in range(count)]
-    return "、".join(picked)
 
 
 def recent(settings, day: date, days: int = 2) -> str:
@@ -112,22 +74,20 @@ def recent_words(settings, day: date, days: int = COOLDOWN_DAYS) -> set[str]:
     words: set[str] = set()
     for offset in range(1, days + 1):
         text = _read(_day_path(settings, day.fromordinal(day.toordinal() - offset)))
-        # “今天挑的是：…”是模板，不是话题，别把它算进冷却词
-        body = "\n".join(
-            line for line in text.splitlines()
-            if not line.startswith(("今天挑的是", "今天开了件新事"))
-        )
-        words |= _grams(body)
+        words |= _grams(text)
     return words
 
 
-def day_events(store, settings, day: date) -> list[str]:
-    """今天真实发生过的事——日记至少有一半要能对上，不能全靠编。"""
+def _day_start(day: date) -> int:
+    return int(time.mktime(day.timetuple()))
+
+
+def _today_rows(store, day: date) -> tuple[list, list, list]:
+    """今天真实发生过的原始记录：消息、图片、发出去的说说。"""
     if store is None:
-        return []
-    start = int(time.mktime(day.timetuple()))
+        return [], [], []
+    start = _day_start(day)
     end = start + 86400
-    out: list[str] = []
     try:
         with store._lock:  # noqa: SLF001
             messages = store._conn.execute(  # noqa: SLF001
@@ -147,12 +107,44 @@ def day_events(store, settings, day: date) -> list[str]:
                 ).fetchall()
             except Exception:  # noqa: BLE001 - 空间表可能还没建
                 posts = []
-    except Exception:  # noqa: BLE001 - 事件读失败不该挡住写日记
-        return []
+    except Exception:  # noqa: BLE001 - 读失败就当作没有素材
+        return [], [], []
+    return messages, images, posts
+
+
+def _has_material(store, day: date) -> bool:
+    """今天他有没有真的留下东西：一句话，或者一张图。"""
+    if store is None:
+        return False
+    start = _day_start(day)
+    end = start + 86400
+    try:
+        with store._lock:  # noqa: SLF001
+            row = store._conn.execute(  # noqa: SLF001
+                "SELECT COUNT(*) AS n FROM messages WHERE role = 'user'"
+                " AND created_at >= ? AND created_at < ?",
+                (start, end),
+            ).fetchone()
+            if row is not None and int(row["n"]) > 0:
+                return True
+            row = store._conn.execute(  # noqa: SLF001
+                "SELECT COUNT(*) AS n FROM images WHERE source = 'user'"
+                " AND created_at >= ? AND created_at < ?",
+                (start, end),
+            ).fetchone()
+    except Exception:  # noqa: BLE001 - 表不全就当没有
+        return False
+    return row is not None and int(row["n"]) > 0
+
+
+def day_events(store, settings, day: date) -> list[str]:
+    """今天真实发生过的事——小记只能围着这些写。"""
+    messages, images, posts = _today_rows(store, day)
+    out: list[str] = []
     mine = [row for row in messages if row["role"] == "user"]
     if mine:
         last = str(mine[0]["content"] or "").replace("\n", " ").strip()
-        out.append(f"他今天找你说过 {len(mine)} 次话，最后一句是「{last[:24]}」（别原样复述）")
+        out.append(f"他今天找你说过 {len(mine)} 次话，最后一句是「{last[:24]}」")
     tags: list[str] = []
     for row in images:
         try:
@@ -168,6 +160,34 @@ def day_events(store, settings, day: date) -> list[str]:
     return out
 
 
+def _quotes(store, day: date, limit: int = 6) -> list[str]:
+    """他今天说过的原话，旧到新，给小记当证据。"""
+    if store is None:
+        return []
+    start = _day_start(day)
+    try:
+        with store._lock:  # noqa: SLF001
+            rows = store._conn.execute(  # noqa: SLF001
+                "SELECT content FROM messages WHERE role = 'user'"
+                " AND created_at >= ? AND created_at < ? ORDER BY id DESC LIMIT ?",
+                (start, start + 86400, limit),
+            ).fetchall()
+    except Exception:  # noqa: BLE001
+        return []
+    quotes = [str(row["content"] or "").replace("\n", " ").strip()[:60] for row in rows]
+    return [quote for quote in reversed(quotes) if quote]
+
+
+def _invented(body: str, evidence: str) -> list[str]:
+    """小记里出现的具体东西，如果今天的真实素材里没有，就是编的。"""
+    return [word for word in _LIFE_PROPS if word in body and word not in evidence]
+
+
+def invented(text: str, evidence: str) -> list[str]:
+    """外部（比如空间）也能用同一套标准检查有没有编造。"""
+    return _invented(text, evidence)
+
+
 def _day_path(settings, day: date) -> Path:
     return Path(settings.life_dir) / f"{day.isoformat()}.md"
 
@@ -179,7 +199,7 @@ def _read(path: Path) -> str:
         return ""
 
 
-def _clean(text: str, limit: int = 6) -> str:
+def _clean(text: str, limit: int = 4) -> str:
     """只要前几行短句，去掉编号和引号。"""
     lines: list[str] = []
     for raw in (text or "").splitlines():
@@ -194,90 +214,19 @@ def _clean(text: str, limit: int = 6) -> str:
     return "\n".join(lines)
 
 
-def parse_decision(raw: str) -> dict | None:
-    """把她那次选择解析出来；不是 JSON 就返回 None（当纯日记收下，不更新项目）。"""
-    text = (raw or "").strip()
-    start = text.find("{")
-    end = text.rfind("}")
-    if start == -1 or end <= start:
-        return None
-    try:
-        data = json.loads(text[start : end + 1])
-    except ValueError:
-        return None
-    if not isinstance(data, dict):
-        return None
-
-    today = data.get("today")
-    if isinstance(today, list):
-        data["today"] = [str(item).strip() for item in today if str(item).strip()]
-    elif isinstance(today, str):
-        data["today"] = [line.strip() for line in today.splitlines() if line.strip()]
-    else:
-        data["today"] = []
-
-    action = str(data.get("action") or "none").strip().lower()
-    if action not in ("advance", "start", "pause", "drop", "done", "none"):
-        action = "none"
-    data["action"] = action
-    return data
-
-
-def _salvage(text: str) -> dict | None:
-    """JSON 被截断时的抢救：把还能认出来的字段抠出来，别丢掉一整天。"""
-    if not text.lstrip().startswith("{"):
-        return None
-    out: dict = {"action": "none"}
-    for key in ("action", "project", "note", "reason"):
-        found = re.search(rf'"{key}"\s*:\s*"([^"]*)"', text)
-        if found:
-            out[key] = found.group(1)
-    if out["action"] not in ("advance", "start", "pause", "drop", "done", "none"):
-        out["action"] = "none"
-    block = re.search(r'"today"\s*:\s*\[(.*)', text, re.S)
-    lines: list[str] = []
-    if block:
-        for item in re.findall(r'"([^"]+)"', block.group(1)):
-            if item.strip():
-                lines.append(item.strip())
-    out["today"] = lines[:4]
-    return out if lines else None
-
-
-def _compose(decision: dict, lines: str) -> str:
-    """把"她自己挑的 + 为什么"放在最前面：她读到时，那是她的决定，不是别人的安排。"""
-    title = str(decision.get("project") or "").strip()
-    reason = str(decision.get("reason") or "").strip()
-    action = decision.get("action")
-    tail = f"（{reason}）" if reason else ""
-    if action == "none" or not title:
-        head = "今天没特意推进手上的事"
-    elif action == "start":
-        head = f"今天开了件新事：{title}{tail}"
-    elif action in ("pause", "drop", "done"):
-        head = f"把「{title}」放下了{tail}"
-    else:
-        head = f"今天挑的是：{title}{tail}"
-    return head + "\n" + lines
-
-
 def _world(settings) -> str:
     """今天能写什么、不能写什么：系统做不到的事，日子也不能写。"""
     forbidden = capability_mod.cannot(settings)
-    parts: list[str] = []
-    if forbidden:
-        parts.append(
-            "你现在做不到：" + "、".join(forbidden) + "。"
-            "今天的日子别写这些——别写\"刷到一个视频\"\"在网上看到\"\"我拍下来了\"，那是编的。"
-        )
-    allowed = capability_mod.can(settings)
-    if allowed:
-        parts.append("你现在真能做：" + "、".join(allowed) + "；写到的就必须是真正发生过的。")
-    return "\n".join(parts)
+    if not forbidden:
+        return ""
+    return (
+        "你现在做不到：" + "、".join(forbidden) + "。"
+        "今天的小记别写这些——别写\"刷到一个视频\"\"在网上看到\"\"我拍下来了\"，那是编的。"
+    )
 
 
 def today(settings, llm, context: str = "", clock=time.time, store=None) -> str:
-    """生成今天的日子并落盘，同时更新她手上的事。已经生成过就直接返回。"""
+    """写今天的真实小记并落盘。没有真实素材就不写，已经写过就直接返回。"""
     day = date.fromtimestamp(clock())
     path = _day_path(settings, day)
     cached = _read(path)
@@ -285,95 +234,73 @@ def today(settings, llm, context: str = "", clock=time.time, store=None) -> str:
         return cached
     if llm is None:
         return ""
+    if not _has_material(store, day):
+        log.info("今天没有真实素材，生活线不生成")
+        return ""
 
-    items = projects_mod.load(settings)
-    prompt = PROMPT.replace("{DATE}", day.strftime("%Y年%m月%d日"))
-    prompt = prompt.replace("{WEEKDAY}", WEEKDAYS[day.weekday()])
-    prompt = prompt.replace("{CONTEXT}", context or "（没有什么特别的背景，自己写几件小事）")
-    prompt = prompt.replace("{PROJECTS}", projects_mod.block(items, BUSY_THINGS))
-    prompt = prompt.replace("{WORLD}", _world(settings))
-    prompt = prompt.replace("{PAST}", recent(settings, day))
-    events = day_events(store, settings, day) if store is not None else []
-    if events:
-        prompt += "\n今天真实发生（四句里至少两句要能和这里对上）：\n- " + "\n- ".join(events)
-    words = recent_words(settings, day)
-    if words:
-        sample = "、".join(sorted(words)[:14])
-        prompt += f"\n最近 7 天写过这些，别再当今天的主线：{sample}"
+    events = day_events(store, settings, day)
+    quotes = _quotes(store, day)
+    evidence = "\n".join(events + quotes)
+    prompt = PROMPT.format(
+        EVENTS="\n".join(f"- {event}" for event in events) or "（没有）",
+        QUOTES="\n".join(f"- 「{quote}」" for quote in quotes) or "（没有）",
+    )
+    world = _world(settings)
+    if world:
+        prompt = world + "\n\n" + prompt
 
     try:
         result = llm.chat(
             [
-                {
-                    "role": "system",
-                    "content": "你在替一个角色安排今天并写日记。只输出一个 JSON。",
-                },
+                {"role": "system", "content": "你在替一个角色写今天的小记，只写真实发生过的事。"},
                 {"role": "user", "content": prompt},
             ],
-            temperature=0.9,
-            # 推理模型的思考也算 token：给 800 会偶发"空回复"，一天就白丢了
-            max_tokens=2000,
+            temperature=0.7,
+            # 推理模型的思考也算 token：给少了会偶发空回复
+            max_tokens=800,
         )
     except Exception:  # noqa: BLE001 - 生活线是加分项，失败就当今天没写
-        log.exception("生成今天的日子失败")
+        log.exception("生成今天的小记失败")
         return ""
 
-    text0 = result.text or ""
-    decision = parse_decision(text0) or _salvage(text0)
-    body = "\n".join(decision["today"]) if decision is not None else _clean(text0)
-    hits = [word for word in _grams(body) if word in words]
-    if len(hits) >= 2:
-        ban = "、".join(sorted(hits)[:8])
-        retry_prompt = prompt + f"\n\n上一版又写了这些最近用过的东西：{ban}。这一版换个主线，别写它们。"
+    body = _clean(result.text or "")
+    if not body or len(body.splitlines()) < 2:
+        log.warning("今天的小记不像样子，丢掉：%r", (result.text or "")[:60])
+        return ""
+
+    bad = _invented(body, evidence)
+    if bad:
+        ban = "、".join(bad)
+        retry_prompt = prompt + f"\n\n【重写】上一版写了今天没发生的事：{ban}。删掉它们，只写真实发生的。"
         try:
             again = llm.chat(
                 [
-                    {"role": "system", "content": "你在替一个角色安排今天并写日记。只输出一个 JSON。"},
+                    {"role": "system", "content": "你在替一个角色写今天的小记，只写真实发生过的事。"},
                     {"role": "user", "content": retry_prompt},
                 ],
-                temperature=0.95,
-                max_tokens=2000,
+                temperature=0.8,
+                max_tokens=800,
             )
-        except Exception:  # noqa: BLE001 - 重写失败就用第一版
+        except Exception:  # noqa: BLE001 - 重写失败就丢掉
             again = None
-        if again is not None:
-            candidate = again.text or ""
-            candidate_decision = parse_decision(candidate) or _salvage(candidate)
-            candidate_body = (
-                "\n".join(candidate_decision["today"]) if candidate_decision is not None else _clean(candidate)
-            )
-            if candidate_body and not [word for word in _grams(candidate_body) if word in words]:
-                result, decision, body = again, candidate_decision, candidate_body
-    if decision is not None:
-        lines = _clean("\n".join(decision["today"]))
-        if not lines or len(lines.splitlines()) < 2:
-            log.warning("她今天的选择里没有像样的日子，丢掉：%r", (result.text or "")[:60])
+        candidate = _clean(getattr(again, "text", "") or "") if again is not None else ""
+        if candidate and len(candidate.splitlines()) >= 2 and not _invented(candidate, evidence):
+            body = candidate
+        else:
+            log.warning("今天的小记写了没依据的事，丢掉：%r", ban)
             return ""
-        if capability_mod.claims_disabled(lines, settings):
-            log.warning("她写了自己做不到的事，丢掉：%r", lines[:60])
-            return ""
-        try:
-            projects_mod.save(settings, projects_mod.apply(items, decision, day.isoformat()))
-        except OSError:
-            log.exception("保存她手上的事失败")
-        text = _compose(decision, lines)
-    else:
-        # 模型没按 JSON 来：当纯日记收下，但不更新项目（宁可不记，也别记错）
-        text = _clean(result.text or "")
-        if not text or len(text) < 8 or len(text.splitlines()) < 2:
-            log.warning("今天的日子不像日子，丢掉：%r", text[:40])
-            return ""
-        if capability_mod.claims_disabled(text, settings):
-            log.warning("她写了自己做不到的事，丢掉：%r", text[:40])
-            return ""
+
+    if capability_mod.claims_disabled(body, settings):
+        log.warning("她写了自己做不到的事，丢掉：%r", body[:60])
+        return ""
 
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text + "\n", encoding="utf-8")
+        path.write_text(body + "\n", encoding="utf-8")
     except OSError:
-        log.exception("写今天的日子失败")
-    log.info("今天的日子已生成：%s", day.isoformat())
-    return text
+        log.exception("写今天的小记失败")
+    log.info("今天的小记已生成：%s", day.isoformat())
+    return body
 
 
 # 判断"她今天已经提过这事没有"时用的词：太泛的二合字不算
@@ -389,15 +316,10 @@ _STOP_GRAMS = frozenset(
 
 
 def keywords(settings, clock=time.time) -> set[str]:
-    """今天这件事的"关键词"：从她手上的事和今天第一行里取，够具体才认。"""
-    words: set[str] = set()
-    try:
-        items = projects_mod.load(settings)
-    except OSError:
-        items = []
-    seeds = [item.get("title", "") for item in items if item.get("status") in ("active", "done")]
+    """今天这篇小记的"关键词"：从第一行里取，够具体才认。"""
     text = _read(_day_path(settings, date.fromtimestamp(clock())))
-    seeds.append(text.splitlines()[0] if text else "")
+    seeds = [text.splitlines()[0] if text else ""]
+    words: set[str] = set()
     for chunk in re.findall(r"[\u4e00-\u9fff]+", " ".join(seeds)):
         for index in range(len(chunk) - 1):
             gram = chunk[index : index + 2]
@@ -412,7 +334,7 @@ def mentions_today(store, session: str, settings, clock=time.time) -> int:
     if not words or store is None:
         return 0
     day = date.fromtimestamp(clock())
-    midnight = int(time.mktime(day.timetuple()))
+    midnight = _day_start(day)
     count = 0
     for row in store.recent_messages(session, 200):
         if row.get("role") != "assistant" or int(row.get("created_at") or 0) < midnight:

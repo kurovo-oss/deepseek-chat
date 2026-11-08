@@ -25,7 +25,6 @@ from . import browse as browse_mod
 from . import stickers as stickers_mod
 from . import life as life_mod
 from . import voice as voice_mod
-from . import projects as projects_mod
 from . import search as search_mod
 from .export import export_all
 from .memory import KIND_LABEL, card_weight
@@ -769,10 +768,9 @@ class CommandsMixin:
             text = life_mod.today(self.settings, self.llm, store=self.store)
             return ("今天改成这样了：\n" + text) if text else "没写出来，回头再试。"
         text = life_mod.snippet(self.settings)
-        hand = projects_mod.describe(projects_mod.load(self.settings))
         events = life_mod.day_events(self.store, self.settings, date.today())
         timeline = ("\n\n今天真实发生：\n- " + "\n- ".join(events)) if events else ""
-        return (text or "今天还没写呢。") + "\n\n" + hand + timeline
+        return (text or "今天还没写呢（没有真实素材就不写）。") + timeline
 
 
 

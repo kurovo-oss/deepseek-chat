@@ -40,6 +40,7 @@ PROMPT = """你是「大肥鱼」，正在写今天的 QQ 空间说说。第一�
 
 写今天真正发生的一两件事，加上你当时的感受。不要标题、不要分点、不要"今天真是充实的一天"这种套话，
 不要提"AI""模型""用户"，不要 @ 人，不要放链接。
+今天没聊什么就写短一点，别编自己的活动、地点、物品；没发生过的事不要写。
 
 【今天聊到的】
 {digest}
@@ -96,6 +97,48 @@ def _posted_today(store, now: int) -> int:
 def in_window(now: int) -> bool:
     hour = time.localtime(now).tm_hour
     return WINDOW[0] <= hour <= WINDOW[1]
+
+
+def _has_today_material(store, now: int) -> bool:
+    """今天有没有真实素材：他说过话，或者发过图。没有就不写、不发。"""
+    start = _today_start(now)
+    with store._lock:  # noqa: SLF001
+        row = store._conn.execute(  # noqa: SLF001
+            "SELECT COUNT(*) AS n FROM messages WHERE role = 'user'"
+            " AND created_at >= ? AND created_at < ?",
+            (start, start + 86400),
+        ).fetchone()
+        if row is not None and int(row["n"]) > 0:
+            return True
+        row = store._conn.execute(  # noqa: SLF001
+            "SELECT COUNT(*) AS n FROM images WHERE source = 'user'"
+            " AND created_at >= ? AND created_at < ?",
+            (start, start + 86400),
+        ).fetchone()
+    return row is not None and int(row["n"]) > 0
+
+
+def _today_evidence(store, now: int) -> str:
+    """今天的真实素材：他说的话 + 他发的图的标签。"""
+    start = _today_start(now)
+    with store._lock:  # noqa: SLF001
+        rows = store._conn.execute(  # noqa: SLF001
+            "SELECT content FROM messages WHERE role = 'user'"
+            " AND created_at >= ? AND created_at < ?",
+            (start, start + 86400),
+        ).fetchall()
+        images = store._conn.execute(  # noqa: SLF001
+            "SELECT tags FROM images WHERE source = 'user'"
+            " AND created_at >= ? AND created_at < ?",
+            (start, start + 86400),
+        ).fetchall()
+    parts = [str(row["content"] or "") for row in rows]
+    for row in images:
+        try:
+            parts.extend(str(tag) for tag in json.loads(row["tags"] or "[]"))
+        except ValueError:
+            continue
+    return "\n".join(part for part in parts if part)
 
 
 def pick_image(store, settings, now: int) -> Path | None:
@@ -243,8 +286,9 @@ def draft(store, llm, settings, now: int | None = None) -> dict:
     style = pick_style(store)
     spec = STYLES[style]
     prompt = PROMPT.format(
-        digest=digest_mod.recent_text(settings) or "（今天没聊多少）",
-        life=life_mod.snippet(settings) or "（今天还没想好写什么）",
+        # 只给今天：旧摘要会被模型当成"今天"扩写（11-07 八条复读就是这么来的）
+        digest=digest_mod.recent_text(settings, days=1) or "（今天没聊多少）",
+        life=life_mod.snippet(settings) or "（今天还没写什么）",
         events=_events_block(store),
         mood=mood or "（还行）",
         recent=_recent_block(store),
@@ -291,6 +335,25 @@ def draft(store, llm, settings, now: int | None = None) -> dict:
         still = [word for word in repeated if word in retried]
         if retried and not still:
             text = retried
+    evidence = _today_evidence(store, stamp)
+    if text and evidence:
+        invented = life_mod.invented(text, evidence)
+        if invented:
+            fix = prompt + (
+                "\n\n【重写】上一版写了今天没发生的事："
+                + "、".join(invented)
+                + "。删掉它们，只写今天真实发生过的。"
+            )
+            try:
+                again = llm.chat(
+                    [{"role": "system", "content": fix}, {"role": "user", "content": "写吧。"}],
+                    temperature=0.9,
+                    max_tokens=600,
+                )
+                fixed = _clean(getattr(again, "text", "") or "")
+            except Exception:  # noqa: BLE001 - 重写失败就当这条不发了
+                fixed = ""
+            text = fixed if fixed and not content_issue(fixed, style) and not life_mod.invented(fixed, evidence) else ""
     image = pick_image(store, settings, stamp) if getattr(settings, "qzone_image_enabled", True) else None
     return {"text": text, "image": image, "at": stamp}
 
@@ -473,6 +536,10 @@ def maybe_post(store, llm, settings, guard, sender, now: int | None = None) -> d
     if _posted_today(store, stamp) >= int(getattr(settings, "qzone_daily_max", 3)):
         return None
     if _pending_draft(store, stamp):
+        return None
+    if not _has_today_material(store, stamp):
+        # 只写有真实依据的：今天没聊、没图，就不硬造一条
+        log.info("空间：今天没有真实素材，跳过")
         return None
     if not guard.check("qzone", "post", user_id=settings.allow_user_id, now=stamp).allowed:
         return None

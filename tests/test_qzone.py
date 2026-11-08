@@ -60,6 +60,10 @@ def env(tmp_path, **overrides):
     return cfg, store, guard.Guard(store, cfg)
 
 
+def _say(store, at, text="今天有点累"):
+    store.save_message("100", "user", text, created_at=int(at))
+
+
 def test_draft_strips_prefix_and_blank_lines(tmp_path):
     cfg, store, _ = env(tmp_path)
 
@@ -166,12 +170,38 @@ def test_maybe_post_respects_window_and_switch(tmp_path):
     evening = int(time.mktime((2026, 11, 5, 21, 0, 0, 0, 0, -1)))
 
     assert qzone.maybe_post(store, FakeLLM(), cfg, g, sender, now=noon) is None
+    _say(store, evening - 60)
     result = qzone.maybe_post(store, FakeLLM(), cfg, g, sender, now=evening)
 
     assert result is not None
     assert result["status"] == "ok"
 
     assert qzone.maybe_post(store, FakeLLM(), cfg, g, sender, now=evening) is None
+
+
+def test_maybe_post_skips_a_day_without_real_material(tmp_path):
+    """今天没聊、没图，就不硬造一条说说。"""
+    cfg, store, g = env(tmp_path, qzone_dry_run=False)
+    sender = FakeSender()
+    llm = FakeLLM()
+    evening = int(time.mktime((2026, 11, 5, 21, 0, 0, 0, 0, -1)))
+
+    assert qzone.maybe_post(store, llm, cfg, g, sender, now=evening) is None
+    assert llm.calls == []
+    assert sender.calls == []
+    store.close()
+
+
+def test_maybe_post_rejects_invented_offline_life(tmp_path):
+    """他没提过房间，说说里就不许出现房间。"""
+    cfg, store, g = env(tmp_path, qzone_dry_run=False)
+    sender = FakeSender()
+    llm = FakeLLM("我把房间收拾了一遍，累得不想动，地上一只纸箱。")
+    _say(store, _at() - 60, "今天有点累")
+
+    assert qzone.maybe_post(store, llm, cfg, g, sender, now=_at()) is None
+    assert sender.calls == []
+    store.close()
 
 def test_pick_image_accepts_active_status(tmp_path):
     settings_ = settings(tmp_path)
@@ -327,7 +357,8 @@ def _at(hour=21):
 def test_maybe_post_holds_claim_that_cannot_be_verified(tmp_path):
     cfg, store, g = env(tmp_path, qzone_dry_run=False)
     sender = FakeSender()
-    llm = FakeLLM("他说「周六来吃饭」，我一直记着呢，锅里还留着汤。")
+    llm = FakeLLM("他说「周六来吃饭」，我一直记着呢，从早上想到现在。")
+    _say(store, _at() - 60)
 
     result = qzone.maybe_post(store, llm, cfg, g, sender, now=_at())
 

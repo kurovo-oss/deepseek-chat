@@ -17,7 +17,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from . import digest as digest_mod
 from . import draw as draw_mod
 from . import abilities as abilities_mod
 from . import budget as budget_mod
@@ -760,15 +759,9 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
 
     def _write_life(self) -> None:
         try:
-            context = ""
-            if self.memory is not None:
-                journal = self.memory.journal()
-                if journal:
-                    context = "最近的记忆：" + journal[:300]
-            digest = digest_mod.recent_text(self.settings)
-            if digest:
-                context = (context + "\n" + digest[:400]).strip()
-            life_mod.today(self.settings, self.llm, context=context, store=self.store)
+            # 只写今天真实发生过的事：记忆本和旧摘要都是"过去"，喂进来会被
+            # 模型顺手写成本事（11-07 连发 8 条"早上想他、上班"就是这么来的）。
+            life_mod.today(self.settings, self.llm, store=self.store)
             life_mod.prune(self.settings)
         except Exception:  # noqa: BLE001 - 生活线是加分项
             log.exception("生成生活线失败")

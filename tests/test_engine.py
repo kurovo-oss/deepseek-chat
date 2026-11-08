@@ -678,7 +678,7 @@ def test_life_command_prints_today(tmp_path):
     reply = env.engine._handle_command("/life", "100")
 
     assert "泡了第二杯茶" in reply
-    assert "手上的事" in reply or "没有正在进行" in reply
+    assert "手上的事" not in reply
 
 
 def test_assistant_history_loses_old_address(tmp_path):
