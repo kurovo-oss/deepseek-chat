@@ -72,6 +72,17 @@ def test_daily_quota(tmp_path):
     assert third.reason == "quota"
 
 
+def test_dry_run_rows_do_not_block_a_real_run(tmp_path):
+    g = make_guard(tmp_path, douyin_dry_run=False, douyin_daily_max=1)
+    now = int(time.time())
+    g.record("douyin", "like", target="1", result="dry_run", now=now)
+
+    decision = g.check("douyin", "like", target="2", user_id=7, now=now + 10)
+
+    assert decision.allowed is True
+    assert decision.dry_run is False
+
+
 def test_cooldown_blocks_back_to_back(tmp_path):
     g = make_guard(tmp_path, qzone_dry_run=False)
     now = int(time.time())

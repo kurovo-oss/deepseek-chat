@@ -201,7 +201,21 @@ class Browser:
 
 def login_probe(page: cdp_mod.CDP) -> dict:
     page.call("Runtime.enable")
-    return page.evaluate(LOGIN_JS) or {}
+    state = page.evaluate(LOGIN_JS) or {}
+    # 页面刚打开时用户信息可能还没渲染，先看 cookie 里的 sessionid 兜底；
+    # 只要页面明确显示"扫码登录"就不算登录。
+    try:
+        cookies = (page.call("Network.getAllCookies") or {}).get("cookies") or []
+        has_session = any(
+            cookie.get("name") == "sessionid" and "douyin" in str(cookie.get("domain", ""))
+            for cookie in cookies
+        )
+    except Exception:  # noqa: BLE001 - 老浏览器/接口不支持就算了
+        has_session = False
+    state["has_session"] = has_session
+    if has_session and not state.get("has_login_button"):
+        state["has_avatar"] = True
+    return state
 
 
 def read_feed(page: cdp_mod.CDP, limit: int = 10) -> list[dict]:

@@ -172,6 +172,21 @@ def test_daily_quota_stops_after_limit(tmp_path, monkeypatch):
     assert result["skipped"] == 1
 
 
+def test_login_probe_falls_back_to_session_cookie(tmp_path):
+    class CookiePage(FakePage):
+        def call(self, method, params=None):
+            if method == "Network.getAllCookies":
+                return {"cookies": [{"name": "sessionid", "domain": ".douyin.com"}]}
+            return {}
+
+    page = CookiePage(login={"has_avatar": False, "has_login_button": False})
+
+    state = douyin.login_probe(page)
+
+    assert state["has_session"] is True
+    assert state["has_avatar"] is True
+
+
 def test_already_liked_video_is_skipped_not_failed(tmp_path, monkeypatch):
     monkeypatch.setattr(time, "sleep", lambda seconds: None)
     cfg, store, gate = env(tmp_path, douyin_dry_run=False)

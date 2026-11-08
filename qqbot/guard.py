@@ -116,7 +116,11 @@ class Guard:
             ).fetchall()
 
     def _today(self, module: str, now: int) -> int:
-        return sum(1 for row in self._rows(module, now - DAY_SECONDS) if row["result"] in ("ok", "dry_run"))
+        cap = self.caps.get(module)
+        # 试运行记录只在她还处于试运行时占额度；一旦转真，昨天的试运行不该
+        # 把今天的真操作卡住（真机上切换当天就撞到过这个）。
+        counting = ("ok", "dry_run") if cap is not None and cap.dry_run else ("ok",)
+        return sum(1 for row in self._rows(module, now - DAY_SECONDS) if row["result"] in counting)
 
     def _last_success(self, module: str) -> int:
         with self.store._lock:  # noqa: SLF001
