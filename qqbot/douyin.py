@@ -218,8 +218,49 @@ def read_feed(page: cdp_mod.CDP, limit: int = 10) -> list[dict]:
     return [item for item in items if item.get("id")][:limit]
 
 
+LIKE_RECT_JS = """(() => {
+  const el = document.querySelector('[data-e2e="video-player-digg"]');
+  if (!el) return {ok: false, reason: 'no_like_icon'};
+  el.scrollIntoView({block: 'center'});
+  const rect = el.getBoundingClientRect();
+  const state = el.getAttribute('data-e2e-state') || '';
+  return {
+    ok: true,
+    x: Math.round(rect.x + rect.width / 2),
+    y: Math.round(rect.y + rect.height / 2),
+    before: state,
+    already: /digged/.test(state) && !/no-digged/.test(state),
+  };
+})()"""
+
+LIKE_STATE_JS = """(() => {
+  const el = document.querySelector('[data-e2e="video-player-digg"]');
+  return {state: el ? (el.getAttribute('data-e2e-state') || '') : ''};
+})()"""
+
+
 def like_current(page: cdp_mod.CDP) -> dict:
     page.call("Runtime.enable")
+    rect = page.evaluate(LIKE_RECT_JS) or {}
+    if rect.get("ok") and "x" in rect and "y" in rect:
+        if rect.get("already"):
+            return {"ok": True, "changed": False, "already": True,
+                    "before": str(rect.get("before", ""))[:80]}
+        x, y = int(rect["x"]), int(rect["y"])
+        page.call("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y})
+        page.call("Input.dispatchMouseEvent", {
+            "type": "mousePressed", "x": x, "y": y, "button": "left", "clickCount": 1,
+        })
+        page.call("Input.dispatchMouseEvent", {
+            "type": "mouseReleased", "x": x, "y": y, "button": "left", "clickCount": 1,
+        })
+        time.sleep(0.8)
+        after = page.evaluate(LIKE_STATE_JS) or {}
+        before = str(rect.get("before", ""))
+        state = str(after.get("state", ""))
+        return {"ok": True, "changed": before != state,
+                "before": before[:80], "after": state[:80]}
+    # 测试用的假页面没有坐标，回退到 DOM 点击
     return page.evaluate(LIKE_JS) or {"ok": False, "reason": "no_result"}
 
 

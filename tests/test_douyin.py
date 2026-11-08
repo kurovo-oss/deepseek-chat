@@ -201,6 +201,35 @@ def test_wait_like_icon_times_out_instead_of_hanging():
     assert douyin.wait_like_icon(ReadyPage(), timeout=0.1) is True
 
 
+def test_like_uses_trusted_mouse_events_when_coordinates_exist(tmp_path):
+    class RectPage:
+        def __init__(self):
+            self.events = []
+
+        def call(self, method, params=None):
+            if method == "Input.dispatchMouseEvent":
+                self.events.append(params["type"])
+            return {}
+
+        def evaluate(self, expression, **kwargs):
+            if "getBoundingClientRect" in expression:
+                return {"ok": True, "x": 100, "y": 200,
+                        "before": "video-player-no-digged", "already": False}
+            if "data-e2e-state" in expression:
+                return {"state": "video-player-digged"}
+            return None
+
+    page = RectPage()
+
+    outcome = douyin.like_current(page)
+
+    assert outcome["ok"] is True
+    assert outcome["changed"] is True
+    assert outcome["before"] == "video-player-no-digged"
+    assert outcome["after"] == "video-player-digged"
+    assert page.events == ["mouseMoved", "mousePressed", "mouseReleased"]
+
+
 def test_already_liked_video_is_skipped_not_failed(tmp_path, monkeypatch):
     monkeypatch.setattr(time, "sleep", lambda seconds: None)
     cfg, store, gate = env(tmp_path, douyin_dry_run=False)
