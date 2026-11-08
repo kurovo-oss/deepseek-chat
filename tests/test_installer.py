@@ -20,6 +20,8 @@ def test_installer_script_is_a_per_user_windows_installer():
     assert "MODEL_API_KEY" in script
     assert "GetOptions" in script
     assert "Uninstall.exe" in script
+    assert 'RMDir /r "$INSTDIR\\assets"' in script
+    assert 'RMDir /r "$INSTDIR\\docs"' in script
 
 
 def test_installer_build_is_reproducible():

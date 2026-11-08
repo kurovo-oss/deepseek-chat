@@ -212,6 +212,8 @@ keep_data:
   RMDir /r "$INSTDIR\defaults"
   RMDir /r "$INSTDIR\scripts"
   RMDir /r "$INSTDIR\tools"
+  RMDir /r "$INSTDIR\assets"
+  RMDir /r "$INSTDIR\docs"
   Delete "$INSTDIR\${APP_EXE}"
   Delete "$INSTDIR\Microsoft.Web.WebView2.Core.dll"
   Delete "$INSTDIR\Microsoft.Web.WebView2.WinForms.dll"
