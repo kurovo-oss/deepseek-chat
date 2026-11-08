@@ -235,7 +235,7 @@ def run_once(store, settings, guard, sender, browser: Browser, now: int | None =
              notify=None) -> dict:
     """刷一轮：读推荐 → 点赞 → 挑有趣的分享。返回统计。"""
     stamp = int(now if now is not None else time.time())
-    result = {"liked": 0, "shared": 0, "skipped": 0, "error": ""}
+    result = {"liked": 0, "shared": 0, "skipped": 0, "dry_run": 0, "error": ""}
     if not getattr(settings, "douyin_enabled", False):
         return result
     try:
@@ -276,6 +276,12 @@ def run_once(store, settings, guard, sender, browser: Browser, now: int | None =
             if not decision.allowed:
                 result["skipped"] += 1
                 break
+            if decision.dry_run:
+                # 试运行只写审计，不点开视频、不点赞（以前这里会真点赞）
+                guard.record("douyin", "like", target=item["id"], payload=item.get("text", ""),
+                             result="dry_run", now=stamp)
+                result["dry_run"] += 1
+                continue
             page.goto(video_url.format(aweme_id=item["id"]), timeout=40)
             time.sleep(2)
             outcome = like_current(page)
@@ -323,10 +329,10 @@ def tick_loop(store, settings, guard, sender, stop_event, interval: float = 1200
     while not stop_event.wait(interval):
         try:
             result = run_once(store, settings, guard, sender, browser, notify=notify)
-            if result["liked"] or result["shared"] or result["error"]:
+            if result["liked"] or result["shared"] or result["skipped"] or result["dry_run"] or result["error"]:
                 log.info(
-                    "抖音：点赞 %d、分享 %d、跳过 %d%s",
-                    result["liked"], result["shared"], result["skipped"],
+                    "抖音：点赞 %d、分享 %d、跳过 %d、试运行 %d%s",
+                    result["liked"], result["shared"], result["skipped"], result["dry_run"],
                     f"（{result['error']}）" if result["error"] else "",
                 )
         except Exception:  # noqa: BLE001

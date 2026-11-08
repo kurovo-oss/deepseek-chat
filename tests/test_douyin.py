@@ -15,6 +15,7 @@ class FakePage:
         self.like = like or {"ok": True, "changed": True}
         self.login = login or {"has_avatar": True, "has_login_button": False}
         self.visited = []
+        self.like_calls = 0
 
     def call(self, method, params=None):
         return {}
@@ -25,6 +26,7 @@ class FakePage:
         if "feed-item" in expression:
             return self.feed
         if "like-icon" in expression:
+            self.like_calls += 1
             return self.like
         return None
 
@@ -112,7 +114,7 @@ def test_uninteresting_videos_are_only_liked(tmp_path, monkeypatch):
     assert sender.sent == []
 
 
-def test_dry_run_never_sends(tmp_path, monkeypatch):
+def test_dry_run_never_sends_or_likes(tmp_path, monkeypatch):
     monkeypatch.setattr(time, "sleep", lambda seconds: None)
     cfg, store, gate = env(tmp_path, douyin_dry_run=True)
     sender = FakeSender()
@@ -120,9 +122,12 @@ def test_dry_run_never_sends(tmp_path, monkeypatch):
 
     result = douyin.run_once(store, cfg, gate, sender, FakeBrowser(page), now=int(time.time()))
 
-    assert result["liked"] == 1
-    assert result["shared"] == 1
+    assert result["liked"] == 0
+    assert result["shared"] == 0
+    assert result["dry_run"] == 1
     assert sender.sent == []
+    assert page.like_calls == 0
+    assert all("video" not in url for url in page.visited)
     assert any(row["result"] == "dry_run" for row in gate.recent(5))
 
 
