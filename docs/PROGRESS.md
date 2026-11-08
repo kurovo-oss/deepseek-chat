@@ -31,20 +31,24 @@
 
 已实现的接口集中在 `/api/status`、`/api/messages`、`/api/persona`、`/api/settings`、
 `/api/logs`、`/api/audit`、`/api/runtime`。设计稿里的 SSE、审核队列、人格回滚 UI
-和重启按钮还没做，当前版本先保证「能看、能改、能停」。
+还没做；「停止 / 启动机器人」已经放进原生控制台。
 
-### 一键启动 exe（2026-11-08）
+### 原生 Windows 控制台（2026-11-08）
 
-根目录的 `大肥鱼.exe` 是 WinForms 启动器，源码在 `scripts/launcher/Launcher.cs`，
-用 Windows 自带的 csc 编译（`scripts/build-exe.ps1`），不引入新运行时：
+根目录的 `大肥鱼.exe` 是 **WinForms 原生控制台**，不是网页套壳，也不再打开浏览器。
+源码在 `scripts/native/`，用 Windows 自带的 csc 编译（`scripts/build-exe.ps1`），
+不引入新运行时：
 
-- 双击后隐藏拉起 `scripts\supervise.ps1`，已有 supervisor 会靠互斥锁自动退出，不重复开机器人；
-- 轮询 `UI_PORT`（默认 8090），端口就绪后读取 `data/ui-token` 并打开浏览器；
-- 小窗口提供打开控制台、启动、停止、看日志；关闭窗口不影响机器人；
-- 图标由 `scripts/make-icon.py` 从控制台立绘生成，exe 带版本信息和图标。
+- `AppForm.cs`：左侧导航 + 总览 / 对话 / 人格 / 配置 / 日志五个页面，深色玻璃风；
+- `Api.cs`：用 `X-UI-Token` 调本机 `/api/*`，原生写操作不需要浏览器 Origin；
+- `Theme.cs`：卡片、按钮、心情条等自绘控件，避免 WinForms 默认灰控件；
+- 启动后隐藏拉起 `scripts\supervise.ps1`，轮询 `UI_PORT`，就绪后自动刷新；
+- 总览支持主动消息 / 空间 / 抖音暂停、一键停机、停止 / 启动机器人；
+- 关闭窗口只退出界面，机器人继续跑；窗口里的「停止机器人」才会停进程。
 
 它不是把 Python 打包进单文件：项目仍依赖 `tools\python`、NapCat 和项目目录里的素材，
 好处是不往 C 盘解压、不复制几百 MB 运行时；代价是 exe 必须和项目目录放在一起。
+原生截图见 `docs/native-ui.png`，网页控制台保留作调试入口。
 
 ---
 
@@ -58,7 +62,7 @@
 | M4 会主动 | ✅ | `scheduled`（未来事件到期）+ `followup`（72 小时沉默）+ 全套闸门 |
 | M5 挂得住 | ✅ 完成 | 自启、文件日志、看门狗、一键重启、失败回复重放 |
 
-代码约 12000 行 + 测试约 8500 行（1014 个用例），零第三方运行时依赖。
+代码约 12000 行 + 测试约 8500 行（1016 个用例），零第三方运行时依赖。
 
 ---
 

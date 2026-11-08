@@ -576,6 +576,11 @@ def make_handler(app: WebUI):
             self.wfile.write(body)
 
         def _same_origin(self) -> bool:
+            # 原生 Windows 控制台用 X-UI-Token 证明身份，没有浏览器 Origin；
+            # token 已经是最强的本地凭证，单独放行。
+            header_token = self.headers.get("X-UI-Token") or ""
+            if header_token and secrets.compare_digest(header_token, app.token):
+                return True
             origin = self.headers.get("Origin") or ""
             host = self.headers.get("Host") or ""
             if origin:

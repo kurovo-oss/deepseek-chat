@@ -28,3 +28,6 @@ __pycache__/
 .idea/
 .DS_Store
 Thumbs.db
+
+# 原生控制台调试布局
+native-layout*.txt

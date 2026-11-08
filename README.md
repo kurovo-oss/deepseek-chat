@@ -8,6 +8,7 @@
 - 语义记忆（事实/证据/更正）：`/记忆` 指令，见 [docs/companion-v2.md](docs/companion-v2.md)
 - 下一版设计（记忆 v2 / 表情梗库 / 空间·B站·抖音 / 可靠性）：[docs/companion-v2.md](docs/companion-v2.md)
 - 人格卡：[docs/persona/dafeiyu.md](docs/persona/dafeiyu.md)
+- 原生控制台设计：[docs/native-ui.md](docs/native-ui.md)
 - 交互演示（无后端）：[demo/index.html](demo/index.html)
 
 ## 当前状态：M1
@@ -66,16 +67,19 @@ powershell -ExecutionPolicy Bypass -File scripts\stop-bot.ps1              # 停
 
 ## 一键启动（大肥鱼.exe）
 
-![启动器](docs/exe-launcher.png)
+![原生控制台](docs/native-ui.png)
 
-双击项目根目录的 **`大肥鱼.exe`**：
+双击项目根目录的 **`大肥鱼.exe`**，打开的是**原生 Windows 控制台窗口**，不是浏览器：
 
-- 自动检查 Python / 启动脚本；
 - 后台用 `scripts\supervise.ps1` 拉起协议端和机器人（已有进程不会重复启动）；
-- 等控制台端口就绪后，自动用 token 打开 `http://127.0.0.1:8090`；
-- 小窗口里有「打开控制台」「启动」「停止机器人」「看日志」；关闭窗口不会停止机器人。
+- 左侧切换「总览 / 对话 / 人格 / 配置 / 日志」，右侧是实时数据；
+- 总览可以直接暂停主动消息、空间、抖音，或一键停机 / 恢复；
+- 人格和配置的保存走本机 API，写入后立即生效（模型 / QQ 配置需重启）；
+- 窗口底部有「停止机器人 / 启动机器人」，关闭窗口不会停止机器人。
 
-这是**项目专用启动器**：Python、NapCat、素材仍在项目目录，exe 只负责一键串联，不会把运行时解压到 C 盘。项目目录移动后 exe 仍可用，只要和 `qqbot\`、`tools\`、`scripts\` 在同一层。
+这是**项目专用的原生外壳**：Python、NapCat、素材仍在项目目录，exe 只负责启动和界面，
+不把运行时解压到 C 盘，也没有 WebView2 / Electron 依赖。项目目录移动后 exe 仍可用，
+只要和 `qqbot\`、`tools\`、`scripts\` 在同一层。
 
 重新编译（不需要联网）：
 
@@ -83,9 +87,13 @@ powershell -ExecutionPolicy Bypass -File scripts\stop-bot.ps1              # 停
 powershell -ExecutionPolicy Bypass -File scripts\build-exe.ps1
 ```
 
-首次冷启动可能需要 20–40 秒（NapCat 登录 + 模型自检）；如果窗口提示启动较慢，点「看日志」。
+首次冷启动可能需要 20–40 秒（NapCat 登录 + 模型自检）；窗口会显示启动进度，
+也可以到「日志」页看 `logs\bot.log`。
 
-## 本地控制台
+> 原生控制台和原来的网页控制台使用同一套本机 API；网页端仍保留在
+> `http://127.0.0.1:8090`，方便调试，但日常使用不需要打开浏览器。
+
+## 本地控制台（网页调试）
 
 机器人启动后，同进程起一个只监听本机的控制台：
 

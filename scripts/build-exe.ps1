@@ -1,6 +1,6 @@
-# Build the one-click launcher (Dafeiyu.exe, Chinese display name) with the C# compiler shipped in Windows.
-# The launcher is a native WinForms exe: it starts scripts\supervise.ps1 hidden,
-# waits for the console port, then opens the browser with the UI token.
+# Build the native Dafeiyu control panel (Dafeiyu.exe, Chinese display name) with the C# compiler shipped in Windows.
+# The exe is a real WinForms window: it starts scripts\supervise.ps1 hidden and
+# talks to the local control API with X-UI-Token. No browser is opened.
 #
 # Usage:  powershell -ExecutionPolicy Bypass -File scripts\build-exe.ps1
 
@@ -15,7 +15,8 @@ if (-not (Test-Path $csc)) {
     throw "csc.exe not found"
 }
 
-$source = Join-Path $PSScriptRoot "launcher\Launcher.cs"
+$sources = Get-ChildItem (Join-Path $PSScriptRoot "native") -Filter "*.cs" | ForEach-Object { $_.FullName }
+if ($sources.Count -eq 0) { throw "no native sources found" }
 $icon = Join-Path $root "qqbot\ui\assets\dafeiyu.ico"
 $name = ([string][char]0x5927) + ([char]0x80A5) + ([char]0x9C7C) + ".exe"
 $output = Join-Path $root $name
@@ -31,8 +32,8 @@ if (-not (Test-Path $icon)) {
 
 & $csc /nologo /target:winexe /codepage:65001 /optimize+ /platform:anycpu `
     "/win32icon:$icon" "/out:$output" `
-    /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll `
-    $source
+    /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Web.Extensions.dll `
+    $sources
 
 if ($LASTEXITCODE -ne 0) { throw "csc failed (exit $LASTEXITCODE)" }
 $item = Get-Item $output

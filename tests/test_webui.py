@@ -253,6 +253,26 @@ def test_http_auth_and_runtime_toggle(settings: Settings, engine):
         app.stop()
 
 
+def test_native_token_header_is_enough_for_write(settings: Settings, engine):
+    settings = Settings(**{**settings.__dict__, "ui_port": _free_port()})
+    app = WebUI(engine, settings, Runtime())
+    assert app.start() is not None
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", settings.ui_port, timeout=5)
+        conn.request(
+            "PUT",
+            "/api/runtime",
+            body=json.dumps({"module": "qzone", "paused": True}),
+            headers={"X-UI-Token": app.token, "Content-Type": "application/json"},
+        )
+        response = conn.getresponse()
+        assert response.status == 200
+        assert json.loads(response.read().decode("utf-8"))["paused"]["qzone"] is True
+        conn.close()
+    finally:
+        app.stop()
+
+
 def test_http_rejects_unauthorized_and_cross_origin(settings: Settings, engine):
     settings = Settings(**{**settings.__dict__, "ui_port": _free_port()})
     app = WebUI(engine, settings, Runtime())
