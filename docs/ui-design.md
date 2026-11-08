@@ -157,7 +157,7 @@ QQ 与连接
 
 ### 大肥鱼形象
 
-- 正式版用表情包库里的女仆装形象（蓝鲸娘：深蓝长发、鲸鱼鳍耳、女仆发箍、大尾巴）；原型已把 `data/stickers/嘲讽/49da8a0f0c80.png` 去白底后放在 `docs/assets/dafeiyu.png`，控制台只负责位置、尺寸、状态，不把形象写死在代码里。
+- 正式版用网上开源的「大肥鱼／鲸鱼娘」设定：来自 [`YunYueSama/codex-deepseek-pet`](https://github.com/YunYueSama/codex-deepseek-pet) 的 `assets/whale/portrait.png`（透明 PNG，599×820），裁掉透明边距后放在 `docs/assets/dafeiyu.png`。形象上游参考了上善无形、ZipZipPipe 的设定；按仓库《大肥鱼项目署名许可 1.0》署名、非官方授权，控制台只负责位置、尺寸、状态，不把形象写死在代码里。
 
 ![大肥鱼形象](ui-mascot.png)
 
@@ -391,7 +391,14 @@ QQ 与连接
 
 ---
 
-## 10. 验收清单
+## 10. 素材署名
+
+- 大肥鱼形象：作者 **YunYueSama**，仓库 <https://github.com/YunYueSama/codex-deepseek-pet>，素材 `assets/whale/portrait.png`；适用《大肥鱼项目署名许可 1.0》，允许修改与分享，须保留作者与仓库地址。完整许可与修改说明见 [`docs/assets/dafeiyu-LICENSE.md`](assets/dafeiyu-LICENSE.md)、[`docs/assets/NOTICE.md`](assets/NOTICE.md)。
+- 本项目的修改：裁掉透明边距、按 UI 尺寸缩放；未改画角色。
+- 上游参考：上善无形（鲸鱼娘原始形象）、ZipZipPipe（DeepSeek 女仆鲸鱼娘二次设计）；本项目不声称 DeepSeek 官方授权。
+- 署名会同时放在控制台「设置 → 关于」里，不只写在文档。
+
+## 11. 验收清单
 
 - [ ] 首次配置 5 分钟内完成，三步都有“测试通过”反馈。
 - [ ] 总览数据与 `/mood`、日志、`audit` 一致。

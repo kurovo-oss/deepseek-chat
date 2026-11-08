@@ -29,3 +29,4 @@ def test_design_doc_has_the_important_sections():
         assert heading in text
     assert "ui-mockup.html" in text
     assert "127.0.0.1" in text
+    assert "YunYueSama" in text and "署名许可" in text
