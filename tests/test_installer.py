@@ -64,24 +64,29 @@ def test_installer_has_branded_welcome_and_finish_pages():
 
 def test_brand_mascot_and_installer_assets_exist():
     welcome = ROOT / "qqbot" / "ui" / "assets" / "welcome-mascot.png"
-    fish = ROOT / "qqbot" / "ui" / "assets" / "dafeiyu-fish-icon.png"
     icon = ROOT / "qqbot" / "ui" / "assets" / "dafeiyu.ico"
+    source = ROOT / "qqbot" / "ui" / "assets" / "dafeiyu.png"
     panel = ROOT / "installer" / "assets" / "brand-panel.bmp"
 
-    for path in (welcome, fish, icon, panel):
+    for path in (welcome, source, icon, panel):
         assert path.stat().st_size > 20_000, path
 
     with Image.open(welcome) as image:
         assert image.size == (900, 900)
         assert image.mode == "RGBA"
-    with Image.open(fish) as image:
-        assert image.size == (256, 256)
     with Image.open(panel) as image:
         assert image.size == (164, 314)
         assert image.mode == "RGB"
     with Image.open(icon) as image:
         assert (256, 256) in image.ico.sizes()
         assert (16, 16) in image.ico.sizes()
+
+    generator = (ROOT / "scripts" / "make-brand-assets.py").read_text(encoding="utf-8")
+    assert "make_welcome" in generator
+    assert "make_brand_panel" in generator
+    assert 'SOURCE = UI_ASSETS / "dafeiyu.png"' in generator
+    assert "draw_whale" not in generator
+    assert not (ROOT / "qqbot" / "ui" / "assets" / "dafeiyu-fish.ico").exists()
 
 
 def test_installer_ships_safe_default_persona():

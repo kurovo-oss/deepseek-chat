@@ -20,7 +20,7 @@ dist\Dafeiyu-Setup-1.0.0.exe
 构建只读取项目目录，不往 C 盘安装 NSIS；安装包本身建议用代码签名证书签名后再发布，
 否则 Windows SmartScreen 会提示“未知发布者”。
 
-安装包的鱼形图标、欢迎页/完成页侧栏图和网页吉祥物欢迎图由脚本生成，改了品牌色后先运行：
+安装包图标、欢迎页/完成页侧栏图和网页吉祥物欢迎图都来自 `qqbot/ui/assets/dafeiyu.png` 这张网上二创形象，脚本只做裁切与品牌底色排版；改了品牌色后先运行：
 
 ```powershell
 tools\python\python.exe scripts\make-brand-assets.py

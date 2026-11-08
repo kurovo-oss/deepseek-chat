@@ -235,9 +235,9 @@ hr{border:0;border-top:1px dashed rgba(126,200,255,.12);margin:8px 0}
 .onboarding-top{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin-bottom:14px}
 .onboarding-top h2{margin:5px 0 0;font-size:21px;letter-spacing:.01em}
 .onboarding-welcome{display:flex;align-items:center;gap:16px;margin:0 0 18px;padding:10px 14px 10px 10px;border:1px solid rgba(126,200,255,.13);border-radius:16px;background:linear-gradient(105deg,rgba(255,138,160,.08),rgba(110,231,255,.045) 55%,rgba(5,17,30,.18))}
-.onboarding-mascot{position:relative;flex:none;width:116px;height:104px;display:grid;place-items:center}
-.onboarding-mascot img{position:relative;z-index:2;width:112px;height:112px;object-fit:contain;filter:drop-shadow(0 12px 18px rgba(0,0,0,.34)) drop-shadow(0 0 14px rgba(110,231,255,.18));animation:mascot-float 5.5s ease-in-out infinite}
-.mascot-halo{position:absolute;z-index:1;width:88px;height:88px;border-radius:50%;background:radial-gradient(circle,rgba(255,138,160,.22),rgba(110,231,255,.1) 48%,transparent 70%);box-shadow:0 0 30px rgba(255,138,160,.12)}
+.onboarding-mascot{position:relative;flex:none;width:150px;height:148px;display:grid;place-items:center}
+.onboarding-mascot img{position:relative;z-index:2;width:148px;height:148px;object-fit:contain;filter:drop-shadow(0 12px 18px rgba(0,0,0,.34)) drop-shadow(0 0 14px rgba(110,231,255,.18));animation:mascot-float 5.5s ease-in-out infinite}
+.mascot-halo{position:absolute;z-index:1;width:116px;height:116px;border-radius:50%;background:radial-gradient(circle,rgba(255,138,160,.22),rgba(110,231,255,.1) 48%,transparent 70%);box-shadow:0 0 30px rgba(255,138,160,.12)}
 @keyframes mascot-float{0%,100%{transform:translateY(0) rotate(-1deg)}50%{transform:translateY(-7px) rotate(1deg)}}
 .onboarding-welcome-copy{display:grid;gap:5px;min-width:0}
 .onboarding-welcome-copy b{font-size:14px;font-weight:600;letter-spacing:.04em;color:#f1fbff}
@@ -363,9 +363,9 @@ hr{border:0;border-top:1px dashed rgba(126,200,255,.12);margin:8px 0}
   .onboarding{padding:12px}
   .onboarding-panel{padding:18px}
   .onboarding-welcome{gap:10px;padding:8px 10px 8px 8px}
-  .onboarding-mascot{width:82px;height:78px}
-  .onboarding-mascot img{width:82px;height:82px}
-  .mascot-halo{width:68px;height:68px}
+  .onboarding-mascot{width:104px;height:100px}
+  .onboarding-mascot img{width:104px;height:104px}
+  .mascot-halo{width:84px;height:84px}
   .onboarding-welcome-copy b{font-size:12px}
   .onboarding-welcome-copy span{font-size:9px}
 }
