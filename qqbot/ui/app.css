@@ -113,16 +113,6 @@ body:before{
 .hero-times>div{display:grid;gap:4px}
 .hero-times span{font-size:9px;letter-spacing:.1em;color:var(--faint)}
 .hero-times b{font-size:12px;font-weight:500;color:#d8eefc}
-.hero-switch{display:flex!important;align-items:center;gap:9px;margin-left:auto}
-.hero-switch>span{font-size:9px;letter-spacing:.1em;color:var(--faint)}
-.switch{position:relative;display:inline-flex;width:34px;height:19px;cursor:pointer}
-.switch input{position:absolute;opacity:0;width:1px;height:1px}
-.switch i{position:absolute;inset:0;border-radius:999px;border:1px solid rgba(90,215,255,.3);background:rgba(5,20,35,.8);transition:.2s}
-.switch i:after{content:"";position:absolute;left:3px;top:3px;width:11px;height:11px;border-radius:50%;background:#7596aa;transition:.2s}
-.switch input:checked+i{border-color:rgba(90,215,255,.65);background:rgba(90,215,255,.18)}
-.switch input:checked+i:after{left:18px;background:var(--cyan)}
-.switch input:focus-visible+i{outline:2px solid rgba(90,215,255,.65);outline-offset:2px}
-.switch input:disabled+i{opacity:.4;cursor:not-allowed}
 .hero-art{position:relative;display:flex;align-items:flex-end;justify-content:center;min-height:260px}
 .hero-art img{position:relative;z-index:2;width:min(330px,100%);max-height:330px;object-fit:contain;filter:drop-shadow(0 22px 32px rgba(0,0,0,.38)) drop-shadow(0 0 18px rgba(90,215,255,.2));animation:float 7s ease-in-out infinite}
 .halo{position:absolute;z-index:1;width:250px;height:250px;bottom:18px;border-radius:50%;border:1px solid rgba(90,215,255,.24);background:radial-gradient(circle,rgba(90,215,255,.18),transparent 68%);box-shadow:0 0 90px rgba(90,215,255,.14)}

@@ -256,6 +256,12 @@ def test_ui_has_new_pages_and_guide_title():
     assert "welcome-mascot.png" in html
     assert 'class="onboarding-welcome"' in html
     assert "DAFEIYU" in html
+    overview = html.split('id="page-overview"', 1)[1].split("</section>", 1)[0]
+    assert "主动消息" not in overview
+    assert "今天别找我了" not in overview
+    assert "mute-today" not in overview
+    assert 'name="proactive_enabled"' in html
+    assert 'class="ghost-btn mute-today"' in html
     for color in ("--brand-ink", "--brand-ocean", "--brand-cyan", "--brand-coral", "--brand-cream"):
         assert color in css
     assert "onboarding-mascot" in css
