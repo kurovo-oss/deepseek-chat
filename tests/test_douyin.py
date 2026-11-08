@@ -213,7 +213,7 @@ def test_like_uses_trusted_mouse_events_when_coordinates_exist(tmp_path):
 
         def evaluate(self, expression, **kwargs):
             if "getBoundingClientRect" in expression:
-                return {"ok": True, "x": 100, "y": 200,
+                return {"ok": True, "x": 100, "y": 200, "width": 20, "height": 20,
                         "before": "video-player-no-digged", "already": False}
             if "data-e2e-state" in expression:
                 return {"state": "video-player-digged"}
@@ -228,6 +228,27 @@ def test_like_uses_trusted_mouse_events_when_coordinates_exist(tmp_path):
     assert outcome["before"] == "video-player-no-digged"
     assert outcome["after"] == "video-player-digged"
     assert page.events == ["mouseMoved", "mousePressed", "mouseReleased"]
+
+
+def test_like_falls_back_to_react_onclick_for_hidden_button(tmp_path):
+    class ReactPage:
+        def call(self, method, params=None):
+            return {}
+
+        def evaluate(self, expression, **kwargs):
+            if "getBoundingClientRect" in expression:
+                return {"ok": True, "x": 0, "y": 0, "width": 0, "height": 0,
+                        "before": "video-player-no-digged", "already": False}
+            if "__reactProps" in expression:
+                return {"ok": True, "invoked": True, "before": "video-player-no-digged"}
+            if "data-e2e-state" in expression:
+                return {"state": "video-player-is-digged"}
+            return None
+
+    outcome = douyin.like_current(ReactPage())
+
+    assert outcome["changed"] is True
+    assert outcome["after"] == "video-player-is-digged"
 
 
 def test_already_liked_video_is_skipped_not_failed(tmp_path, monkeypatch):

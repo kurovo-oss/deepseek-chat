@@ -228,9 +228,34 @@ LIKE_RECT_JS = """(() => {
     ok: true,
     x: Math.round(rect.x + rect.width / 2),
     y: Math.round(rect.y + rect.height / 2),
+    width: Math.round(rect.width),
+    height: Math.round(rect.height),
     before: state,
     already: /digged/.test(state) && !/no-digged/.test(state),
   };
+})()"""
+
+LIKE_REACT_JS = """(() => {
+  const el = document.querySelector('[data-e2e="video-player-digg"]');
+  if (!el) return {ok: false, reason: 'no_like_icon'};
+  const state = el.getAttribute('data-e2e-state') || '';
+  if (/digged/.test(state) && !/no-digged/.test(state)) {
+    return {ok: true, already: true, before: state};
+  }
+  const key = Object.keys(el).find(k => k.startsWith('__reactProps'));
+  if (!key) return {ok: false, reason: 'no_react_props'};
+  const props = el[key];
+  if (typeof props.onClick !== 'function') return {ok: false, reason: 'no_onclick'};
+  try {
+    props.onClick({
+      preventDefault() {}, stopPropagation() {},
+      nativeEvent: {isTrusted: true, target: el},
+      currentTarget: el, target: el, type: 'click',
+    });
+  } catch (err) {
+    return {ok: false, reason: String(err).slice(0, 120)};
+  }
+  return {ok: true, invoked: true, before: state};
 })()"""
 
 LIKE_STATE_JS = """(() => {
@@ -242,7 +267,7 @@ LIKE_STATE_JS = """(() => {
 def like_current(page: cdp_mod.CDP) -> dict:
     page.call("Runtime.enable")
     rect = page.evaluate(LIKE_RECT_JS) or {}
-    if rect.get("ok") and "x" in rect and "y" in rect:
+    if rect.get("ok") and rect.get("width", 0) >= 2 and rect.get("height", 0) >= 2:
         if rect.get("already"):
             return {"ok": True, "changed": False, "already": True,
                     "before": str(rect.get("before", ""))[:80]}
@@ -260,7 +285,20 @@ def like_current(page: cdp_mod.CDP) -> dict:
         state = str(after.get("state", ""))
         return {"ok": True, "changed": before != state,
                 "before": before[:80], "after": state[:80]}
-    # 测试用的假页面没有坐标，回退到 DOM 点击
+    # 点赞按钮常常是 0×0 的隐藏节点（真机如此）：直接调它的 React onClick，
+    # 既不依赖 isTrusted，也不用模拟鼠标坐标。
+    react = page.evaluate(LIKE_REACT_JS) or {}
+    if react.get("ok") and react.get("invoked"):
+        time.sleep(1.2)
+        after = page.evaluate(LIKE_STATE_JS) or {}
+        before = str(react.get("before", ""))
+        state = str(after.get("state", ""))
+        return {"ok": True, "changed": before != state,
+                "before": before[:80], "after": state[:80]}
+    if react.get("already"):
+        return {"ok": True, "changed": False, "already": True,
+                "before": str(react.get("before", ""))[:80]}
+    # 测试用的假页面没有坐标/React 属性，回退到 DOM 点击
     return page.evaluate(LIKE_JS) or {"ok": False, "reason": "no_result"}
 
 
