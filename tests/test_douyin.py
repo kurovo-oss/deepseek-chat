@@ -172,6 +172,22 @@ def test_daily_quota_stops_after_limit(tmp_path, monkeypatch):
     assert result["skipped"] == 1
 
 
+def test_already_liked_video_is_skipped_not_failed(tmp_path, monkeypatch):
+    monkeypatch.setattr(time, "sleep", lambda seconds: None)
+    cfg, store, gate = env(tmp_path, douyin_dry_run=False)
+    page = FakePage(
+        feed=[{"id": "778", "text": "猫猫"}],
+        like={"ok": True, "changed": False, "already": True},
+    )
+
+    result = douyin.run_once(store, cfg, gate, FakeSender(), FakeBrowser(page), now=int(time.time()))
+
+    assert result["liked"] == 0
+    assert result["skipped"] == 1
+    assert result["error"] == ""
+    assert gate.recent(1)[0]["result"] == "skipped"
+
+
 def test_failed_like_is_audited_and_stops(tmp_path, monkeypatch):
     monkeypatch.setattr(time, "sleep", lambda seconds: None)
     cfg, store, gate = env(tmp_path)

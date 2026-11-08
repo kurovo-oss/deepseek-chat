@@ -339,6 +339,12 @@ def run_once(store, settings, guard, sender, browser: Browser, now: int | None =
             page.goto(video_url.format(aweme_id=item["id"]), timeout=40)
             time.sleep(2)
             outcome = like_current(page)
+            if outcome.get("already"):
+                guard.record("douyin", "like", target=item["id"], payload=item.get("text", ""),
+                             result="skipped", now=stamp)
+                remember(store, item["id"], item.get("text", ""), liked=False, now=stamp)
+                result["skipped"] += 1
+                continue
             ok = bool(outcome.get("ok")) and bool(outcome.get("changed", True))
             guard.record("douyin", "like", target=item["id"], payload=item.get("text", ""),
                          result="ok" if ok else "failed",
