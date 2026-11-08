@@ -187,6 +187,20 @@ def test_login_probe_falls_back_to_session_cookie(tmp_path):
     assert state["has_avatar"] is True
 
 
+def test_wait_like_icon_times_out_instead_of_hanging():
+    class BlankPage(FakePage):
+        def evaluate(self, expression, **kwargs):
+            return False
+
+    assert douyin.wait_like_icon(BlankPage(), timeout=0.1) is False
+
+    class ReadyPage(FakePage):
+        def evaluate(self, expression, **kwargs):
+            return True
+
+    assert douyin.wait_like_icon(ReadyPage(), timeout=0.1) is True
+
+
 def test_already_liked_video_is_skipped_not_failed(tmp_path, monkeypatch):
     monkeypatch.setattr(time, "sleep", lambda seconds: None)
     cfg, store, gate = env(tmp_path, douyin_dry_run=False)

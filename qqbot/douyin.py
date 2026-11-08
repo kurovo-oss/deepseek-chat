@@ -81,27 +81,21 @@ LOGIN_JS = """(() => {
 })()"""
 
 LIKE_JS = """(() => {
-  const find = () => document.querySelector(
+  const icon = document.querySelector(
     '[data-e2e="video-player-digg"], [data-e2e="like-icon"], [data-e2e="video-like"]'
   );
-  const icon = find();
   if (!icon) return {ok: false, reason: 'no_like_icon'};
-  let button = icon;
-  for (let i = 0; i < 4 && button; i++) {
-    if (button.tagName === 'BUTTON' || button.getAttribute('role') === 'button') break;
-    button = button.parentElement;
-  }
-  const target = button || icon;
-  const before = target.getAttribute('data-e2e-state')
-    || target.getAttribute('aria-pressed') || target.className;
+  const target = icon;
+  const stateOf = (el) => el.getAttribute('data-e2e-state')
+    || el.getAttribute('aria-pressed') || el.className;
+  const before = stateOf(target);
   if (/digged/.test(String(before)) && !/no-digged/.test(String(before))) {
     return {ok: true, changed: false, already: true, before: String(before).slice(0, 80)};
   }
   target.dispatchEvent(new MouseEvent('mousedown', {bubbles: true}));
   target.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
   target.click();
-  const after = target.getAttribute('data-e2e-state')
-    || target.getAttribute('aria-pressed') || target.className;
+  const after = stateOf(target);
   return {ok: true, changed: before !== after, before: String(before).slice(0, 80), after: String(after).slice(0, 80)};
 })()"""
 
@@ -229,6 +223,28 @@ def like_current(page: cdp_mod.CDP) -> dict:
     return page.evaluate(LIKE_JS) or {"ok": False, "reason": "no_result"}
 
 
+def _like_icon_js() -> str:
+    return (
+        "!!document.querySelector('"
+        '[data-e2e="video-player-digg"], [data-e2e="like-icon"], [data-e2e="video-like"]'
+        "')"
+    )
+
+
+def wait_like_icon(page: cdp_mod.CDP, timeout: float = 8.0) -> bool:
+    """视频页的点赞按钮经常比页面晚出来，最多等 timeout 秒。"""
+    deadline = time.monotonic() + timeout
+    expression = _like_icon_js()
+    while time.monotonic() < deadline:
+        try:
+            if page.evaluate(expression):
+                return True
+        except Exception:  # noqa: BLE001 - 页面还在导航
+            pass
+        time.sleep(0.5)
+    return False
+
+
 def _today(now: int) -> int:
     local = time.localtime(now)
     return int(time.mktime((local.tm_year, local.tm_mon, local.tm_mday, 0, 0, 0, 0, 0, -1)))
@@ -352,6 +368,7 @@ def run_once(store, settings, guard, sender, browser: Browser, now: int | None =
                 continue
             page.goto(video_url.format(aweme_id=item["id"]), timeout=40)
             time.sleep(2)
+            wait_like_icon(page)
             outcome = like_current(page)
             if outcome.get("already"):
                 guard.record("douyin", "like", target=item["id"], payload=item.get("text", ""),
