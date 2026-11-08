@@ -102,6 +102,7 @@ def test_memory_page_crud_and_correct(settings: Settings, engine):
 
     corrected = app.api_memory_correct({"id": card_id, "summary": "他对香菜无所谓"})
     assert corrected["item"]["summary"] == "他对香菜无所谓"
+    assert corrected["item"]["detail"] == ""
 
     assert app.api_memory_delete({"id": card_id})["ok"] is True
     assert app.api_memory()["total"] == 0

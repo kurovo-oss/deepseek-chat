@@ -702,8 +702,9 @@ class WebUI:
         if card is None:
             raise ValueError("这条记忆已经不在了")
         summary = _as_text(body.get("summary"), "新的说法", 500)
-        store.update_card(card_id, summary=summary)
-        self._audit("correct_memory", target=str(card_id), error=str(card.get("summary") or "")[:120])
+        # 纠错时旧的备注也可能跟着错，一并清掉，避免下一条消息还带着旧说法。
+        store.update_card(card_id, summary=summary, detail="")
+        self._audit("correct_memory", target=str(card_id))
         return {"ok": True, "item": _card_row(store.get_card(card_id) or {})}
 
     def api_memory_delete(self, body: dict) -> dict:
