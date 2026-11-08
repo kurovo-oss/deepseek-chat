@@ -18,8 +18,8 @@ def test_mockup_is_self_contained_and_has_all_pages():
     assert "<script src=" not in html
     assert 'rel="stylesheet"' not in html
     assert "https://cdn" not in html
-    # 大肥鱼是内联 SVG，不依赖图片文件
-    assert 'id="bigfish"' in html
+    # 直接用表情包库里的形象，不依赖外部图片
+    assert 'src="assets/dafeiyu.png"' in html
 
 
 def test_design_doc_has_the_important_sections():

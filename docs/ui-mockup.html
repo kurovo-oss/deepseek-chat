@@ -43,7 +43,7 @@ a{color:var(--cyan);text-decoration:none}
   border-right:1px solid var(--line);backdrop-filter:blur(22px);
 }
 .brand{display:flex;align-items:center;gap:12px;padding:4px 8px 14px;border-bottom:1px solid var(--line)}
-.fish-mini{width:46px;height:40px;flex:none;filter:drop-shadow(0 0 12px rgba(90,215,255,.35))}
+.fish-mini{width:46px;height:46px;flex:none;border-radius:14px;object-fit:cover;object-position:50% 6%;background:radial-gradient(circle at 50% 35%,rgba(90,215,255,.22),rgba(90,215,255,.04));border:1px solid rgba(126,200,255,.22);filter:drop-shadow(0 0 12px rgba(90,215,255,.35))}
 .brand b{display:block;font-size:16px;letter-spacing:.06em}
 .brand span{display:block;font-size:10px;color:var(--faint);letter-spacing:.26em}
 .nav{display:flex;flex-direction:column;gap:4px}
@@ -123,7 +123,7 @@ main{flex:1;min-width:0;display:flex;flex-direction:column}
 .mood small{font-size:10px;color:var(--faint)}
 .hero-actions{display:flex;gap:10px;margin-top:20px;flex-wrap:wrap}
 .hero-art{position:relative;display:flex;align-items:center;justify-content:center;min-height:220px}
-.fish-hero{width:min(430px,100%);filter:drop-shadow(0 18px 40px rgba(0,0,0,.35)) drop-shadow(0 0 38px rgba(90,215,255,.28));animation:float 6s ease-in-out infinite}
+.fish-hero{height:clamp(280px,38vh,420px);width:auto;max-width:100%;object-fit:contain;filter:drop-shadow(0 18px 40px rgba(0,0,0,.35)) drop-shadow(0 0 38px rgba(90,215,255,.28));animation:float 6s ease-in-out infinite}
 @keyframes float{50%{transform:translateY(-9px)}}
 .badge-warm{
   position:absolute;right:8%;top:16%;padding:5px 13px;border-radius:999px;font-size:12px;font-weight:600;
@@ -291,63 +291,18 @@ dialog::backdrop{background:rgba(0,6,12,.66);backdrop-filter:blur(4px)}
 .toast{padding:11px 14px;border-radius:12px;border:1px solid rgba(90,215,255,.35);background:rgba(8,30,48,.94);color:#dff5ff;font-size:12px;box-shadow:var(--shadow);animation:toastIn .2s ease}
 .toast.bad{border-color:rgba(255,126,157,.45)}
 @keyframes toastIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-.watermark{position:fixed;right:-4%;bottom:-10%;width:520px;opacity:.045;pointer-events:none;z-index:0}
+.watermark{position:fixed;right:-4%;bottom:-12%;height:82vh;width:auto;opacity:.055;pointer-events:none;z-index:0;transform:rotate(-6deg);filter:blur(.4px)}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
 
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <defs>
-    <linearGradient id="fishBody" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#b9f2ff"/><stop offset=".42" stop-color="#5fc8f8"/>
-      <stop offset="1" stop-color="#1e6fd0"/>
-    </linearGradient>
-    <linearGradient id="fishTail" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#8fe3ff"/><stop offset="1" stop-color="#2f86e0"/>
-    </linearGradient>
-    <radialGradient id="fishBelly" cx=".5" cy=".5" r=".5">
-      <stop offset="0" stop-color="#f2fdff" stop-opacity=".75"/><stop offset="1" stop-color="#dff8ff" stop-opacity=".12"/>
-    </radialGradient>
-    <linearGradient id="bowGrad" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#9fe9ff"/><stop offset="1" stop-color="#3a8dff"/>
-    </linearGradient>
-    <filter id="softGlow" x="-40%" y="-40%" width="180%" height="180%">
-      <feGaussianBlur stdDeviation="7" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
-  </defs>
-  <symbol id="bigfish" viewBox="0 0 420 300">
-    <ellipse cx="210" cy="258" rx="128" ry="16" fill="#5ad7ff" opacity=".14" filter="url(#softGlow)"/>
-    <path d="M118 158 C84 132 58 104 44 74 C78 82 104 102 124 126 C132 136 136 146 138 156 Z" fill="url(#fishTail)" opacity=".92"/>
-    <path d="M120 166 C88 186 62 206 48 232 C84 226 112 210 132 190 Z" fill="url(#fishTail)" opacity=".78"/>
-    <path d="M214 70 C244 46 282 42 306 62 C284 76 258 82 232 82 Z" fill="url(#fishTail)" opacity=".9"/>
-    <path d="M126 158 C126 96 176 62 236 62 C304 62 348 105 348 158 C348 216 302 254 236 254 C172 254 126 220 126 158 Z" fill="url(#fishBody)"/>
-    <ellipse cx="240" cy="196" rx="82" ry="46" fill="url(#fishBelly)"/>
-    <path d="M146 174 C168 200 196 222 238 230" fill="none" stroke="#eafcff" stroke-opacity=".35" stroke-width="2" stroke-linecap="round"/>
-    <path d="M286 232 C300 246 304 258 300 270 C288 262 278 250 274 238 Z" fill="url(#fishTail)" opacity=".7"/>
-    <ellipse cx="294" cy="132" rx="18" ry="19" fill="#fff"/>
-    <ellipse cx="322" cy="128" rx="17" ry="18" fill="#fff"/>
-    <circle cx="297" cy="135" r="9" fill="#0a2842"/><circle cx="325" cy="131" r="8.5" fill="#0a2842"/>
-    <circle cx="300" cy="131" r="3.4" fill="#fff"/><circle cx="328" cy="127" r="3.2" fill="#fff"/>
-    <ellipse cx="272" cy="158" rx="12" ry="6" fill="#ff9db3" opacity=".55"/>
-    <ellipse cx="340" cy="150" rx="9" ry="5" fill="#ff9db3" opacity=".4"/>
-    <path d="M304 156 C312 163 323 163 331 156" fill="none" stroke="#0a2842" stroke-width="3" stroke-linecap="round"/>
-    <path d="M250 70 C258 54 272 48 286 52 C282 66 272 76 258 78 Z" fill="url(#bowGrad)"/>
-    <path d="M286 52 C300 42 316 44 324 56 C312 66 298 68 286 62 Z" fill="url(#bowGrad)"/>
-    <circle cx="286" cy="58" r="6" fill="#d8f7ff"/>
-    <path d="M238 74 C250 68 260 70 266 78 C256 84 246 84 238 80 Z" fill="#e8fbff" opacity=".75"/>
-    <circle cx="360" cy="92" r="5" fill="#bdefff" opacity=".55"/>
-    <circle cx="378" cy="74" r="3" fill="#bdefff" opacity=".42"/>
-    <circle cx="370" cy="112" r="2.6" fill="#bdefff" opacity=".35"/>
-  </symbol>
-</svg>
-
-<svg class="watermark" viewBox="0 0 420 300" aria-hidden="true"><use href="#bigfish"/></svg>
+<img class="watermark" src="assets/dafeiyu.png" alt="" aria-hidden="true">
 
 <div class="app">
   <aside class="sidebar">
     <div class="brand">
-      <svg class="fish-mini" viewBox="0 0 420 300"><use href="#bigfish"/></svg>
+      <img class="fish-mini" src="assets/dafeiyu.png" alt="大肥鱼">
       <div><b>大肥鱼</b><span>CONTROL ROOM</span></div>
     </div>
 
@@ -445,7 +400,7 @@ dialog::backdrop{background:rgba(0,6,12,.66);backdrop-filter:blur(4px)}
             </div>
           </div>
           <div class="hero-art">
-            <svg class="fish-hero" viewBox="0 0 420 300"><use href="#bigfish"/></svg>
+            <img class="fish-hero" src="assets/dafeiyu.png" alt="大肥鱼">
             <span class="badge-warm">暖</span>
             <span class="bubble b1"></span><span class="bubble b2"></span><span class="bubble b3"></span>
           </div>
