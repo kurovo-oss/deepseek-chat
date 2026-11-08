@@ -59,7 +59,7 @@ namespace DafeiyuNative
             _port = ReadUiPort(_root);
             _shot = shot;
 
-            Text = "大肥鱼 · 控制台";
+            Text = "大肥鱼 · 她今天怎么样";
             BackColor = Color.FromArgb(5, 17, 31);
             ForeColor = Color.FromArgb(234, 246, 255);
             Font = new Font("Microsoft YaHei UI", 9F);

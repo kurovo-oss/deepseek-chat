@@ -315,7 +315,7 @@
     const edit = el('button', '', '修改');
     edit.type = 'button';
     edit.addEventListener('click', () => startMemoryEdit(card, item, 'edit'));
-    const wrong = el('button', '', '记错了');
+    const wrong = el('button', '', '你记错了');
     wrong.type = 'button';
     wrong.addEventListener('click', () => startMemoryEdit(card, item, 'correct'));
     const remove = el('button', 'danger', '删除');

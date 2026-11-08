@@ -41,6 +41,12 @@ def test_installer_build_is_reproducible():
     assert not any(byte > 127 for byte in (ROOT / "installer" / "build-installer.ps1").read_bytes())
 
 
+def test_native_shell_title_matches_home_page():
+    source = (ROOT / "scripts" / "native" / "WebShell.cs").read_text(encoding="utf-8")
+    assert 'Text = "大肥鱼 · 她今天怎么样"' in source
+    assert 'Text = "大肥鱼 · 控制台"' not in source
+
+
 def test_installer_ships_safe_default_persona():
     build = (ROOT / "installer" / "build-installer.ps1").read_text(encoding="utf-8")
     assert "defaults\\prompts" in build
