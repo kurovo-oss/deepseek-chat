@@ -23,6 +23,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from . import config as config_mod
+from . import onboarding as onboarding_mod
 from .mood import mood_line
 from .runtime import MODULES, Runtime
 
@@ -516,6 +517,34 @@ class WebUI:
             raise ValueError("缺少动作")
         return self.runtime.snapshot()
 
+    def api_onboarding(self) -> dict:
+        return onboarding_mod.build_state(self.settings, getattr(self.engine, "sender", None))
+
+    def api_test_model(self, body: dict) -> dict:
+        result = onboarding_mod.test_model(
+            self.settings,
+            base_url=body.get("base_url"),
+            model_id=body.get("model_id"),
+            api_key=body.get("model_api_key"),
+        )
+        self._audit("test_model", target=str(result.get("model_id", "")), result="ok" if result.get("ok") else "failed")
+        return result
+
+    def api_start_napcat(self) -> dict:
+        result = onboarding_mod.start_napcat(self.settings)
+        self._audit("start_napcat", target="local", result="ok" if result.get("ok") else "failed")
+        return result
+
+    def api_open_napcat(self) -> dict:
+        result = onboarding_mod.open_napcat_login(self.settings)
+        self._audit("open_napcat", target="local", result="ok" if result.get("ok") else "failed")
+        return result
+
+    def api_finish_onboarding(self) -> dict:
+        result = onboarding_mod.finish(self.settings)
+        self._audit("finish_onboarding")
+        return result
+
 
 def make_handler(app: WebUI):
 
@@ -657,6 +686,8 @@ def make_handler(app: WebUI):
                     self._json(app.api_logs(limit))
                 elif path == "/api/audit":
                     self._json(app.api_audit())
+                elif path == "/api/onboarding":
+                    self._json(app.api_onboarding())
                 elif path == "/health":
                     self._json({"ok": True})
                 else:
@@ -680,6 +711,14 @@ def make_handler(app: WebUI):
                     self._json(app.api_save_settings(body))
                 elif path == "/api/runtime":
                     self._json(app.api_runtime(body))
+                elif path == "/api/onboarding/test-model":
+                    self._json(app.api_test_model(body))
+                elif path == "/api/onboarding/start-napcat":
+                    self._json(app.api_start_napcat())
+                elif path == "/api/onboarding/open-napcat":
+                    self._json(app.api_open_napcat())
+                elif path == "/api/onboarding/finish":
+                    self._json(app.api_finish_onboarding())
                 else:
                     self._json({"error": "not found"}, 404)
             except ValueError as exc:

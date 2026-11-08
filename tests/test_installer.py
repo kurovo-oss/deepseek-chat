@@ -22,6 +22,7 @@ def test_installer_script_is_a_per_user_windows_installer():
     assert "Uninstall.exe" in script
     assert 'RMDir /r "$INSTDIR\\assets"' in script
     assert 'RMDir /r "$INSTDIR\\docs"' in script
+    assert "IfSilent keep_data" in script
 
 
 def test_installer_build_is_reproducible():
@@ -43,3 +44,13 @@ def test_installer_does_not_ship_local_data_or_secrets():
     assert '"logs"' not in build
     assert '"tests"' not in build
     assert "Copy-File \".env\"" not in build
+
+
+def test_env_example_has_one_setting_per_line():
+    text = (ROOT / ".env.example").read_text(encoding="utf-8")
+    for number, line in enumerate(text.splitlines(), start=1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        assert "\\n" not in line, f".env.example 第 {number} 行把换行写成了字面量"
+        assert "=" in line, f".env.example 第 {number} 行不是 KEY=VALUE"

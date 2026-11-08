@@ -110,10 +110,11 @@ powershell -ExecutionPolicy Bypass -File installer\build-installer.ps1
 `%LOCALAPPDATA%\Dafeiyu`，不要求管理员权限；安装时可以改目录，并填写主人 QQ、
 模型地址、模型名和 API Key。安装目录已有 `.env` 时不会覆盖。
 
-安装完成后还需要：
-1. 打开 NapCat 完成 QQ 扫码登录；
-2. 确认模型地址和 API Key 可用；
-3. 启动「大肥鱼」窗口。
+安装完成后直接启动「大肥鱼」，首次窗口会依次引导：
+
+1. 测试模型连接（只发一次最小请求，不写配置）；
+2. 启动 NapCat 并打开扫码登录页，手机 QQ 扫码后页面会自动变成“在线”；
+3. 点「进入控制台」完成引导。
 
 安装包不内置 QQ 账号或 API Key。目标机器需要 **Microsoft Edge WebView2 Runtime**，
 安装器会检测并引导下载。详细说明见 [`installer/README.md`](installer/README.md)。

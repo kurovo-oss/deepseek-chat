@@ -201,6 +201,9 @@ Section "Uninstall"
   DeleteRegKey HKCU "Software\Dafeiyu"
   DeleteRegKey HKCU "${UNINST_KEY}"
 
+  ; Silent uninstall must not block on a prompt. Default to keeping user data;
+  ; an interactive uninstall still asks.
+  IfSilent keep_data
   MessageBox MB_ICONQUESTION|MB_YESNO "是否同时删除聊天记录、人格和配置？$\r$\n选择“否”会保留 data 目录和 .env，下次安装可以继续使用。" IDNO keep_data
   RMDir /r "$INSTDIR\data"
   RMDir /r "$INSTDIR\logs"

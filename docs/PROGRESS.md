@@ -30,7 +30,7 @@
 - token 首启生成到 `data/ui-token`，日志打印一次访问地址。
 
 已实现的接口集中在 `/api/status`、`/api/messages`、`/api/persona`、`/api/settings`、
-`/api/logs`、`/api/audit`、`/api/runtime`。设计稿里的 SSE、审核队列、人格回滚 UI
+`/api/logs`、`/api/audit`、`/api/runtime`、`/api/onboarding`。设计稿里的 SSE、审核队列、人格回滚 UI
 还没做；「停止 / 启动机器人」已经放进原生控制台。
 
 ### Windows 原生窗口（2026-11-08）
@@ -63,6 +63,23 @@
 
 安装包不内置 API Key 或 QQ 账号；构建产物在 `dist/`，不纳入 git。
 
+### 首次启动引导（2026-11-08）
+
+安装版第一次打开时，NapCat 可能还没扫码，模型 Key 也可能只是刚填进 `.env`。总览页不会说话，
+新用户容易以为“装坏了”。现在控制台会在需要时弹出三步引导：
+
+- **模型**：调一次 `LLMClient.probe()`，只读测试、不写 `.env`，显示延迟或脱敏后的错误；
+- **QQ 登录**：读 `tools\NapCat-*\napcat\config\webui.json`，必要时启动 `launcher.bat`，
+  再用默认浏览器打开带一次性 token 的 NapCat 登录页；页面每 4 秒查一次 `get_login_info`，
+  扫码后自动变成“在线”；
+- **完成**：写 `data/onboarding.done`，之后不再自动弹；点“稍后再说”只关闭本次，下次还会提醒。
+
+安全边界：token 不返回给网页（只由后端打开浏览器），接口沿用本机 Cookie / `X-UI-Token` 校验，
+`/api/onboarding/test-model` 不回显 API Key；NapCat 登录页强制走 `127.0.0.1`。
+
+测试新增 9 条（模型测试、配置发现、扫码页、启动、完成标记、HTTP 鉴权、UI 占位），全量 **1031 通过**。
+引导窗口截图见 `docs/onboarding.png`。
+
 ---
 
 ## 里程碑
@@ -75,7 +92,7 @@
 | M4 会主动 | ✅ | `scheduled`（未来事件到期）+ `followup`（72 小时沉默）+ 全套闸门 |
 | M5 挂得住 | ✅ 完成 | 自启、文件日志、看门狗、一键重启、失败回复重放 |
 
-代码约 12000 行 + 测试约 8500 行（1021 个用例）；核心 Python 零第三方运行时依赖，
+代码约 12000 行 + 测试约 8500 行（1031 个用例）；核心 Python 零第三方运行时依赖，
 Windows 界面使用系统 WebView2 Runtime。
 
 ---

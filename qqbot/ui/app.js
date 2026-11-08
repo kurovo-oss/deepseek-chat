@@ -12,6 +12,17 @@
     timer: null,
   };
 
+  const onboarding = {
+    open: false,
+    step: 1,
+    data: null,
+    tested: false,
+    testDetail: '',
+    testOk: false,
+    busy: false,
+    poll: null,
+  };
+
   const PAGE_TITLE = {
     overview: ['今天也在这里', '总览'],
     chat: ['', '对话'],
@@ -415,6 +426,263 @@
     $('#clock').textContent = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
   }
 
+  // ---------------- 首次启动引导 ----------------
+  function onbButton(label, kind, handler) {
+    const button = el('button', 'onb-btn' + (kind ? ` ${kind}` : ''), label);
+    button.type = 'button';
+    button.addEventListener('click', handler);
+    return button;
+  }
+
+  function onbStatus(title, detail, kind = '', badge = '') {
+    const row = el('div', 'onb-status');
+    const main = el('div', 'onb-status-main');
+    main.append(el('b', '', title));
+    if (detail) main.append(el('small', '', detail));
+    row.append(main);
+    if (badge) row.append(el('em', kind, badge));
+    return row;
+  }
+
+  function stopOnboardingPoll() {
+    if (onboarding.poll) {
+      clearInterval(onboarding.poll);
+      onboarding.poll = null;
+    }
+  }
+
+  function startOnboardingPoll() {
+    if (onboarding.poll) return;
+    onboarding.poll = setInterval(() => {
+      if (!document.hidden && onboarding.open && onboarding.step === 2) refreshOnboarding();
+    }, 4000);
+  }
+
+  function hideOnboarding() {
+    onboarding.open = false;
+    stopOnboardingPoll();
+    $('#onboarding').hidden = true;
+  }
+
+  async function refreshOnboarding() {
+    if (!onboarding.open) return;
+    try {
+      const data = await api('/api/onboarding');
+      onboarding.data = data;
+      if (!data.needed) {
+        if (!data.finished && onboarding.step === 2) {
+          onboarding.step = 3;
+          renderOnboarding();
+        } else {
+          hideOnboarding();
+        }
+        return;
+      }
+      if (onboarding.step === 2) renderOnboarding();
+    } catch (_) {
+      // 轮询失败不弹错，下一次再试。
+    }
+  }
+
+  async function loadOnboarding() {
+    try {
+      const data = await api('/api/onboarding');
+      onboarding.data = data;
+      if (!data.needed) {
+        hideOnboarding();
+        return;
+      }
+      if (!onboarding.open) {
+        onboarding.open = true;
+        onboarding.step = 1;
+        onboarding.tested = false;
+        onboarding.testDetail = '';
+        onboarding.testOk = false;
+      }
+      $('#onboarding').hidden = false;
+      renderOnboarding();
+    } catch (_) {
+      // 老版本后端没有这个接口时静默跳过，不影响主界面。
+    }
+  }
+
+  function renderOnboarding() {
+    if (!onboarding.open || !onboarding.data) return;
+    const steps = $('#onboarding-steps');
+    steps.replaceChildren();
+    ['模型', 'QQ 登录', '开始使用'].forEach((label, index) => {
+      const number = index + 1;
+      const node = el('div', 'onb-step' + (number === onboarding.step ? ' active' : number < onboarding.step ? ' done' : ''));
+      node.append(el('i', '', String(number)), el('span', '', label));
+      steps.append(node);
+    });
+
+    const body = $('#onboarding-body');
+    const actions = $('#onboarding-actions');
+    body.replaceChildren();
+    actions.replaceChildren();
+    stopOnboardingPoll();
+
+    if (onboarding.step === 1) renderOnboardingModel(body, actions);
+    else if (onboarding.step === 2) renderOnboardingQQ(body, actions);
+    else renderOnboardingDone(body, actions);
+  }
+
+  function renderOnboardingModel(body, actions) {
+    const model = onboarding.data.model || {};
+    body.append(onbStatus(
+      '模型连接',
+      `${model.model_id || '未填写模型'} · ${model.base_url || '未填写地址'}`,
+      model.configured ? 'ok' : 'bad',
+      model.configured ? '已配置' : '未配置',
+    ));
+    body.append(onbStatus(
+      '主人 QQ',
+      model.master_qq || '还没有填写主人 QQ',
+      model.master_set ? 'ok' : 'bad',
+      model.master_set ? '已填写' : '未填写',
+    ));
+    body.append(el('p', 'onb-note', model.key_set
+      ? `API Key 已保存（${model.key_hint}），不会在页面里显示明文。`
+      : '还没有保存 API Key，请先去配置页填写。'));
+    body.append(el('p', 'onb-lead', '先点一次测试。只有真的调通模型，她才能开口说话。'));
+
+    const result = el('p', `onb-result ${onboarding.testOk ? 'ok' : onboarding.testDetail ? 'bad' : ''}`.trim());
+    result.textContent = onboarding.testDetail || '还没有测试。';
+    body.append(result);
+
+    const test = onbButton(onboarding.busy ? '测试中…' : '测试模型连接', '', async () => {
+      if (onboarding.busy) return;
+      onboarding.busy = true;
+      onboarding.testOk = false;
+      onboarding.testDetail = '正在请求模型…';
+      renderOnboarding();
+      try {
+        const data = await api('/api/onboarding/test-model', { method: 'POST', body: {} });
+        onboarding.testOk = !!data.ok;
+        onboarding.testDetail = data.ok
+          ? `连通，${data.latency_ms}ms · ${data.model_id}`
+          : `失败：${data.detail || '模型没有返回'}`;
+      } catch (err) {
+        onboarding.testOk = false;
+        onboarding.testDetail = `失败：${err.message}`;
+      } finally {
+        onboarding.busy = false;
+        renderOnboarding();
+      }
+    });
+    test.disabled = onboarding.busy;
+    actions.append(test);
+
+    const config = onbButton('去配置页', 'ghost', () => {
+      hideOnboarding();
+      switchPage('config');
+    });
+    actions.append(config);
+
+    const next = onbButton('下一步：登录 QQ', 'primary', () => {
+      onboarding.step = 2;
+      renderOnboarding();
+    });
+    next.disabled = onboarding.busy || !onboarding.testOk || !model.master_set;
+    actions.append(next);
+  }
+
+  function renderOnboardingQQ(body, actions) {
+    const adapter = onboarding.data.adapter || {};
+    const napcat = onboarding.data.napcat || {};
+    body.append(onbStatus(
+      'QQ 登录',
+      adapter.online
+        ? `${adapter.nickname || '已登录'}${adapter.user_id ? ` · ${adapter.user_id}` : ''}`
+        : napcat.running ? 'NapCat 在运行，但还没有登录 QQ' : 'NapCat 还没有启动',
+      adapter.online ? 'ok' : 'bad',
+      adapter.online ? '在线' : '离线',
+    ));
+    body.append(el('p', 'onb-lead', adapter.online
+      ? 'QQ 已经在线了，点下一步就能进控制台。'
+      : '先启动 NapCat，再打开扫码页。用手机 QQ 扫码后回到这里，状态会自动刷新。'));
+    if (!napcat.found) {
+      body.append(el('p', 'onb-note', '没有找到 NapCat。请确认安装包完整，或手动运行 tools\\NapCat-*\\launcher.bat。'));
+    } else if (!napcat.login_page_available) {
+      body.append(el('p', 'onb-note', 'NapCat 还没有生成登录 token；等它启动完成后重试，或直接打开 http://127.0.0.1:6099/webui。'));
+    }
+
+    const start = onbButton(napcat.running ? 'NapCat 已启动' : '启动 NapCat', '', async () => {
+      if (onboarding.busy) return;
+      onboarding.busy = true;
+      renderOnboarding();
+      try {
+        await api('/api/onboarding/start-napcat', { method: 'POST', body: {} });
+        toast('NapCat 正在启动，稍等几秒');
+        setTimeout(refreshOnboarding, 2500);
+      } catch (err) {
+        toast(err.message, true);
+      } finally {
+        onboarding.busy = false;
+        renderOnboarding();
+      }
+    });
+    start.disabled = onboarding.busy || !!napcat.running;
+    actions.append(start);
+
+    const open = onbButton('打开扫码登录页', 'primary', async () => {
+      try {
+        await api('/api/onboarding/open-napcat', { method: 'POST', body: {} });
+        toast('已打开浏览器里的 NapCat 登录页');
+      } catch (err) {
+        toast(err.message, true);
+      }
+    });
+    open.disabled = !napcat.login_page_available;
+    actions.append(open);
+
+    const check = onbButton('我已登录，重新检查', '', () => refreshOnboarding());
+    check.disabled = onboarding.busy;
+    actions.append(check);
+
+    const back = onbButton('上一步', 'ghost', () => {
+      onboarding.step = 1;
+      renderOnboarding();
+    });
+    actions.append(back);
+
+    const next = onbButton('下一步：开始使用', 'primary', () => {
+      onboarding.step = 3;
+      renderOnboarding();
+    });
+    next.disabled = !adapter.online || onboarding.busy;
+    actions.append(next);
+
+    if (!adapter.online) startOnboardingPoll();
+  }
+
+  function renderOnboardingDone(body, actions) {
+    const model = onboarding.data.model || {};
+    const adapter = onboarding.data.adapter || {};
+    body.append(onbStatus('模型连接', `${model.model_id || '—'} · 已测试`, 'ok', '可用'));
+    body.append(onbStatus('QQ 登录', `${adapter.nickname || '已登录'}${adapter.user_id ? ` · ${adapter.user_id}` : ''}`, 'ok', '在线'));
+    body.append(el('p', 'onb-lead', '两件事都连上了。以后她会在你说话时回你，也会在自己想说话的时候先开口。'));
+    body.append(el('div', 'onb-hint', '如果之后要换模型、改主人 QQ，去“配置”页保存，然后重启一下机器人。'));
+
+    const finish = onbButton('进入控制台', 'primary', async () => {
+      try {
+        await api('/api/onboarding/finish', { method: 'POST', body: {} });
+      } catch (_) {
+        // 标记失败不挡人，下一次打开最多再看到一次引导。
+      }
+      hideOnboarding();
+      toast('都准备好了');
+      loadStatus(true);
+    });
+    actions.append(finish);
+  }
+
+  function finishOnboardingLater() {
+    hideOnboarding();
+    toast('先跳过，下次打开还会提醒');
+  }
+
   function init() {
     $$('.nav-item').forEach((btn) => btn.addEventListener('click', () => switchPage(btn.dataset.page)));
     $$('[data-page-link]').forEach((btn) => btn.addEventListener('click', () => switchPage(btn.dataset.pageLink)));
@@ -433,6 +701,7 @@
     $('#reload-logs').addEventListener('click', loadLogs);
     $('#save-persona').addEventListener('click', savePersona);
     $('#save-settings').addEventListener('click', saveSettings);
+    $('#onboarding-later').addEventListener('click', finishOnboardingLater);
     $('#persona-text').addEventListener('input', (event) => {
       $('#persona-count').textContent = `${event.target.value.length} 字`;
     });
@@ -442,6 +711,7 @@
     const page = (location.hash || '#overview').slice(1);
     switchPage(PAGE_TITLE[page] ? page : 'overview');
     loadStatus();
+    loadOnboarding();
     state.timer = setInterval(() => loadStatus(true), 20000);
   }
 
