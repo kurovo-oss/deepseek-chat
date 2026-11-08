@@ -76,6 +76,7 @@ body:before{
 .crumb{font-size:10px;color:var(--faint);letter-spacing:.14em;text-transform:uppercase}
 .crumb b{color:var(--cyan);font-weight:600}
 .topbar h1{margin:5px 0 0;font-size:24px;letter-spacing:.03em;font-weight:600}
+#page-title:empty{display:none}
 .top-actions{display:flex;align-items:center;gap:10px}
 .pill{display:inline-flex;align-items:center;gap:7px;padding:6px 10px;border:1px solid var(--line);border-radius:999px;background:rgba(9,30,49,.54);font-size:10px;color:#b8d3e5}
 .pill b{color:var(--text);font-weight:600}
@@ -103,7 +104,6 @@ body:before{
 .halo{position:absolute;z-index:1;width:250px;height:250px;bottom:18px;border-radius:50%;border:1px solid rgba(90,215,255,.24);background:radial-gradient(circle,rgba(90,215,255,.18),transparent 68%);box-shadow:0 0 90px rgba(90,215,255,.14)}
 .halo:before,.halo:after{content:"";position:absolute;inset:22px;border:1px solid rgba(90,215,255,.12);border-radius:50%}
 .halo:after{inset:-18px;border-style:dashed;animation:spin 28s linear infinite}
-.art-caption{position:absolute;bottom:0;z-index:2;font-size:9px;letter-spacing:.14em;color:#6b9ab4}
 @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}}
 @keyframes spin{to{transform:rotate(360deg)}}
 
@@ -252,5 +252,4 @@ hr{border:0;border-top:1px dashed rgba(126,200,255,.12);margin:8px 0}
   .field-row{flex-direction:column;gap:0}
   .editor-foot{flex-wrap:wrap}
   #persona-note{width:100%}
-  .hero-meta .pill:nth-child(3){display:none}
 }

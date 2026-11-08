@@ -48,6 +48,20 @@ class FakeGuard:
         ]
 
 
+def test_ui_does_not_show_extra_labels():
+    root = Path(__file__).resolve().parents[1]
+    html = (root / "qqbot" / "ui" / "index.html").read_text(encoding="utf-8")
+    js = (root / "qqbot" / "ui" / "app.js").read_text(encoding="utf-8")
+    assert "只属于你的控制台" not in html
+    assert "蓝鲸娘" not in html
+    assert "hero-pid" not in html
+    assert "PID" not in html
+    assert "mood-line" not in html
+    assert "他说过的话，都在这里" not in js
+    assert "hero-pid" not in js
+    assert "mood-line" not in js
+
+
 @pytest.fixture()
 def base(tmp_path: Path) -> Path:
     (tmp_path / "prompts").mkdir()

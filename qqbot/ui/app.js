@@ -14,7 +14,7 @@
 
   const PAGE_TITLE = {
     overview: ['今天也在这里', '总览'],
-    chat: ['他说过的话，都在这里', '对话'],
+    chat: ['', '对话'],
     persona: ['她是谁，由你写', '人格'],
     config: ['把连接和边界调好', '配置'],
     logs: ['她都做了什么', '日志'],
@@ -112,9 +112,7 @@
     $('#hero-state').textContent = alarm ? '已停机' : '在线';
     $('#side-model').textContent = `模型 ${data.model || '—'}`;
     $('#hero-qq').textContent = data.master_qq || '—';
-    $('#hero-pid').textContent = data.pid || '—';
     $('#greeting').textContent = greeting();
-    $('#mood-line').textContent = (data.mood && data.mood.line) || '心情数据还没接上。';
 
     const values = (data.mood && data.mood.values) || {};
     const moodBars = $('#mood-bars');
@@ -137,7 +135,6 @@
     });
     const tag = values.tired >= 0.7 ? '有点累' : values.miss >= 0.75 ? '想他' : values.warmth >= 0.6 ? '暖' : '平稳';
     $('#mood-tag').textContent = tag;
-    $('#mood-hint').textContent = '数值只用来观察；她读到的语气：' + (data.mood && data.mood.line ? data.mood.line.split('\n')[0] : '—');
 
     const today = data.today || {};
     $('#stat-messages').textContent = today.messages ?? 0;
