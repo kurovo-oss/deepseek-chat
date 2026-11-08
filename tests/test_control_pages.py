@@ -230,6 +230,8 @@ def test_http_memory_templates_diagnostics(settings: Settings, engine):
 def test_repo_default_persona_keeps_safety_bounds():
     root = Path(__file__).resolve().parents[1]
     text = (root / "defaults" / "prompts" / "system.md").read_text(encoding="utf-8")
+    assert text.startswith("你是「大肥鱼」")
+    assert "浣犳" not in text
     assert "不编造" in text
     assert "线下" in text
     assert "做不到" in text
