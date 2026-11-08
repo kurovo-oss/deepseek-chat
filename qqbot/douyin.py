@@ -41,11 +41,16 @@ CREATE TABLE IF NOT EXISTS douyin_seen (
 FEED_JS = """(() => {
   const seen = new Set();
   const out = [];
-  const nodes = document.querySelectorAll('[data-e2e="feed-item"], a[href*="/video/"], li[data-e2e="feed-item"]');
+  const nodes = document.querySelectorAll('[href*="/video/"], [data-e2e="feed-item"]');
   for (const node of nodes) {
-    let id = node.getAttribute && (node.getAttribute('data-e2e-vid') || '');
+    let id = node.getAttribute('data-e2e-vid') || '';
     if (!id) {
-      const a = node.querySelector ? node.querySelector('a[href*="/video/"]') : node;
+      const href = (node.getAttribute && node.getAttribute('href')) || '';
+      const m = href.match(/\\/video\\/(\\d+)/);
+      id = m ? m[1] : '';
+    }
+    if (!id && node.querySelector) {
+      const a = node.querySelector('[href*="/video/"]');
       const href = (a && a.getAttribute && a.getAttribute('href')) || '';
       const m = href.match(/\\/video\\/(\\d+)/);
       id = m ? m[1] : '';
@@ -60,15 +65,25 @@ FEED_JS = """(() => {
 })()"""
 
 LOGIN_JS = """(() => {
-  const body = document.body ? document.body.innerText : '';
-  const hasLoginBtn = /登录|扫码登录/.test(body) && !/退出登录/.test(body);
+  const body = document.body ? (document.body.textContent || '') : '';
   const avatar = document.querySelector('img[data-e2e="user-avatar"], [data-e2e="user-avatar"]');
-  const captcha = !!document.querySelector('iframe[src*="captcha"], iframe[src*="verify"], [id*="captcha"]');
-  return {has_login_button: hasLoginBtn, has_avatar: !!avatar, captcha: captcha, url: location.href};
+  const loggedIn = /退出登录/.test(body) || !!avatar;
+  const hasLoginBtn = !loggedIn && /扫码登录|立即登录|登录抖音/.test(body);
+  const captcha = Array.from(document.querySelectorAll(
+    'iframe[src*="captcha"], iframe[src*="verify"], [id*="captcha"], [class*="captcha"]'
+  )).some(el => {
+    const style = getComputedStyle(el);
+    const rect = el.getBoundingClientRect();
+    return style.display !== 'none' && style.visibility !== 'hidden'
+      && rect.width > 20 && rect.height > 20;
+  });
+  return {has_login_button: hasLoginBtn, has_avatar: loggedIn, captcha: captcha, url: location.href};
 })()"""
 
 LIKE_JS = """(() => {
-  const find = () => document.querySelector('[data-e2e="like-icon"], [data-e2e="video-like"]');
+  const find = () => document.querySelector(
+    '[data-e2e="video-player-digg"], [data-e2e="like-icon"], [data-e2e="video-like"]'
+  );
   const icon = find();
   if (!icon) return {ok: false, reason: 'no_like_icon'};
   let button = icon;
@@ -77,11 +92,16 @@ LIKE_JS = """(() => {
     button = button.parentElement;
   }
   const target = button || icon;
-  const before = target.getAttribute('aria-pressed') || target.className;
+  const before = target.getAttribute('data-e2e-state')
+    || target.getAttribute('aria-pressed') || target.className;
+  if (/digged/.test(String(before)) && !/no-digged/.test(String(before))) {
+    return {ok: true, changed: false, already: true, before: String(before).slice(0, 80)};
+  }
   target.dispatchEvent(new MouseEvent('mousedown', {bubbles: true}));
   target.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
   target.click();
-  const after = target.getAttribute('aria-pressed') || target.className;
+  const after = target.getAttribute('data-e2e-state')
+    || target.getAttribute('aria-pressed') || target.className;
   return {ok: true, changed: before !== after, before: String(before).slice(0, 80), after: String(after).slice(0, 80)};
 })()"""
 

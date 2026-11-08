@@ -200,6 +200,16 @@ def test_share_text_can_carry_a_mood_prefix():
     assert "猫猫做饭" in text
 
 
+def test_page_scripts_match_the_live_douyin_dom():
+    # 2026-11-08 真机抓到的结构：卡片是带 href 的 div，点赞状态在 data-e2e-state 上，
+    # 验证码 iframe 常驻但 display:none，不能只看元素存在。
+    assert '[href*="/video/"]' in douyin.FEED_JS
+    assert "video-player-digg" in douyin.LIKE_JS
+    assert "no-digged" in douyin.LIKE_JS
+    assert "getBoundingClientRect" in douyin.LOGIN_JS
+    assert "getComputedStyle" in douyin.LOGIN_JS
+
+
 def test_tired_mood_skips_scrolling_entirely(tmp_path, monkeypatch):
     monkeypatch.setattr(time, "sleep", lambda seconds: None)
     cfg, store, gate = env(tmp_path)
