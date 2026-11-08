@@ -49,6 +49,20 @@
 好处是不往 C 盘解压、不复制几百 MB 运行时；代价是 exe 必须和项目目录放在一起。
 截图见 `docs/native-ui.png`，网页控制台保留作调试入口。
 
+### 安装版（2026-11-08）
+
+新增 `installer/Dafeiyu.nsi` 和 `installer/build-installer.ps1`，用项目内的 NSIS 生成
+`dist\Dafeiyu-Setup-1.0.0.exe`：
+
+- 默认按当前用户装到 `%LOCALAPPDATA%\Dafeiyu`，不需要管理员权限；
+- 安装向导填写主人 QQ、模型地址 / 名称 / API Key，写 `.env` 时保留模板其余默认项；
+- 安装目录已有 `.env` 时不覆盖，方便重装或升级；
+- 安装包携带 Python、NapCat、WebView2 外壳和网页界面；目标机器只缺 WebView2 Runtime 时引导下载；
+- 桌面 / 开始菜单 / 卸载项；卸载时可选保留 `data` 和 `.env`；
+- 安装器的配置页只是首次配置，NapCat 的 QQ 扫码仍需在安装后完成。
+
+安装包不内置 API Key 或 QQ 账号；构建产物在 `dist/`，不纳入 git。
+
 ---
 
 ## 里程碑
@@ -61,7 +75,7 @@
 | M4 会主动 | ✅ | `scheduled`（未来事件到期）+ `followup`（72 小时沉默）+ 全套闸门 |
 | M5 挂得住 | ✅ 完成 | 自启、文件日志、看门狗、一键重启、失败回复重放 |
 
-代码约 12000 行 + 测试约 8500 行（1018 个用例）；核心 Python 零第三方运行时依赖，
+代码约 12000 行 + 测试约 8500 行（1021 个用例）；核心 Python 零第三方运行时依赖，
 Windows 界面使用系统 WebView2 Runtime。
 
 ---

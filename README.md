@@ -98,6 +98,26 @@ powershell -ExecutionPolicy Bypass -File scripts\build-exe.ps1
 > 原生窗口和网页控制台使用同一套本机 API；网页端仍保留在
 > `http://127.0.0.1:8090`，方便调试，但日常使用不需要打开浏览器。
 
+## 安装版（发给别人用）
+
+安装包把 Python、NapCat、WebView2 外壳和网页界面一起打进安装程序，目标机器不需要预装 Python：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File installer\build-installer.ps1
+```
+
+输出 `dist\Dafeiyu-Setup-1.0.0.exe`。安装器默认按当前用户装到
+`%LOCALAPPDATA%\Dafeiyu`，不要求管理员权限；安装时可以改目录，并填写主人 QQ、
+模型地址、模型名和 API Key。安装目录已有 `.env` 时不会覆盖。
+
+安装完成后还需要：
+1. 打开 NapCat 完成 QQ 扫码登录；
+2. 确认模型地址和 API Key 可用；
+3. 启动「大肥鱼」窗口。
+
+安装包不内置 QQ 账号或 API Key。目标机器需要 **Microsoft Edge WebView2 Runtime**，
+安装器会检测并引导下载。详细说明见 [`installer/README.md`](installer/README.md)。
+
 ## 本地控制台（网页调试）
 
 机器人启动后，同进程起一个只监听本机的控制台：

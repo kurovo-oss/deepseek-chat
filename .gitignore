@@ -35,3 +35,7 @@ docs/native-screen.png
 
 # WebView2 SDK 解压/临时文件（只提交根目录三个运行时文件）
 scripts/native/webview2/
+
+# 安装包构建产物
+build/
+dist/
