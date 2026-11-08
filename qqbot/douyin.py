@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import sqlite3
 import subprocess
 import time
@@ -375,25 +376,97 @@ def mood_plan(values: dict[str, float] | None) -> dict:
                 "prefix": "想你了，刷到这个就想到你。", "reason": ""}
     if warmth >= 0.6:
         return {"skip": False, "label": "暖", "max_likes": 5, "max_shares": 2,
-                "prefix": "今天心情好，这个看得我笑出声。", "reason": ""}
+                "prefix": "今天心情好，刷到这个想给你看。", "reason": ""}
     return {"skip": False, "label": "平", "max_likes": 5, "max_shares": 2,
             "prefix": "", "reason": ""}
 
 
-def share_text(text: str, aweme_id: str, prefix: str = "") -> str:
+COMMENT_SYSTEM = (
+    "你是大肥鱼，18 岁，黏人的女朋友。说话短、口语、像 QQ 聊天；"
+    "不解释、不说教、不堆表情。"
+)
+
+COMMENT_USER = """你在抖音推荐流里刷到这条视频，只看见标题，没点进去看。
+标题：{title}
+作者：{author}
+你现在：{mood}
+
+写一句你看到标题后的真实反应（20~40 字），可以是吐槽、好奇、或者想发给他的理由。
+要求：
+- 只能根据标题，不要编视频里的画面、剧情、结局
+- 不要说“看完了”“视频里”“里面”
+- 不要自称“大肥鱼”，不要约他一起看（你只是把链接发给他）
+- 不要每句都用“发给你看看”收尾，换着说，或者干脆不说
+- 一句话要完整，句尾不要是逗号
+- 不要链接、不要引号、不要 hashtag
+只输出这一句话，不要解释。"""
+
+# 她没点进去看，出现这些词就是在编视频内容
+_WATCH_CLAIMS = ("看完", "看了", "视频里", "视频中", "里面", "结局", "剧情", "画面", "开头", "结尾")
+_BAD_PHRASES = ("一起看", "大肥鱼")
+
+
+def _clean_comment(raw: str, title: str) -> str:
+    line = next((part.strip() for part in (raw or "").splitlines() if part.strip()), "")
+    line = line.strip(" \t\"'“”‘’`")
+    line = re.sub(r"#\S+", "", line).strip()
+    if not 4 <= len(line) <= 60:
+        return ""
+    if line.endswith((",", "，", "、", "：", ":", "；", ";")):
+        return ""
+    if "http" in line or "www." in line:
+        return ""
+    for word in _BAD_PHRASES:
+        if word in line:
+            return ""
+    for word in _WATCH_CLAIMS:
+        if word in line and word not in title:
+            return ""
+    return line
+
+
+def comment_on(llm, title: str, author: str = "", values: dict | None = None) -> str:
+    """让她只根据标题说一句自己的话；模型不可用就返回空，让调用方用模板。"""
+    if llm is None:
+        return ""
+    title = (title or "").strip()
+    if not title:
+        return ""
+    mood_text = mood_mod.mood_line(values or {})
+    prompt = COMMENT_USER.format(title=title[:80], author=(author or "不详")[:20], mood=mood_text)
+    for _ in range(2):
+        try:
+            result = llm.chat(
+                [{"role": "system", "content": COMMENT_SYSTEM},
+                 {"role": "user", "content": prompt}],
+                temperature=0.9,
+                max_tokens=400,
+            )
+        except Exception:  # noqa: BLE001 - 评论失败不影响分享
+            log.info("抖音分享短评生成失败", exc_info=True)
+            return ""
+        cleaned = _clean_comment(getattr(result, "text", "") or "", title)
+        if cleaned:
+            return cleaned
+    return ""
+
+
+def share_text(text: str, aweme_id: str, prefix: str = "", comment: str = "") -> str:
     line = (text or "").strip()[:40] or "刷到一个有点意思的"
-    body = f"{prefix}\n{line}" if prefix else line
+    lead = (comment or prefix or "").strip()
+    body = f"{lead}\n{line}" if lead else line
     return f"{body}\nhttps://www.douyin.com/video/{aweme_id}"
 
 
 def run_once(store, settings, guard, sender, browser: Browser, now: int | None = None,
-             notify=None, mood=None) -> dict:
+             notify=None, mood=None, llm=None) -> dict:
     """刷一轮：读推荐 → 点赞 → 挑有趣的分享。返回统计。"""
     stamp = int(now if now is not None else time.time())
     result = {"liked": 0, "shared": 0, "skipped": 0, "dry_run": 0, "mood": "", "error": ""}
     if not getattr(settings, "douyin_enabled", False):
         return result
-    plan = mood_plan(mood.snapshot(stamp) if mood is not None else None)
+    values = mood.snapshot(stamp) if mood is not None else {}
+    plan = mood_plan(values)
     result["mood"] = plan["label"]
     if plan["skip"]:
         result["error"] = plan["reason"]
@@ -470,10 +543,14 @@ def run_once(store, settings, guard, sender, browser: Browser, now: int | None =
                                     user_id=settings.allow_user_id, now=stamp)
                 ok_send = False
                 if share.allowed:
+                    comment = "" if share.dry_run else comment_on(
+                        llm, item.get("text", ""), values=values
+                    )
                     text = share_text(
                         item.get("text", ""),
                         item["id"],
                         prefix=plan["prefix"] if result["shared"] == 0 else "",
+                        comment=comment,
                     )
                     if share.dry_run:
                         guard.record("douyin_share", "share", target=item["id"], payload=text,
@@ -492,7 +569,7 @@ def run_once(store, settings, guard, sender, browser: Browser, now: int | None =
     return result
 
 
-def tick_loop(store, settings, guard, sender, stop_event, interval: float = 1200.0, mood=None) -> None:
+def tick_loop(store, settings, guard, sender, stop_event, interval: float = 1200.0, mood=None, llm=None) -> None:
     browser = Browser(settings)
     def notify(text: str) -> None:
         try:
@@ -502,7 +579,7 @@ def tick_loop(store, settings, guard, sender, stop_event, interval: float = 1200
 
     while not stop_event.wait(interval):
         try:
-            result = run_once(store, settings, guard, sender, browser, notify=notify, mood=mood)
+            result = run_once(store, settings, guard, sender, browser, notify=notify, mood=mood, llm=llm)
             if result["liked"] or result["shared"] or result["skipped"] or result["dry_run"] or result["error"]:
                 log.info(
                     "抖音（%s）：点赞 %d、分享 %d、跳过 %d、试运行 %d%s",

@@ -447,7 +447,7 @@ def main(argv: list[str] | None = None) -> int:
         threading.Thread(
             target=douyin_mod.tick_loop,
             args=(engine.store, settings, engine.guard, engine.sender, stop_event),
-            kwargs={"mood": engine.mood},
+            kwargs={"mood": engine.mood, "llm": engine.llm},
             name="douyin",
             daemon=True,
         ).start()

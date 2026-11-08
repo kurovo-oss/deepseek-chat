@@ -6,6 +6,7 @@ import time
 
 from qqbot import douyin, guard
 from qqbot.config import Settings
+from qqbot.llm import ChatResult
 from qqbot.store import Store
 
 
@@ -65,6 +66,30 @@ class FakeSender:
     def send_private(self, user_id, text):
         self.sent.append((user_id, text))
         return True
+
+
+class FakeLLM:
+    def __init__(self, text="", error=False):
+        self.text = text
+        self.error = error
+        self.calls = []
+
+    def chat(self, messages, **kwargs):
+        self.calls.append(messages)
+        if self.error:
+            raise RuntimeError("boom")
+        return ChatResult(self.text, 10, 10, "fake")
+
+
+class SeqLLM:
+    def __init__(self, texts):
+        self.texts = list(texts)
+        self.calls = []
+
+    def chat(self, messages, **kwargs):
+        self.calls.append(messages)
+        index = min(len(self.calls) - 1, len(self.texts) - 1)
+        return ChatResult(self.texts[index], 10, 10, "fake")
 
 
 def settings(tmp_path, **overrides):
@@ -286,6 +311,74 @@ def test_share_text_keeps_link():
 
     assert "猫猫做饭" in text
     assert "https://www.douyin.com/video/999" in text
+
+
+def test_comment_on_uses_title_and_her_mood():
+    llm = FakeLLM("这个标题看着就想笑")
+
+    comment = douyin.comment_on(
+        llm, "猫猫在锅里睡觉", values={"miss": 0.9, "warmth": 0.5, "tired": 0.1}
+    )
+
+    assert comment == "这个标题看着就想笑"
+    prompt = "\n".join(message["content"] for message in llm.calls[0])
+    assert "猫猫在锅里睡觉" in prompt
+    assert "没点进去看" in prompt
+    assert "很想他" in prompt
+
+
+def test_comment_rejects_claiming_she_watched_it():
+    llm = FakeLLM("我看完了，结局好甜")
+
+    assert douyin.comment_on(llm, "猫猫在锅里睡觉") == ""
+
+
+def test_comment_retries_when_first_try_is_incomplete():
+    llm = SeqLLM(["这个标题我笑死，", "这个标题我笑死，猫猫也太会了"])
+
+    comment = douyin.comment_on(llm, "猫猫在锅里睡觉")
+
+    assert comment == "这个标题我笑死，猫猫也太会了"
+    assert len(llm.calls) == 2
+
+
+def test_share_uses_her_own_comment(tmp_path, monkeypatch):
+    monkeypatch.setattr(time, "sleep", lambda seconds: None)
+    cfg, store, gate = env(tmp_path, douyin_dry_run=False)
+    sender = FakeSender()
+    page = FakePage(feed=[{"id": "909", "text": "猫猫在键盘上睡着了"}])
+    llm = FakeLLM("这只猫也太会找地方睡了吧")
+
+    result = douyin.run_once(
+        store, cfg, gate, sender, FakeBrowser(page), now=int(time.time()), llm=llm
+    )
+
+    assert result["shared"] == 1
+    assert sender.sent[0][1].startswith("这只猫也太会找地方睡了吧")
+    assert "https://www.douyin.com/video/909" in sender.sent[0][1]
+
+
+def test_share_falls_back_when_comment_fails(tmp_path, monkeypatch):
+    monkeypatch.setattr(time, "sleep", lambda seconds: None)
+    cfg, store, gate = env(tmp_path, douyin_dry_run=False)
+    sender = FakeSender()
+    page = FakePage(feed=[{"id": "910", "text": "猫猫在门口等人"}])
+
+    result = douyin.run_once(
+        store, cfg, gate, sender, FakeBrowser(page), now=int(time.time()),
+        mood=FakeMood(miss=0.9), llm=FakeLLM(error=True),
+    )
+
+    assert result["shared"] == 1
+    assert sender.sent[0][1].startswith("想你了")
+
+
+def test_share_text_puts_comment_before_title():
+    text = douyin.share_text("猫猫做饭", "999", comment="这猫比我还会做饭")
+
+    assert text.splitlines()[0] == "这猫比我还会做饭"
+    assert "猫猫做饭" in text
+    assert text.endswith("https://www.douyin.com/video/999")
 
 
 def test_share_text_can_carry_a_mood_prefix():
