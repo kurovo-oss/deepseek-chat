@@ -80,6 +80,7 @@ powershell -ExecutionPolicy Bypass -File scripts\stop-bot.ps1              # 停
 双击项目根目录的 **`大肥鱼.exe`**，打开的是**独立的 Windows 窗口**，不会打开浏览器标签页，也没有地址栏：
 
 - 界面沿用网页控制台的设计：左侧「她今天怎么样 / 对话 / 记忆 / 人格 / 配置 / 日志 / 诊断」，右侧是实时数据；
+- 品牌色是海盐蓝、珊瑚粉和奶油白；首次引导有吉祥物欢迎图，窗口和安装包图标都是大肥鱼；
 - 用 Windows 自带的 WebView2 在窗口内渲染，窗口、任务栏图标、托盘菜单都是原生的；
 - 后台用 `scripts\supervise.ps1` 拉起协议端和机器人（已有进程不会重复启动）；
 - 首页能看 QQ 登录态、最后一次说话时间，并直接暂停主动消息；
@@ -121,6 +122,9 @@ powershell -ExecutionPolicy Bypass -File installer\build-installer.ps1
 输出 `dist\Dafeiyu-Setup-1.0.0.exe`。安装器默认按当前用户装到
 `%LOCALAPPDATA%\Dafeiyu`，不要求管理员权限；安装时可以改目录，并填写主人 QQ、
 模型地址、模型名和 API Key。安装目录已有 `.env` 时不会覆盖。
+
+安装包图标是鱼形大肥鱼；安装向导使用海盐蓝 / 珊瑚粉品牌色，最后一页是带吉祥物的完成页，
+可以直接勾选「现在就叫她出来」或打开使用说明。
 
 安装完成后直接启动「大肥鱼」，首次窗口会依次引导：
 

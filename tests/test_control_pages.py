@@ -242,6 +242,7 @@ def test_ui_has_new_pages_and_guide_title():
     root = Path(__file__).resolve().parents[1]
     html = (root / "qqbot" / "ui" / "index.html").read_text(encoding="utf-8")
     js = (root / "qqbot" / "ui" / "app.js").read_text(encoding="utf-8")
+    css = (root / "qqbot" / "ui" / "app.css").read_text(encoding="utf-8")
     assert "她今天怎么样" in html
     assert 'data-page="memory"' in html
     assert 'id="page-memory"' in html
@@ -252,5 +253,11 @@ def test_ui_has_new_pages_and_guide_title():
     assert "免打扰" in html
     assert "把两件事连上" not in html
     assert 'id="onboarding-title">引导<' in html
+    assert "welcome-mascot.png" in html
+    assert 'class="onboarding-welcome"' in html
+    assert "DAFEIYU" in html
+    for color in ("--brand-ink", "--brand-ocean", "--brand-cyan", "--brand-coral", "--brand-cream"):
+        assert color in css
+    assert "onboarding-mascot" in css
     assert "loadMemory" in js
     assert "exportDiagnostics" in js

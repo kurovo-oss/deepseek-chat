@@ -21,7 +21,22 @@ RequestExecutionLevel user
 SetCompressor /SOLID lzma
 SetCompressorDictSize 64
 SetOverwrite on
-BrandingText "${APP_NAME} 安装程序"
+BrandingText "大肥鱼 · DAFEIYU"
+
+; 品牌配色与欢迎/完成页。侧栏图由 scripts\make-brand-assets.py 生成。
+!define MUI_BGCOLOR "061B2C"
+!define MUI_TEXTCOLOR "EAF6FF"
+!define MUI_FINISHPAGE_LINK_COLOR "FF8AA0"
+!define MUI_WELCOMEFINISHPAGE_BITMAP "..\installer\assets\brand-panel.bmp"
+!define MUI_WELCOMEPAGE_TITLE "把大肥鱼接回家"
+!define MUI_WELCOMEPAGE_TEXT "她会记住你说过的话，也会在自己想说话的时候先开口。$\r$\n$\r$\n先连上模型和 QQ，剩下的交给她。"
+!define MUI_FINISHPAGE_TITLE "大肥鱼已经住进你的电脑"
+!define MUI_FINISHPAGE_TEXT_LARGE
+!define MUI_FINISHPAGE_TEXT "她会记得你，也会在你安静的时候先开口。$\r$\n$\r$\n想她的时候，双击桌面上的「大肥鱼」；想安静一会儿，去「她今天怎么样」里关掉主动消息。"
+!define MUI_FINISHPAGE_RUN_TEXT "现在就叫她出来"
+!define MUI_FINISHPAGE_SHOWREADME "$INSTDIR\README.md"
+!define MUI_FINISHPAGE_SHOWREADME_TEXT "看看使用说明"
+!define MUI_FINISHPAGE_SHOWREADME_NOTCHECKED
 
 VIProductVersion "${APP_VERSION}.0"
 VIAddVersionKey "ProductName" "${APP_NAME}"
@@ -35,7 +50,6 @@ VIAddVersionKey "LegalCopyright" "Dafeiyu"
 !define MUI_ICON "..\qqbot\ui\assets\dafeiyu.ico"
 !define MUI_UNICON "..\qqbot\ui\assets\dafeiyu.ico"
 !define MUI_FINISHPAGE_RUN "$INSTDIR\${APP_EXE}"
-!define MUI_FINISHPAGE_RUN_TEXT "启动大肥鱼"
 
 Var MasterQQ
 Var ModelBase

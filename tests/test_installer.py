@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from PIL import Image
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -45,6 +47,41 @@ def test_native_shell_title_matches_home_page():
     source = (ROOT / "scripts" / "native" / "WebShell.cs").read_text(encoding="utf-8")
     assert 'Text = "大肥鱼 · 她今天怎么样"' in source
     assert 'Text = "大肥鱼 · 控制台"' not in source
+
+
+def test_installer_has_branded_welcome_and_finish_pages():
+    data = (ROOT / "installer" / "Dafeiyu.nsi").read_bytes()
+    assert data[:3] == b"\xef\xbb\xbf", "NSIS Unicode 脚本必须带 UTF-8 BOM"
+    script = data.decode("utf-8-sig")
+    assert '!define MUI_BGCOLOR "061B2C"' in script
+    assert '!define MUI_TEXTCOLOR "EAF6FF"' in script
+    assert "brand-panel.bmp" in script
+    assert '!define MUI_WELCOMEPAGE_TITLE "把大肥鱼接回家"' in script
+    assert '!define MUI_FINISHPAGE_TITLE "大肥鱼已经住进你的电脑"' in script
+    assert '!define MUI_FINISHPAGE_SHOWREADME "$INSTDIR\\README.md"' in script
+    assert '!define MUI_FINISHPAGE_RUN_TEXT "现在就叫她出来"' in script
+
+
+def test_brand_mascot_and_installer_assets_exist():
+    welcome = ROOT / "qqbot" / "ui" / "assets" / "welcome-mascot.png"
+    fish = ROOT / "qqbot" / "ui" / "assets" / "dafeiyu-fish-icon.png"
+    icon = ROOT / "qqbot" / "ui" / "assets" / "dafeiyu.ico"
+    panel = ROOT / "installer" / "assets" / "brand-panel.bmp"
+
+    for path in (welcome, fish, icon, panel):
+        assert path.stat().st_size > 20_000, path
+
+    with Image.open(welcome) as image:
+        assert image.size == (900, 900)
+        assert image.mode == "RGBA"
+    with Image.open(fish) as image:
+        assert image.size == (256, 256)
+    with Image.open(panel) as image:
+        assert image.size == (164, 314)
+        assert image.mode == "RGB"
+    with Image.open(icon) as image:
+        assert (256, 256) in image.ico.sizes()
+        assert (16, 16) in image.ico.sizes()
 
 
 def test_installer_ships_safe_default_persona():

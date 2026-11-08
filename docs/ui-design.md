@@ -159,6 +159,8 @@ QQ 与连接
 
 - 正式版用网上开源的「大肥鱼／鲸鱼娘」设定：来自 [`YunYueSama/codex-deepseek-pet`](https://github.com/YunYueSama/codex-deepseek-pet) 的 `assets/whale/portrait.png`（透明 PNG，599×820），裁掉透明边距后放在 `docs/assets/dafeiyu.png`。形象上游参考了上善无形、ZipZipPipe 的设定；按仓库《大肥鱼项目署名许可 1.0》署名、非官方授权，控制台只负责位置、尺寸、状态，不把形象写死在代码里。
 
+- 品牌吉祥物「大肥鱼」是圆滚滚的蓝鲸抱珊瑚心：海盐蓝 `#2F8CFF`、珊瑚粉 `#FF8AA0`、奶油白 `#FFF2D4`、深海墨 `#061B2C`。欢迎图、鱼形图标和安装器侧栏图由 `scripts/make-brand-assets.py` 统一生成，避免多套颜色漂移。
+
 ![大肥鱼形象](ui-mascot.png)
 
 - 状态表情四档：`平静 / 暖 / 想你 / 困`，由 `mood` 自动切换（眼睛、腮红、气泡、尾巴动作）。

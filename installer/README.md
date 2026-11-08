@@ -20,9 +20,16 @@ dist\Dafeiyu-Setup-1.0.0.exe
 构建只读取项目目录，不往 C 盘安装 NSIS；安装包本身建议用代码签名证书签名后再发布，
 否则 Windows SmartScreen 会提示“未知发布者”。
 
+安装包的鱼形图标、欢迎页/完成页侧栏图和网页吉祥物欢迎图由脚本生成，改了品牌色后先运行：
+
+```powershell
+tools\python\python.exe scripts\make-brand-assets.py
+```
+
 ## 安装行为
 
 - 默认按当前用户安装到 `%LOCALAPPDATA%\Dafeiyu`，不需要管理员权限；
+- 安装向导使用海盐蓝 / 珊瑚粉品牌色，完成页有吉祥物和「现在就叫她出来」启动选项；
 - 安装目录可以改；在开发机上测试时建议指定项目盘：
 
   ```powershell

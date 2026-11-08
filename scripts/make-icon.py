@@ -1,32 +1,21 @@
-"""把控制台用的鲸鱼娘头像做成 Windows 图标（.ico）。
+# -*- coding: utf-8 -*-
+"""兼容旧入口：重新生成大肥鱼图标与品牌资产。
 
-只在构建启动器时用，运行时不需要。用法：
-    tools\\python\\python.exe scripts\\make-icon.py
+真正的绘制逻辑在 scripts/make-brand-assets.py；这里只负责转调，
+避免旧的 docs/assets/dafeiyu.png 把人像重新写回安装包图标。
 """
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
-from PIL import Image
-
-ROOT = Path(__file__).resolve().parent.parent
-SRC = ROOT / "docs" / "assets" / "dafeiyu.png"
-OUT = ROOT / "qqbot" / "ui" / "assets" / "dafeiyu.ico"
+SCRIPT = Path(__file__).resolve().with_name("make-brand-assets.py")
 
 
 def main() -> int:
-    image = Image.open(SRC).convert("RGBA")
-    canvas = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
-    image.thumbnail((236, 236), Image.LANCZOS)
-    canvas.alpha_composite(
-        image,
-        ((256 - image.width) // 2, (256 - image.height) // 2),
-    )
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    canvas.save(OUT, format="ICO", sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
-    print(f"wrote {OUT} ({OUT.stat().st_size} bytes)")
-    return 0
+    return subprocess.call([sys.executable, str(SCRIPT)])
 
 
 if __name__ == "__main__":
