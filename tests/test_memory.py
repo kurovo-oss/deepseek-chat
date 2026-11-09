@@ -215,3 +215,24 @@ def test_find_duplicate_same_kind_only():
     cards = [{"id": 1, "kind": "fact", "summary": "不喜欢被叫起床"}]
     assert find_duplicate("preference", "不喜欢被叫起床", cards) is None
     assert find_duplicate("fact", "不喜欢被叫起床", cards)["id"] == 1
+
+def test_query_pulls_the_relevant_card_forward():
+    cards = [
+        card(id=1, summary="喜欢猫", importance=0.6),
+        card(id=2, summary="在赶项目，常常十点下班", importance=0.6),
+    ]
+
+    selected = select_cards(cards, NOW, 0.15, 10000, 30, query="项目进度怎么样")
+
+    assert selected[0]["id"] == 2
+
+
+def test_query_does_not_push_out_identity():
+    cards = [
+        card(id=1, kind="identity", summary="你是大肥鱼", importance=0.3),
+        card(id=2, summary="在赶项目", importance=0.9),
+    ]
+
+    selected = select_cards(cards, NOW, 0.15, 10000, 30, query="项目")
+
+    assert selected[0]["id"] == 1

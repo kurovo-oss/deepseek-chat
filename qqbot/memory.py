@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import re
 import time
 from datetime import datetime
 from difflib import SequenceMatcher
@@ -92,38 +93,65 @@ def card_weight(card: dict, now: float, half_life_days: float = 30.0) -> float:
     return importance * (0.6 + 0.4 * freq) * (0.2 + 0.8 * recency)
 
 
+def _terms(text: str) -> set[str]:
+    """中文按二元片段、英文按整词，够用来做轻量相关性。"""
+    terms: set[str] = set()
+    for chunk in re.findall(r"[\u4e00-\u9fff]+", text or ""):
+        for index in range(len(chunk) - 1):
+            terms.add(chunk[index:index + 2])
+        if len(chunk) == 1:
+            terms.add(chunk)
+    terms.update(
+        word.lower() for word in re.findall(r"[A-Za-z0-9_]{2,}", text or "")
+    )
+    return terms
+
+
 def select_cards(
     cards: list[dict],
     now: float,
     threshold: float = 0.15,
     char_budget: int = 2500,
     half_life_days: float = 30.0,
+    query: str = "",
 ) -> list[dict]:
-    """按权重降序取卡，直到字符预算用完。返回带 `_weight` 的副本。"""
+    """按权重降序取卡，直到字符预算用完。返回带 `_weight` 的副本。
+
+    给了 query 时做一次轻量重排：和这句话有交集的卡往前放，
+    但只占 30% 权重，避免一句闲聊把"她是谁"挤掉。
+    """
+    wanted = _terms(query) if query else set()
     scored = []
     for card in cards:
         weight = card_weight(card, now, half_life_days)
         if weight < threshold:
             continue
-        scored.append((weight, card))
+        score = weight
+        if wanted:
+            summary_terms = _terms(str(card.get("summary") or ""))
+            overlap = len(wanted & summary_terms) / max(1, len(wanted))
+            score = weight * (0.7 + 0.3 * min(1.0, overlap * 2))
+        scored.append((score, weight, card))
 
     scored.sort(
         key=lambda pair: (
             pair[0],
-            _clamp(pair[1].get("importance")),
-            pair[1].get("occurred_at") or pair[1].get("created_at") or 0,
+            pair[1],
+            _clamp(pair[2].get("importance")),
+            pair[2].get("occurred_at") or pair[2].get("created_at") or 0,
         ),
         reverse=True,
     )
 
     selected: list[dict] = []
     used = 0
-    for weight, card in scored:
+    for score, weight, card in scored:
         cost = len(str(card.get("summary") or "")) + 6
         if selected and used + cost > char_budget:
             break
         item = dict(card)
         item["_weight"] = weight
+        item["_score"] = score
         selected.append(item)
         used += cost
     return selected
@@ -370,15 +398,15 @@ class Memory:
         budget = self.settings.journal_char_budget
         return text[:budget] if budget > 0 else ""
 
-    def context(self) -> str:
+    def context(self, query: str = "") -> str:
         """进 system prompt 的全部记忆：卡片块 + 记忆本。"""
-        parts = [self.block()]
+        parts = [self.block(query)]
         journal = self.journal()
         if journal:
             parts.append("【记忆本】\n" + journal)
         return fix_address("\n\n".join(part for part in parts if part))
 
-    def block(self) -> str:
+    def block(self, query: str = "") -> str:
         if not self.settings.memory_enabled:
             return ""
         now = self._clock()
@@ -393,6 +421,7 @@ class Memory:
             threshold=self.settings.card_weight_threshold,
             char_budget=self.settings.card_inject_char_budget,
             half_life_days=self.settings.decay_half_life_days,
+            query=query,
         )
         if selected:
             self.store.touch_cards([card["id"] for card in selected], int(now))

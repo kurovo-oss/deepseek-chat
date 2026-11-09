@@ -1,4 +1,4 @@
-import time
+﻿import time
 import types
 from pathlib import Path
 
@@ -224,7 +224,7 @@ def test_fallback_reply_is_not_fed_to_memory(env):
     """兜底话术不是她说的话，喂给抽取会抽出"她经常走神"这种垃圾卡片。"""
     calls = []
     env.engine.memory = types.SimpleNamespace(
-        context=lambda: "", note_reply=lambda session, text="": calls.append(text)
+        context=lambda query="": "", note_reply=lambda session, text="": calls.append(text)
     )
     env.llm.error = LLMError("boom")
 
@@ -237,7 +237,7 @@ def test_fallback_reply_is_not_fed_to_memory(env):
 def test_normal_reply_is_fed_to_memory(env):
     calls = []
     env.engine.memory = types.SimpleNamespace(
-        context=lambda: "", note_reply=lambda session, text="": calls.append(text)
+        context=lambda query="": "", note_reply=lambda session, text="": calls.append(text)
     )
 
     env.engine.handle_message(make_message("今天加班到十点"))
@@ -1726,3 +1726,4 @@ def test_style_guard_strips_assistant_tone(env):
     sent = "".join(text for _, text in env.sender.sent)
     assert "我能理解" not in sent
     assert "先躺会儿" in sent
+

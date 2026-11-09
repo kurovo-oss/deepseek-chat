@@ -85,9 +85,16 @@ class ContextMixin:
                         budget_mod.Section("关系", relation, priority=78, quota=80)
                     )
         if self.memory is not None:
-            context = self.memory.context()
+            context = self.memory.context(last_user_text)
             if context:
-                sections.append(budget_mod.Section("记忆", context, priority=60, quota=800))
+                sections.append(
+                    budget_mod.Section(
+                        "记忆",
+                        context,
+                        priority=60,
+                        quota=int(getattr(self.settings, "card_inject_token_budget", 1500)),
+                    )
+                )
         recall = self._recall_section(selected)
         if recall:
             sections.append(budget_mod.Section("回忆", recall, priority=55, quota=450))
