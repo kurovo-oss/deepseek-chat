@@ -104,8 +104,6 @@ def run_case(case: Case, base: Settings, llm: LLMClient, workdir: Path) -> CaseR
         base,
         db_path=db,
         sticker_chance=0.0,  # 评测只看文字，别让随机表情包干扰
-        presence_enabled=False,  # 别让"她在忙"吃掉回复
-        catchup_enabled=False,
         life_enabled=False,  # 生活线跟着日期变，评测要可复现
         digest_dir=workdir / "daily",
     )

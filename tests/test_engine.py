@@ -100,8 +100,6 @@ def build_env(tmp_path, **overrides):
         sticker_chance=0.0,
         emoji_chance=0.0,
         reply_reshape=False,
-        presence_enabled=False,
-        catchup_enabled=False,
         life_dir=tmp_path / "life",
         sticker_dir=tmp_path / "stickers",
     )
@@ -895,7 +893,7 @@ def test_image_hint_skips_other_image_notes(tmp_path):
     assert "一只猫在笑" not in hint
 
 
-# ------------------------------------------------ 她不是客服：会忙、会几条才回
+# ------------------------------------------------ 回复时机
 class FixedRng:
     def __init__(self, value=0.9):
         self.value = value
@@ -907,118 +905,17 @@ class FixedRng:
         return (low + high) / 2
 
 
-def make_busy(env, activity="在打游戏"):
-    env.engine._presence_state = lambda: {"activity": activity, "busy": True, "until": 9e9}
-
-
-def test_busy_skips_reply_when_not_forced(tmp_path):
-    env = build_env(tmp_path, presence_enabled=True)
-    make_busy(env)
-    env.engine._rng = FixedRng(0.1)  # 0.1 < 0.55，跳过
-
-    env.engine.handle_message(make_message("在吗"))
-
-    assert env.sender.sent == []
-    assert env.store.recent_messages("100", 1)  # 消息还是记下了
-
-
-def test_busy_replies_when_rng_says_so(tmp_path):
-    env = build_env(tmp_path, presence_enabled=True)
-    make_busy(env)
-    env.engine._rng = FixedRng(0.9)  # 0.9 >= 0.55，回
+def test_message_is_always_answered_without_busy_skip(tmp_path):
+    """不再用编造的“在忙”吞消息：随机数再低也要回。"""
+    env = build_env(tmp_path)
+    env.engine._rng = FixedRng(0.0)
 
     env.engine.handle_message(make_message("在吗"))
 
     assert env.sender.sent
-
-
-def test_three_pending_messages_force_a_reply(tmp_path):
-    env = build_env(tmp_path, presence_enabled=True)
-    make_busy(env)
-    env.engine._rng = FixedRng(0.1)
-
-    env.engine.handle_message(make_message("在吗", mid="p1"))
-    env.engine.handle_message(make_message("人呢", mid="p2"))
-    assert env.sender.sent == []
-
-    env.engine.handle_message(make_message("喂", mid="p3"))
-
-    assert env.sender.sent
-
-
-def test_reply_after_busy_mentions_activity(tmp_path):
-    env = build_env(tmp_path, presence_enabled=True)
-    make_busy(env, "在刷抖音")
-    env.store.save_message("100", "user", "在吗")
-    env.store.save_message("100", "user", "人呢")
-
-    note = env.engine._busy_note("100")
-
-    assert "在刷抖音" in note
-    assert "先说一句刚在干嘛" in note
-
-
-def test_no_busy_note_when_only_one_message(tmp_path):
-    env = build_env(tmp_path, presence_enabled=True)
-    make_busy(env)
-    env.store.save_message("100", "user", "在吗")
-
-    assert env.engine._busy_note("100") == ""
-
-
-def test_busy_message_is_answered_later(tmp_path):
-    """忙的时候不回，但收工了要补上——不是永远不理。"""
-    env = build_env(tmp_path, presence_enabled=True, catchup_enabled=True)
-    make_busy(env)
-    env.engine._rng = FixedRng(0.1)
-
-    env.engine.handle_message(make_message("在吗", mid="late1"))
-    assert env.sender.sent == []
-
-    later = time.time() + env.settings.busy_reply_after_seconds + 1
-    assert env.engine.catchup_tick(later) == 1
-    assert env.sender.sent
-
-
-def test_catchup_waits_before_answering(tmp_path):
-    env = build_env(tmp_path, presence_enabled=True, catchup_enabled=True)
-    make_busy(env)
-    env.engine._rng = FixedRng(0.1)
-    env.engine.handle_message(make_message("在吗", mid="late2"))
-
-    assert env.engine.catchup_tick(time.time() + 5) == 0
-    assert env.sender.sent == []
-
-
-def test_catchup_does_not_answer_twice(tmp_path):
-    env = build_env(tmp_path, presence_enabled=True, catchup_enabled=True)
-    make_busy(env)
-    env.engine._rng = FixedRng(0.1)
-    env.engine.handle_message(make_message("在吗", mid="late3"))
-
-    later = time.time() + env.settings.busy_reply_after_seconds + 1
-    env.engine.catchup_tick(later)
-    env.engine.catchup_tick(later + 60)
-
-    assert len(env.sender.sent) == 1
-
-
-def test_catchup_ignores_sessions_without_pending(tmp_path):
-    env = build_env(tmp_path, presence_enabled=True, catchup_enabled=True)
-
-    assert env.engine.catchup_tick(time.time() + 10_000) == 0
-
-
-def test_old_pending_message_is_not_chased(tmp_path):
-    """半小时以前的话不追着回，那不叫没看见。"""
-    env = build_env(tmp_path, presence_enabled=True, catchup_enabled=True)
-    make_busy(env)
-    env.engine._rng = FixedRng(0.1)
-    env.engine.handle_message(make_message("在吗", mid="old1"))
-
-    way_later = time.time() + env.settings.catchup_max_age_seconds + 60
-
-    assert env.engine.catchup_tick(way_later) == 0
+    assert not hasattr(env.engine, "_should_reply_now")
+    assert not hasattr(env.settings, "presence_enabled")
+    assert not (tmp_path / "presence.json").exists()
 
 
 def test_talk_state_goes_into_prompt(tmp_path):
@@ -1147,7 +1044,7 @@ def test_recap_note_goes_into_prompt(tmp_path):
     assert "周六" in content
 
 
-def test_catchup_tick_summarizes_old_history(tmp_path):
+def test_background_tick_summarizes_old_history(tmp_path):
     from qqbot import recap as recap_mod
 
     env = build_env(tmp_path, recap_enabled=True)
@@ -1157,14 +1054,14 @@ def test_catchup_tick_summarizes_old_history(tmp_path):
             "100", "user" if index % 2 == 0 else "assistant", f"第{index}句"
         )
 
-    env.engine.catchup_tick()
+    env.engine.background_tick()
 
     saved = recap_mod.get(env.settings, "100")
     assert "周六" in saved.text
     assert saved.upto_id > 0
 
 
-def test_catchup_tick_does_not_repeat_the_summary(tmp_path):
+def test_background_tick_does_not_repeat_the_summary(tmp_path):
     from qqbot import recap as recap_mod
 
     env = build_env(tmp_path, recap_enabled=True)
@@ -1174,9 +1071,9 @@ def test_catchup_tick_does_not_repeat_the_summary(tmp_path):
             "100", "user" if index % 2 == 0 else "assistant", f"第{index}句"
         )
 
-    env.engine.catchup_tick()
+    env.engine.background_tick()
     first = recap_mod.get(env.settings, "100").text
-    env.engine.catchup_tick()
+    env.engine.background_tick()
 
     assert recap_mod.get(env.settings, "100").text == first
     assert len(env.llm.calls) == 1
@@ -1193,7 +1090,7 @@ def test_empty_summary_does_not_advance_the_marker(tmp_path):
             "100", "user" if index % 2 == 0 else "assistant", f"第{index}句"
         )
 
-    env.engine.catchup_tick()
+    env.engine.background_tick()
 
     assert recap_mod.get(env.settings, "100").upto_id == 0
 

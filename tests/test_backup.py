@@ -83,12 +83,12 @@ def test_missing_database_is_a_noop(tmp_path):
     assert backup.run(settings, now=1762000000) is None
 
 
-def test_engine_backs_up_during_catchup_tick(tmp_path):
+def test_engine_backs_up_during_background_tick(tmp_path):
     """不靠定时任务，挂在已有的后台 tick 上——它本来就在跑。"""
     from tests.test_engine import build_env
 
     env = build_env(tmp_path)
-    env.engine.catchup_tick()
+    env.engine.background_tick()
 
     files = list((tmp_path / "backups").glob("bot-*.db"))
-    assert files, "catchup_tick 应该顺手存一份备份"
+    assert files, "background_tick 应该顺手存一份备份"

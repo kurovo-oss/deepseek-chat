@@ -17,7 +17,6 @@ from . import growth as growth_mod
 from . import life as life_mod
 from . import memepedia as memepedia_mod
 from . import memes as memes_mod
-from . import presence as presence_mod
 from . import recap as recap_mod
 from . import refusal as refusal_mod
 from . import mood as mood_mod
@@ -33,16 +32,6 @@ log = logging.getLogger("qqbot")
 
 
 class ContextMixin:
-
-    def _busy_note(self, session: str) -> str:
-        """忙完之后回的那一条：先交代一句刚在干嘛。"""
-        if not self.settings.presence_enabled or self._pending_count(session) < 2:
-            return ""
-        activity = presence_mod.describe(self._presence_state())
-        return (
-            f"【你刚才在忙】你{activity}，手机搁一边了，他连着发了几条。"
-            "先说一句刚在干嘛（别太正式、别提手机），再接他的话。"
-        )
 
     def _build_messages(self, session: str, allow_refusal: bool = True) -> list[dict]:
         window_start = int(self.store.get_cursor(self._window_key(session), "0") or 0)
@@ -137,7 +126,7 @@ class ContextMixin:
             if persona:
                 sections.append(budget_mod.Section("你自己", persona, priority=74, quota=320))
 
-        # 主动开口、忙完补回不是"回复他这句请求"，别把拒绝指令塞进去
+        # 主动开口不是"回复他这句请求"，别把拒绝指令塞进去
         self._pending_refusal = None
         if allow_refusal and self.settings.refusal_enabled and self.store is not None:
             last_user_text = next(
@@ -158,10 +147,6 @@ class ContextMixin:
             note = refusal_mod.open_note(self.store)
             if note:
                 sections.append(budget_mod.Section("压着的事", note, priority=76, quota=160))
-
-        busy_note = self._busy_note(session)
-        if busy_note:
-            sections.append(budget_mod.Section("忙", busy_note, priority=88, quota=120))
 
         if self.settings.talkstate_enabled:
             talk_note = talkstate_mod.note(

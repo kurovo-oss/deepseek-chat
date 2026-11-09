@@ -274,16 +274,8 @@ class Settings:
     context_token_budget: int = 9000
     # 对话状态：她知道自己上一条问了什么、他答没答
     talkstate_enabled: bool = True
-    # 她此刻在干嘛：忙的时候不每条都回
-    presence_enabled: bool = False  # 默认关；load_settings 里默认开，测试里构造的 Settings 不受影响
-    presence_file: Path = Path("data/presence.json")
-    busy_skip_chance: float = 0.55
-    busy_max_pending: int = 3
-    # 忙完了要补回：他发完就走的那些话，她收工后会回
-    catchup_enabled: bool = False  # 数据类默认关；load_settings 默认开
-    catchup_interval_seconds: int = 20
-    busy_reply_after_seconds: int = 90
-    catchup_max_age_seconds: int = 1800  # 超过半小时的话不追着回，那已经不是"没看见"了
+    # 后台维护（备份、前情摘要）多久跑一次
+    background_interval_seconds: int = 20
     # ---- 长期记忆（M2）----
     memory_enabled: bool = True
     extract_enabled: bool = True
@@ -510,14 +502,7 @@ class Settings:
             sample_pairs=_int(env, "SAMPLE_PAIRS", 8, minimum=0),
             context_token_budget=_int(env, "CONTEXT_TOKEN_BUDGET", 9000, minimum=1500),
             talkstate_enabled=_bool(env, "TALKSTATE_ENABLED", True),
-            presence_enabled=_bool(env, "PRESENCE_ENABLED", True),
-            presence_file=base_dir / env.get("PRESENCE_FILE", "data/presence.json").strip(),
-            busy_skip_chance=_float(env, "BUSY_SKIP_CHANCE", 0.55),
-            busy_max_pending=_int(env, "BUSY_MAX_PENDING", 3, minimum=1),
-            catchup_enabled=_bool(env, "CATCHUP_ENABLED", True),
-            catchup_interval_seconds=_int(env, "CATCHUP_INTERVAL_SECONDS", 20, minimum=5),
-            busy_reply_after_seconds=_int(env, "BUSY_REPLY_AFTER_SECONDS", 90, minimum=10),
-            catchup_max_age_seconds=_int(env, "CATCHUP_MAX_AGE_SECONDS", 1800, minimum=60),
+            background_interval_seconds=_int(env, "BACKGROUND_INTERVAL_SECONDS", 20, minimum=5),
             memory_enabled=_bool(env, "MEMORY_ENABLED", True),
             extract_enabled=_bool(env, "EXTRACT_ENABLED", True),
             decay_half_life_days=half_life,

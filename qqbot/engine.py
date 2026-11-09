@@ -22,7 +22,6 @@ from . import abilities as abilities_mod
 from . import budget as budget_mod
 from . import life as life_mod
 from . import memes as memes_mod
-from . import presence as presence_mod
 from . import recap as recap_mod
 from . import talkstate as talkstate_mod
 from . import backup as backup_mod
@@ -121,9 +120,6 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
         self._watch_started = 0.0
         self._watch_lines = 0
         self._rng = random
-        self._pending_sessions: set[str] = set()
-        self._replying: set[str] = set()
-        self._catchup_lock = threading.Lock()
         self._fallback_llm: LLMClient | None = None
 
     # ---------------- 入口 ----------------
@@ -250,31 +246,17 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
                 self.store.set_cursor(self._window_key(session), str(top))
             return
 
-        # 她不是客服：在打游戏、在刷抖音的时候，几条才回一条是正常的
-        if not self._should_reply_now(session):
-            log.info(
-                "她这会儿%s，这条先不回（忙完补）",
-                presence_mod.describe(self._presence_state()),
-            )
-            self._pending_sessions.add(session)
-            return
-
-        self._replying.add(session)
-        try:
-            reply = self._chat(session)
-            self._send_reply(
+        reply = self._chat(session)
+        self._send_reply(
             message.user_id,
             session,
             reply,
             origin="chat",
             force_image=wants_image(text),
         )
-            # 光"发出去了"不算数：得看这条回复是不是真在拒绝（逻辑在 refusal.py）
-            refusal_mod.book(self.store, self.settings, getattr(self, "_pending_refusal", None), reply)
-            self._pending_refusal = None
-        finally:
-            self._replying.discard(session)
-            self._pending_sessions.discard(session)
+        # 光"发出去了"不算数：得看这条回复是不是真在拒绝（逻辑在 refusal.py）
+        refusal_mod.book(self.store, self.settings, getattr(self, "_pending_refusal", None), reply)
+        self._pending_refusal = None
         if self.memory is not None and reply not in FALLBACK_REPLIES:
             # 抽取与压缩发生在回复发出之后，不拖慢响应。
             # 兜底话术不喂给抽取：那不是她说的话，抽出来的卡片全是垃圾。
@@ -331,10 +313,9 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
 
 
 
-    # ---------------- 对话 ----------------
-    # ---------------- 忙完补回 ----------------
-    def catchup_tick(self, now: float | None = None) -> int:
-        """她收工了：把晾着的那几条补回。返回补了几条。"""
+    # ---------------- 后台维护 ----------------
+    def background_tick(self, now: float | None = None) -> None:
+        """后台维护：每日备份 + 前情摘要。不参与回复时机。"""
         stamp = time.time() if now is None else now
         # 每天存一份库。放最前面：备份比摘要重要，也不花模型的钱
         if getattr(self.settings, "backup_enabled", False):
@@ -343,92 +324,21 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
             except Exception:  # noqa: BLE001 - 备份坏了不能拖累聊天
                 log.exception("数据库备份异常")
 
-        # 前情摘要要调模型，只在后台线程里做；失败也不影响补回。
-        # 放在"忙闲"判断之前：补回可以关，但记忆不该因此断档。
+        # 前情摘要要调模型，只在后台线程里做；失败也不影响聊天。
         if self.settings.recap_enabled:
             try:
                 recap_mod.tick(self, str(self.settings.allow_user_id), now=stamp)
-            except Exception:  # noqa: BLE001 - 摘要坏了不能拖累补回
+            except Exception:  # noqa: BLE001 - 摘要坏了不能拖累聊天
                 log.exception("前情摘要异常")
 
-        if not (self.settings.presence_enabled and self.settings.catchup_enabled):
-            return 0
-        replayed = 0
-        with self._catchup_lock:
-            for session in list(self._pending_sessions):
-                if session in self._replying:
-                    continue
-                if self._pending_count(session) == 0:
-                    self._pending_sessions.discard(session)
-                    continue
-                last = next(
-                    (row for row in reversed(self.store.recent_messages(session, 4))
-                     if row["role"] == "user"),
-                    None,
-                )
-                if last is None:
-                    self._pending_sessions.discard(session)
-                    continue
-                age = stamp - int(last.get("created_at") or stamp)
-                if age > self.settings.catchup_max_age_seconds:
-                    # 太久以前的话就不追着回了，那已经不是"没看见"
-                    self._pending_sessions.discard(session)
-                    continue
-                if age < self.settings.busy_reply_after_seconds:
-                    continue
-                self._replying.add(session)
-                try:
-                    reply = self._chat(session, allow_refusal=False)
-                    self._send_reply(int(session), session, reply, origin="chat")
-                    if self.memory is not None and reply not in FALLBACK_REPLIES:
-                        self.memory.note_reply(session, str(last.get("content") or ""))
-                    replayed += 1
-                except Exception:  # noqa: BLE001 - 补回失败不能让线程死
-                    log.exception("忙完补回失败")
-                finally:
-                    self._replying.discard(session)
-                    self._pending_sessions.discard(session)
-        if replayed:
-            log.info("忙完补回了 %d 条", replayed)
-        return replayed
-
-    def catchup_loop(self, stop_event: threading.Event) -> None:
-        # 重启后先把线索引出来：上次进程里没来得及补的那几条，这次接着补
-        self._pending_sessions.add(str(self.settings.allow_user_id))
+    def background_loop(self, stop_event: threading.Event) -> None:
         while not stop_event.is_set():
             try:
-                self.catchup_tick()
-            except Exception:  # noqa: BLE001 - 补回线程不能死
-                log.exception("补回线程异常")
-            if stop_event.wait(self.settings.catchup_interval_seconds):
+                self.background_tick()
+            except Exception:  # noqa: BLE001 - 后台线程不能死
+                log.exception("后台维护异常")
+            if stop_event.wait(self.settings.background_interval_seconds):
                 break
-
-    # ---------------- 她的状态 ----------------
-    def _presence_state(self) -> dict:
-        return presence_mod.current(
-            self.settings.presence_file, time.time(), self._rng
-        )
-
-    def _pending_count(self, session: str) -> int:
-        """他连发了几条、她还没回。"""
-        count = 0
-        for row in reversed(self.store.recent_messages(session, 12)):
-            if row["role"] == "assistant":
-                break
-            if row["role"] == "user":
-                count += 1
-        return count
-
-    def _should_reply_now(self, session: str) -> bool:
-        if not self.settings.presence_enabled:
-            return True
-        # 他发了三条以上，再忙也得回一句，不然像死了
-        if self._pending_count(session) >= self.settings.busy_max_pending:
-            return True
-        state = self._presence_state()
-        if not state.get("busy"):
-            return True
-        return self._rng.random() >= self.settings.busy_skip_chance
 
 
     def _fallback_client(self) -> LLMClient | None:

@@ -401,9 +401,9 @@ def main(argv: list[str] | None = None) -> int:
         start_watchdog(engine.sender, settings.adapter_watchdog_seconds, stop_event)
 
     start_replayer(engine, engine.store, settings, stop_event)
-    if settings.catchup_enabled or settings.recap_enabled:
+    if settings.backup_enabled or settings.recap_enabled:
         threading.Thread(
-            target=engine.catchup_loop, args=(stop_event,), name="catchup", daemon=True
+            target=engine.background_loop, args=(stop_event,), name="background", daemon=True
         ).start()
     log.info(
         "失败回复重放已启用：%.0f 分钟内的回复，最多补发 %d 次",
