@@ -168,3 +168,13 @@ def test_prompt_stays_compact():
 
     assert budget.estimate_tokens(text) <= 2700, "system.md 又变长了，先删重复规则"
     assert len(text) <= 3500
+
+def test_installer_default_persona_stays_compact():
+    """安装包给新用户的出厂人格不能比当前版更旧、更胖。"""
+    from qqbot import budget
+
+    text = (ROOT / "defaults" / "prompts" / "system.md").read_text(encoding="utf-8")
+
+    assert budget.estimate_tokens(text) <= 2700
+    for keyword in ("不编造", "安全边界", "做不到", "不编房间"):
+        assert keyword in text
