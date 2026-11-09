@@ -36,7 +36,9 @@ log = logging.getLogger("qqbot")
 
 class ContextMixin:
 
-    def _build_messages(self, session: str, allow_refusal: bool = True) -> list[dict]:
+    def _build_messages(
+        self, session: str, allow_refusal: bool = True, proactive: bool = False
+    ) -> list[dict]:
         window_start = int(self.store.get_cursor(self._window_key(session), "0") or 0)
         limit = self.settings.history_max_turns * 2
         history = self.store.recent_messages_after(session, window_start, limit)
@@ -60,21 +62,26 @@ class ContextMixin:
             (str(m["content"]) for m in reversed(selected) if m["role"] == "user"), ""
         )
         mood_values = self.mood.snapshot() if self.mood is not None else {}
-        turn_plan = turnplan_mod.make_plan(last_user_text, selected, mood_values)
+        # 主动开口不是"接他这句"，别把上一轮的计划贴上去
+        turn_plan = turnplan_mod.make_plan(
+            "" if proactive else last_user_text, selected, mood_values
+        )
 
         # system 不再是字符串一路拼：每段声明优先级和配额，由预算统一分配
         sections: list[budget_mod.Section] = [
             budget_mod.Section("人设", self.system_prompt, priority=1000, fixed=True)
         ]
         if getattr(self.settings, "persona_v2_enabled", True):
-            overlay = persona_mod.block(
-                turn_plan.intent, mood_values, self.settings.base_dir
+            overlay = (
+                ""
+                if proactive
+                else persona_mod.block(turn_plan.intent, mood_values, self.settings.base_dir)
             )
             if overlay:
                 sections.append(
                     budget_mod.Section("这轮的样子", overlay, priority=94, quota=160)
                 )
-            if getattr(self.settings, "turnplan_enabled", True):
+            if getattr(self.settings, "turnplan_enabled", True) and not proactive:
                 sections.append(
                     budget_mod.Section("这一轮", turn_plan.render(), priority=93, quota=180)
                 )

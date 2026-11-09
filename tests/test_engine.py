@@ -1727,3 +1727,11 @@ def test_style_guard_strips_assistant_tone(env):
     assert "我能理解" not in sent
     assert "先躺会儿" in sent
 
+
+def test_proactive_context_has_no_turn_plan(env):
+    env.store.save_message("100", "user", "今天被领导骂了")
+
+    content = env.engine._build_messages("100", proactive=True)[0]["content"]
+
+    assert "【这一轮】" not in content
+    assert "这轮的样子" not in content
