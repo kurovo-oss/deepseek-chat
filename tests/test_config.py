@@ -172,3 +172,12 @@ def test_qzone_daily_max_defaults_to_one(monkeypatch):
 
     assert Settings.__dataclass_fields__["qzone_daily_max"].default == 1
 
+
+def test_env_example_disables_generated_life():
+    """安装包默认不生成、也不注入编造的生活素材。"""
+    text = (Path(__file__).resolve().parents[1] / ".env.example").read_text(encoding="utf-8")
+
+    assert "LIFE_ENABLED=false" in text
+    assert "JOURNAL_CHAR_BUDGET=0" in text
+    assert "RECAP_ENABLED=false" in text
+
