@@ -71,3 +71,11 @@ def test_messages_are_user_assistant_pairs(tmp_path):
         {"role": "user", "content": "在吗"},
         {"role": "assistant", "content": "在\n你说"},
     ]
+
+def test_repo_exemplars_are_valid():
+    from pathlib import Path
+
+    items = exemplars.load(Path(__file__).resolve().parents[1])
+
+    assert len(items) >= 20
+    assert all(item["user"] and item["assistant"] for item in items)

@@ -54,3 +54,10 @@ def test_relationship_block_is_short(tmp_path):
     assert "刚认识" in text
     assert len(text) < 80
     store.close()
+
+def test_repo_has_all_overlays():
+    from pathlib import Path
+
+    base = Path(__file__).resolve().parents[1]
+    for name in persona.OVERLAYS:
+        assert persona.overlay_text(name, base)
