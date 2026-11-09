@@ -127,6 +127,7 @@ def translate(llm: LLMClient, text: str) -> str:
             ],
             temperature=0.6,
             max_tokens=900,
+            purpose="draw",
         )
     except Exception:  # noqa: BLE001 - 翻译失败不该让画图失败
         return text

@@ -121,6 +121,9 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
         self._watch_lines = 0
         self._rng = random
         self._fallback_llm: LLMClient | None = None
+        # 所有模型调用都从 LLMClient 过账：模块自己不用再记，漏记会少算
+        if isinstance(llm, LLMClient):
+            llm.on_usage = self._record_usage
 
     # ---------------- 入口 ----------------
     def handle_payload(self, payload: Any) -> bool:
@@ -353,37 +356,43 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
                 timeout=self.settings.request_timeout,
                 retries=1,
                 sleep=self._sleep,
+                on_usage=self._record_usage,
             )
         return self._fallback_llm
 
-    def _log_lookup_usage(self, result) -> None:
-        self.store.log_usage(result.model, result.tokens_in, result.tokens_out, "lookup", True)
+    def _record_usage(self, result, purpose: str, ok: bool) -> None:
+        """LLMClient 的统一账本：主通道、备用通道、后台任务都走这里。"""
+        if purpose == "probe":
+            return
+        if ok and result is not None:
+            self.store.log_usage(
+                result.model, result.tokens_in, result.tokens_out, purpose, True
+            )
+        else:
+            self.store.log_usage(self.settings.model_id, 0, 0, purpose, ok=False)
 
-    def _complete(self, messages: list[dict]):
+    def _complete(self, messages: list[dict], purpose: str = "chat"):
         """主通道 → 备用通道 → None。None 表示"这轮真的说不了话"。"""
         try:
-            return self.llm.chat(messages)
+            return self.llm.chat(messages, purpose=purpose)
         except LLMError as exc:
             log.warning("主通道失败：%s", exc)
         backup = self._fallback_client()
         if backup is None:
-            self.store.log_usage(self.settings.model_id, 0, 0, "chat", ok=False)
             return None
         try:
-            result = backup.chat(messages)
+            result = backup.chat(messages, purpose=purpose)
         except LLMError as exc:
             log.warning("备用通道也失败：%s", exc)
-            self.store.log_usage(self.settings.model_id, 0, 0, "chat", ok=False)
             return None
         log.info("切到备用通道：%s", result.model)
         return result
 
     def _chat(self, session: str, allow_refusal: bool = True) -> str:
         messages = self._build_messages(session, allow_refusal=allow_refusal)
-        result = self._complete(messages)
+        result = self._complete(messages, purpose="chat")
         if result is None:
             return fallback_reply()
-        self.store.log_usage(result.model, result.tokens_in, result.tokens_out, "chat", True)
         # 顺手校准：估了多少、接口报了多少，攒样本给预算用
         estimated = sum(
             budget_mod.estimate_tokens(str(item.get("content") or "")) for item in messages
@@ -402,7 +411,10 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
         )
         # 她说"我查一下"：真查一遍再让她说（逻辑在 search.py）
         text = search_mod.follow_up(
-            self.settings, self._complete, messages, text, self._log_lookup_usage
+            self.settings,
+            lambda msgs: self._complete(msgs, purpose="lookup"),
+            messages,
+            text,
         )
         text = recall_guard.soften(text, evidence)
         # 没做过的事别说成做过：刷抖音、上网、剪视频这些系统现在都做不到
@@ -522,7 +534,7 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
             },
         ]
         try:
-            result = self.llm.chat(messages, temperature=0.85, max_tokens=500)
+            result = self.llm.chat(messages, temperature=0.85, max_tokens=500, purpose="react")
         except Exception:  # noqa: BLE001 - 她说不出来也别把命令搞挂
             log.exception("评论电脑状态失败")
             return ""

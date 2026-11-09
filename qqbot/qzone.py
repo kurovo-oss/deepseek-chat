@@ -305,6 +305,7 @@ def draft(store, llm, settings, now: int | None = None, mood=None) -> dict:
         [{"role": "system", "content": prompt}, {"role": "user", "content": "写吧。"}],
         temperature=0.85,
         max_tokens=600,
+        purpose="qzone",
     )
     text = _clean(getattr(result, "text", "") or "")
     issue = content_issue(text, style)
@@ -315,6 +316,7 @@ def draft(store, llm, settings, now: int | None = None, mood=None) -> dict:
                 [{"role": "system", "content": fix}, {"role": "user", "content": "写吧。"}],
                 temperature=0.9,
                 max_tokens=600,
+                purpose="qzone",
             )
             fixed = _clean(getattr(again, "text", "") or "")
         except Exception:  # noqa: BLE001 - 重写失败就当这条不发了
@@ -329,6 +331,7 @@ def draft(store, llm, settings, now: int | None = None, mood=None) -> dict:
                 [{"role": "system", "content": retry}, {"role": "user", "content": "写吧。"}],
                 temperature=0.95,
                 max_tokens=600,
+                purpose="qzone",
             )
         except Exception:  # noqa: BLE001 - 重写失败就用第一版
             again = None
@@ -350,6 +353,7 @@ def draft(store, llm, settings, now: int | None = None, mood=None) -> dict:
                     [{"role": "system", "content": fix}, {"role": "user", "content": "写吧。"}],
                     temperature=0.9,
                     max_tokens=600,
+                    purpose="qzone",
                 )
                 fixed = _clean(getattr(again, "text", "") or "")
             except Exception:  # noqa: BLE001 - 重写失败就当这条不发了

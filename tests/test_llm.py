@@ -116,3 +116,60 @@ def test_probe_reports_reason(logs):
     assert ok is False
     assert "断网了" in detail
     assert any("模型调用失败" in message for message in logs.messages())
+
+
+# ---------------------------------------------------------------- 用量回调
+def test_usage_callback_reports_success():
+    seen = []
+    client = make_client(on_usage=lambda result, purpose, ok: seen.append((result, purpose, ok)))
+    client._post = lambda payload: {
+        "model": "deepseek-flash",
+        "choices": [{"message": {"content": "好"}}],
+        "usage": {"prompt_tokens": 12, "completion_tokens": 3},
+    }
+
+    client.chat([{"role": "user", "content": "hi"}], purpose="vision")
+
+    assert len(seen) == 1
+    result, purpose, ok = seen[0]
+    assert result == ChatResult("好", 12, 3, "deepseek-flash")
+    assert purpose == "vision"
+    assert ok is True
+
+
+def test_usage_callback_reports_failure():
+    seen = []
+    client = make_client(
+        retries=0,
+        on_usage=lambda result, purpose, ok: seen.append((result, purpose, ok)),
+    )
+    client._post = lambda payload: (_ for _ in ()).throw(LLMError("断了"))
+
+    with pytest.raises(LLMError):
+        client.chat([{"role": "user", "content": "hi"}], purpose="digest")
+
+    assert seen == [(None, "digest", False)]
+
+
+def test_usage_callback_does_not_break_chat():
+    client = make_client(on_usage=lambda *args: (_ for _ in ()).throw(RuntimeError("账本坏了")))
+    client._post = lambda payload: {
+        "model": "deepseek-flash",
+        "choices": [{"message": {"content": "好"}}],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+    }
+
+    assert client.chat([{"role": "user", "content": "hi"}]).text == "好"
+
+
+def test_probe_reports_purpose_probe():
+    seen = []
+    client = make_client(on_usage=lambda result, purpose, ok: seen.append(purpose))
+    client._post = lambda payload: {
+        "model": "deepseek-flash",
+        "choices": [{"message": {"content": "h"}}],
+    }
+
+    client.probe()
+
+    assert seen == ["probe"]

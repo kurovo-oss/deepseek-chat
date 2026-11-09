@@ -139,6 +139,7 @@ def tick(engine: Any, session: str, now: float | None = None) -> str | None:
             ],
             temperature=0.3,
             max_tokens=2000,
+            purpose="recap",
         )
     except Exception as exc:  # noqa: BLE001 - 摘要失败不能影响别的事
         log.warning("前情摘要失败：%s", exc)

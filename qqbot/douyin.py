@@ -441,6 +441,7 @@ def comment_on(llm, title: str, author: str = "", values: dict | None = None) ->
                  {"role": "user", "content": prompt}],
                 temperature=0.9,
                 max_tokens=400,
+                purpose="douyin",
             )
         except Exception:  # noqa: BLE001 - 评论失败不影响分享
             log.info("抖音分享短评生成失败", exc_info=True)

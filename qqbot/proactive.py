@@ -196,15 +196,15 @@ class ProactiveScheduler:
     def compose(self, kind: str, now: int, event: str = "") -> str | None:
         try:
             result = self.engine.llm.chat(
-                self.build_messages(kind, now, event), temperature=0.9, max_tokens=160
+                self.build_messages(kind, now, event),
+                temperature=0.9,
+                max_tokens=160,
+                purpose="proactive",
             )
         except LLMError as exc:
             log.warning("主动消息生成失败：%s", exc)
             return None
 
-        self.store.log_usage(
-            result.model, result.tokens_in, result.tokens_out, "proactive", True
-        )
         text = result.text.strip()
         first_line = text.splitlines()[0].strip() if text else ""
         if not first_line or first_line.upper().startswith(SKIP_TOKEN):

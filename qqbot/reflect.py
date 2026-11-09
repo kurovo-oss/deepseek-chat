@@ -138,7 +138,10 @@ def reflect(store, llm, settings, now: int | None = None) -> list[str]:
     )
     try:
         result = llm.chat(
-            [{"role": "user", "content": prompt}], temperature=0.6, max_tokens=2000
+            [{"role": "user", "content": prompt}],
+            temperature=0.6,
+            max_tokens=2000,
+            purpose="reflect",
         )
         thoughts = _parse(getattr(result, "text", "") or "")
     except Exception:  # noqa: BLE001 - 反省失败不影响她睡觉

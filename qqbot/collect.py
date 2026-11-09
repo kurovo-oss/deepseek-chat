@@ -238,15 +238,12 @@ class StickerCollector:
                 # 现在模型是推理模型，reasoning_tokens 也吃 max_tokens：
                 # 给 80 会被思考耗光、正文为空，打出来就是"无标签"
                 max_tokens=600,
+                purpose="tag",
             )
         except Exception as exc:  # noqa: BLE001
             log.warning("表情包打标失败：%s", exc)
-            self.store.log_usage(self.settings.model_id, 0, 0, "tag", ok=False)
             return []
 
-        self.store.log_usage(
-            result.model, result.tokens_in, result.tokens_out, "tag", True
-        )
         data = load_json_object(result.text) or {}
         raw_tags = data.get("tags")
         if not isinstance(raw_tags, list):

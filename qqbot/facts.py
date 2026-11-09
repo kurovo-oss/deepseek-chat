@@ -455,6 +455,7 @@ def extract(store, llm, settings, now: int | None = None, hours: int = 24) -> li
         [{"role": "system", "content": prompt}, {"role": "user", "content": "开始整理。"}],
         temperature=0.0,
         max_tokens=1200,
+        purpose="facts",
     )
     written = []
     for fact in _parse(getattr(result, "text", "") or ""):

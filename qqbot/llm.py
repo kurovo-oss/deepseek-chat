@@ -12,6 +12,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from typing import Callable
 
 log = logging.getLogger("qqbot")
 
@@ -37,6 +38,7 @@ class LLMClient:
         timeout: float = 60.0,
         retries: int = 2,
         sleep=time.sleep,
+        on_usage: Callable[["ChatResult | None", str, bool], None] | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self._api_key = api_key
@@ -44,6 +46,8 @@ class LLMClient:
         self.timeout = timeout
         self.retries = max(0, retries)
         self._sleep = sleep
+        # 所有模型调用都从这里过一遍账：漏记一次，控制台的 token 就会少一块
+        self.on_usage = on_usage
 
     @property
     def endpoint(self) -> str:
@@ -52,11 +56,20 @@ class LLMClient:
     def __repr__(self) -> str:  # 防密钥泄漏到日志
         return f"LLMClient(model={self.model!r}, base_url={self.base_url!r})"
 
+    def _report(self, result: "ChatResult | None", purpose: str, ok: bool) -> None:
+        if self.on_usage is None:
+            return
+        try:
+            self.on_usage(result, purpose, ok)
+        except Exception:  # noqa: BLE001 - 记账失败不能把一次正常回复搞挂
+            log.warning("记录模型用量失败", exc_info=True)
+
     def chat(
         self,
         messages: list[dict],
         temperature: float = 0.8,
         max_tokens: int = 800,
+        purpose: str = "chat",
     ) -> ChatResult:
         payload = {
             "model": self.model,
@@ -74,12 +87,14 @@ class LLMClient:
                     raise LLMError("响应中没有 choices")
                 content = (choices[0].get("message") or {}).get("content") or ""
                 usage = data.get("usage") or {}
-                return ChatResult(
+                result = ChatResult(
                     text=str(content).strip(),
                     tokens_in=int(usage.get("prompt_tokens") or 0),
                     tokens_out=int(usage.get("completion_tokens") or 0),
                     model=str(data.get("model") or self.model),
                 )
+                self._report(result, purpose, True)
+                return result
             except LLMError as exc:
                 last_error = exc
                 log.warning(
@@ -87,13 +102,17 @@ class LLMClient:
                 )
                 if attempt < self.retries:
                     self._sleep(0.5 * (2**attempt))
+        self._report(None, purpose, False)
         raise last_error or LLMError("未知错误")
 
     def probe(self) -> tuple[bool, str]:
         """启动自检：确认模型 ID 与 key 可用（对应 MVP 风险 R1）。"""
         try:
             result = self.chat(
-                [{"role": "user", "content": "hi"}], temperature=0.0, max_tokens=1
+                [{"role": "user", "content": "hi"}],
+                temperature=0.0,
+                max_tokens=1,
+                purpose="probe",
             )
             return True, result.model
         except LLMError as exc:

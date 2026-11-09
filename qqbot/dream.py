@@ -136,6 +136,7 @@ class Dreamer:
                 [{"role": "user", "content": prompt}],
                 temperature=0.4,
                 max_tokens=6000,
+                purpose="dream",
             )
         except Exception as exc:  # noqa: BLE001 - 做梦失败不该影响任何东西
             log.warning("做梦失败（模型调用）：%s", exc)
@@ -155,10 +156,6 @@ class Dreamer:
                 ok=False, note=note,
             )
             return {"ok": False, "messages": len(messages), "note": note}
-
-        self.store.log_usage(
-            result.model, result.tokens_in, result.tokens_out, "dream", True
-        )
 
         counts = self._apply(data.get("ops"), stamp)
         journal = str(data.get("journal") or "").strip()[:MAX_JOURNAL]

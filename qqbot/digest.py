@@ -110,6 +110,7 @@ def generate(store, llm, settings, day: date) -> str | None:
         ],
         temperature=0.3,
         max_tokens=2000,
+        purpose="digest",
     )
     text = (result.text or "").strip()
     if not text:

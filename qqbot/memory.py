@@ -449,15 +449,11 @@ class Memory:
                 ],
                 temperature=0.0,
                 max_tokens=600,
+                purpose="extract",
             )
         except Exception as exc:  # noqa: BLE001 - LLMError 及其它都只记日志
             log.warning("抽取调用失败：%s", exc)
-            self.store.log_usage(self.settings.model_id, 0, 0, "extract", ok=False)
             return 0
-
-        self.store.log_usage(
-            result.model, result.tokens_in, result.tokens_out, "extract", True
-        )
 
         now = int(self._clock())
         ops = parse_ops(result.text, [card["id"] for card in cards])
@@ -581,15 +577,12 @@ class Memory:
                 ],
                 temperature=0.0,
                 max_tokens=600,
+                purpose="compact",
             )
         except Exception as exc:  # noqa: BLE001
             log.warning("压缩调用失败，仅前移游标：%s", exc)
-            self.store.log_usage(self.settings.model_id, 0, 0, "compact", ok=False)
             return 0
 
-        self.store.log_usage(
-            result.model, result.tokens_in, result.tokens_out, "compact", True
-        )
         ops = parse_ops(result.text, [])
         created = 0
         for op in ops:

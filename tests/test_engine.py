@@ -1135,7 +1135,7 @@ def test_switches_to_the_backup_channel(tmp_path, monkeypatch):
         def __init__(self, **kwargs):
             self.model = kwargs.get("model")
 
-        def chat(self, messages, temperature=0.8, max_tokens=800):
+        def chat(self, messages, temperature=0.8, max_tokens=800, **kwargs):
             return ChatResult("备用说的话。", 10, 5, self.model or "backup")
 
     monkeypatch.setattr(engine_mod, "LLMClient", Backup)
@@ -1156,7 +1156,7 @@ def test_both_channels_down_says_something_human(tmp_path, monkeypatch):
         def __init__(self, **kwargs):
             pass
 
-        def chat(self, messages, temperature=0.8, max_tokens=800):
+        def chat(self, messages, temperature=0.8, max_tokens=800, **kwargs):
             raise LLMError("备用也挂了")
 
     monkeypatch.setattr(engine_mod, "LLMClient", Backup)
@@ -1698,3 +1698,22 @@ def test_qzone_draft_commands_list_delete_and_approve(tmp_path):
     assert "删掉了" in deleted
     assert qzone.drafts(env.store) == []
 
+
+def test_record_usage_writes_tokens_and_purpose(env):
+    env.engine._record_usage(ChatResult("x", 12, 3, "m"), "vision", True)
+
+    rows = env.store._conn.execute("SELECT purpose, ok, tokens_in, tokens_out FROM usage_log").fetchall()
+    assert [tuple(row) for row in rows] == [("vision", 1, 12, 3)]
+
+
+def test_record_usage_logs_failure(env):
+    env.engine._record_usage(None, "digest", False)
+
+    rows = env.store._conn.execute("SELECT purpose, ok, tokens_in, tokens_out FROM usage_log").fetchall()
+    assert [tuple(row) for row in rows] == [("digest", 0, 0, 0)]
+
+
+def test_record_usage_skips_probe(env):
+    env.engine._record_usage(ChatResult("x", 12, 3, "m"), "probe", True)
+
+    assert env.store._conn.execute("SELECT COUNT(*) FROM usage_log").fetchone()[0] == 0

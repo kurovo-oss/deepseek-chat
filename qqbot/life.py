@@ -258,6 +258,7 @@ def today(settings, llm, context: str = "", clock=time.time, store=None) -> str:
             temperature=0.7,
             # 推理模型的思考也算 token：给少了会偶发空回复
             max_tokens=800,
+            purpose="life",
         )
     except Exception:  # noqa: BLE001 - 生活线是加分项，失败就当今天没写
         log.exception("生成今天的小记失败")
@@ -280,6 +281,7 @@ def today(settings, llm, context: str = "", clock=time.time, store=None) -> str:
                 ],
                 temperature=0.8,
                 max_tokens=800,
+                purpose="life",
             )
         except Exception:  # noqa: BLE001 - 重写失败就丢掉
             again = None
