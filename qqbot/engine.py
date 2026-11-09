@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import random
 import re
@@ -485,9 +486,11 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
             send_state="pending",
             image_tags=[image_path.name] if image_path else [],
             origin=origin,
+            parts=parts,
         )
 
         all_ok = True
+        sent_parts = 0
         base_delay = self.settings.segment_delay_ms / 1000
         with self._send_lock:
             for index, part in enumerate(parts):
@@ -497,17 +500,22 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
                     self._sleep(base_delay * factor)
                 if not self.sender.send_private(user_id, part):
                     all_ok = False
+                    # 断在第一段：后面的先别发，否则重放无法只补剩下的
+                    break
+                sent_parts = index + 1
+                if record_id is not None:
+                    self.store.update_sent_parts(record_id, sent_parts)
 
-            if image_path is not None:
+            if all_ok and image_path is not None:
                 if not self.sender.send_private_image(
                     user_id, image_path, self.settings.image_send_mode
                 ):
                     all_ok = False
-            elif sticker_buckets:
+            elif all_ok and sticker_buckets:
                 # 她点名要某个情绪的表情；库里没这个桶就退成随手甩一张
                 if not self._send_sticker(user_id, session, sticker_buckets[0]):
                     self._send_random_sticker(user_id, session, cleaned)
-            elif not tags:
+            elif all_ok and not tags:
                 # 她有时候会随手甩个表情包，不需要理由
                 self._send_random_sticker(user_id, session, cleaned)
 
@@ -793,21 +801,40 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
         log.info("主动开口（%s）：%s", session, text[:60])
         return self._send_reply(int(session), session, text, origin="proactive")
 
-    def resend(self, user_id: int, text: str) -> bool:
+    def resend(
+        self,
+        user_id: int,
+        text: str,
+        parts: list[str] | None = None,
+        start: int = 0,
+        record_id: int | None = None,
+    ) -> bool:
         """重放一条发送失败的回复。
 
         只补文本、不补图片：历史行里只存了文件名，拼路径容易发错图，
         宁可少一张图，也不能把别人的图发出去。
+        已经发出去的前几段不再重发：`start` 是失败时记下的进度。
         """
-        # 补发不参与随机并条/切分：存下来是什么样就补什么样，不然条数对不上
-        parts = split_bubbles(
-            text, self.settings.reply_max_chars, self.settings.reply_max_bubbles
-        ) or [text]
+        if parts is None:
+            # 老消息没有 parts_json：按存下来的样子重切，和当初发送时的规则一致
+            all_parts = split_bubbles(
+                text, self.settings.reply_max_chars, self.settings.reply_max_bubbles
+            ) or [text]
+        else:
+            all_parts = [str(part) for part in parts]
+        start = max(0, min(int(start), len(all_parts)))
+        todo = all_parts[start:]
+        if not todo:
+            return True
         with self._send_lock:
-            for index, part in enumerate(parts):
-                if index:
+            for offset, part in enumerate(todo):
+                if offset:
                     self._sleep(self.settings.segment_delay_ms / 1000)
                 if not self.sender.send_private(user_id, part):
+                    if record_id is not None:
+                        self.store.update_sent_parts(record_id, start + offset)
                     return False
+                if record_id is not None:
+                    self.store.update_sent_parts(record_id, start + offset + 1)
         return True
 

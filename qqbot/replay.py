@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 import time
@@ -41,7 +42,28 @@ class ReplyReplayer:
                 log.warning("放弃重放（已试 %d 次）：%s", attempts, brief)
                 continue
 
-            if self.engine.resend(int(row["session_id"]), row["content"]):
+            try:
+                parts = json.loads(row.get("parts_json") or "[]")
+            except (TypeError, ValueError):
+                parts = []
+            if not isinstance(parts, list):
+                parts = []
+            parts = [str(part) for part in parts]
+            start = int(row.get("sent_parts") or 0)
+
+            # 纯图/纯画失败：文本重放补不了，硬发 "[图片]" 更糟；直接判死
+            if not parts and brief in ("[图片]", "[画的图]"):
+                self.store.update_send_state(row["id"], "dead")
+                log.warning("放弃重放（纯图失败，没有可补的文字）：%s", brief)
+                continue
+
+            if self.engine.resend(
+                int(row["session_id"]),
+                row["content"],
+                parts=parts or None,
+                start=start,
+                record_id=int(row["id"]),
+            ):
                 self.store.update_send_state(row["id"], "sent")
                 replayed += 1
                 log.info("补发成功：%s", brief)

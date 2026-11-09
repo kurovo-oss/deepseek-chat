@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS messages (
   image_tags  TEXT NOT NULL DEFAULT '[]',
   origin      TEXT NOT NULL DEFAULT 'reply',
   attempts    INTEGER NOT NULL DEFAULT 0,
+  parts_json  TEXT NOT NULL DEFAULT '[]',
+  sent_parts  INTEGER NOT NULL DEFAULT 0,
   created_at  INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id);
@@ -251,6 +253,15 @@ class Store:
             self._conn.execute(
                 "ALTER TABLE messages ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0"
             )
+        if "parts_json" not in columns:
+            # 重放要按原样补，不能拿整段 content 重切：前半段已经发出去会重复
+            self._conn.execute(
+                "ALTER TABLE messages ADD COLUMN parts_json TEXT NOT NULL DEFAULT '[]'"
+            )
+        if "sent_parts" not in columns:
+            self._conn.execute(
+                "ALTER TABLE messages ADD COLUMN sent_parts INTEGER NOT NULL DEFAULT 0"
+            )
         image_columns = {
             row["name"]
             for row in self._conn.execute("PRAGMA table_info(images)").fetchall()
@@ -330,15 +341,17 @@ class Store:
         created_at: int | None = None,
         image_tags: list[str] | None = None,
         origin: str = "reply",
+        parts: list[str] | None = None,
     ) -> int | None:
         """写入消息；qq_msg_id 重复时返回 None（幂等保护）。"""
         ts = int(created_at if created_at is not None else time.time())
         tags_json = json.dumps(image_tags or [], ensure_ascii=False)
+        parts_json = json.dumps(parts or [], ensure_ascii=False)
         with self._lock:
             cur = self._conn.execute(
                 "INSERT OR IGNORE INTO messages"
                 "(session_id, qq_msg_id, role, content, send_state, image_tags,"
-                " origin, created_at) VALUES (?,?,?,?,?,?,?,?)",
+                " origin, parts_json, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
                 (
                     session_id,
                     qq_msg_id,
@@ -347,6 +360,7 @@ class Store:
                     send_state,
                     tags_json,
                     origin,
+                    parts_json,
                     ts,
                 ),
             )
@@ -417,6 +431,15 @@ class Store:
         with self._lock:
             self._conn.execute(
                 "UPDATE messages SET send_state = ? WHERE id = ?", (state, message_id)
+            )
+            self._conn.commit()
+
+    def update_sent_parts(self, message_id: int, count: int) -> None:
+        """记到第几段为止：重放只补后面的，已经发出去的不再发一遍。"""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE messages SET sent_parts = ? WHERE id = ?",
+                (max(0, int(count)), int(message_id)),
             )
             self._conn.commit()
 
