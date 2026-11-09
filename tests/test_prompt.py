@@ -159,3 +159,12 @@ def test_active_persona_has_no_fabrication_boundary():
     assert "我顺嘴胡说的" in prompt
     assert "你有自己的生活" not in prompt
 
+
+def test_prompt_stays_compact():
+    """静态人设是每轮固定成本：超过 2.7k token 就把记忆和历史挤没了。"""
+    from qqbot import budget
+
+    text = read_prompt()
+
+    assert budget.estimate_tokens(text) <= 2700, "system.md 又变长了，先删重复规则"
+    assert len(text) <= 3500
