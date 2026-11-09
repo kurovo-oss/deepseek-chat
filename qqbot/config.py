@@ -166,7 +166,7 @@ class Settings:
     dream_check_seconds: float = 600.0
     dream_prompt_file: Path = Path("prompts/dream.md")
     journal_file: Path = Path("data/journal.md")
-    journal_char_budget: int = 1200
+    journal_char_budget: int = 0
     digest_enabled: bool = True
     digest_dir: Path = Path("data/daily")
     digest_prompt_file: Path = Path("prompts/digest.md")
@@ -202,7 +202,8 @@ class Settings:
     draw_dir: Path = Path("data/drawn")
     draw_min_interval_seconds: int = 300
     # ---- 生活线 ----
-    life_enabled: bool = True
+    # 生活线默认关：没有证据的日常会变成编造，想开显式设 LIFE_ENABLED=true
+    life_enabled: bool = False
     life_dir: Path = Path("data/life")
     life_keep_days: int = 14
     # ---- 随手表情包 ----
@@ -453,7 +454,7 @@ class Settings:
             draw_min_interval_seconds=_int(
                 env, "DRAW_MIN_INTERVAL_SECONDS", 300, minimum=0
             ),
-            life_enabled=_bool(env, "LIFE_ENABLED", True),
+            life_enabled=_bool(env, "LIFE_ENABLED", False),
             life_dir=base_dir / env.get("LIFE_DIR", "data/life").strip(),
             life_keep_days=_int(env, "LIFE_KEEP_DAYS", 14, minimum=1),
             sticker_chance=_float(env, "STICKER_CHANCE", 0.12),
@@ -473,7 +474,7 @@ class Settings:
             fallback_model_id=env.get("FALLBACK_MODEL_ID", ""),
             fallback_base_url=env.get("FALLBACK_BASE_URL", ""),
             fallback_api_key=env.get("FALLBACK_API_KEY", ""),
-            recap_enabled=_bool(env, "RECAP_ENABLED", True),
+            recap_enabled=_bool(env, "RECAP_ENABLED", False),
     emoji_chance=_float(env, "EMOJI_CHANCE", 0.25),
     browse_dir=base_dir / env.get("BROWSE_DIR", "data/browse").strip(),
     sticker_dir=base_dir / env.get("STICKER_DIR", "data/stickers").strip(),
@@ -537,7 +538,7 @@ class Settings:
             / env.get("DREAM_PROMPT_FILE", "prompts/dream.md").strip(),
             journal_file=base_dir
             / env.get("JOURNAL_FILE", "data/journal.md").strip(),
-            journal_char_budget=_int(env, "JOURNAL_CHAR_BUDGET", 1200, minimum=0),
+            journal_char_budget=_int(env, "JOURNAL_CHAR_BUDGET", 0, minimum=0),
             digest_enabled=_bool(env, "DIGEST_ENABLED", True),
             digest_dir=base_dir / env.get("DIGEST_DIR", "data/daily").strip(),
             digest_prompt_file=base_dir

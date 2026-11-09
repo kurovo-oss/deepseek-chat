@@ -181,3 +181,26 @@ def test_env_example_disables_generated_life():
     assert "JOURNAL_CHAR_BUDGET=0" in text
     assert "RECAP_ENABLED=false" in text
 
+
+def test_missing_life_keys_default_to_off(tmp_path):
+    """老 .env 没写这三项时，不能被代码缺省悄悄打开。"""
+    from qqbot.config import Settings
+
+    settings = Settings.from_env(
+        {"ALLOW_USER_ID": "1", "MODEL_API_KEY": "k"}, tmp_path
+    )
+
+    assert settings.life_enabled is False
+    assert settings.journal_char_budget == 0
+    assert settings.recap_enabled is False
+
+
+def test_env_example_has_no_duplicate_keys():
+    text = (Path(__file__).resolve().parents[1] / ".env.example").read_text(encoding="utf-8")
+    keys = [
+        line.split("=", 1)[0].strip()
+        for line in text.splitlines()
+        if "=" in line and not line.strip().startswith("#")
+    ]
+
+    assert len(keys) == len(set(keys))
