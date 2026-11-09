@@ -1,13 +1,12 @@
-"""粉色女仆主题：CSS 与品牌图不能悄悄回到蓝色。"""
+"""粉色主题：CSS 与窗口壳用粉色，但角色原图不能被改画。"""
 
+import hashlib
 from pathlib import Path
-
-import numpy as np
-from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 CSS = ROOT / "qqbot" / "ui" / "app.css"
 MASCOT = ROOT / "qqbot" / "ui" / "assets" / "dafeiyu.png"
+UPSTREAM_MASCOT = ROOT / "docs" / "assets" / "dafeiyu.png"
 
 
 def test_css_uses_pink_brand_palette():
@@ -23,27 +22,14 @@ def test_css_uses_pink_brand_palette():
     assert "#5ad7ff" not in css
 
 
-def pink_stats(path: Path) -> tuple[int, int, int]:
-    image = Image.open(path).convert("RGBA")
-    arr = np.array(image)
-    height = arr.shape[0]
-    r, g, b, alpha = (arr[:, :, i].astype(int) for i in range(4))
-    pink = (alpha > 40) & (r > 160) & (r > g + 30) & (r > b + 15)
-    return (
-        int(pink.sum()),
-        int(pink[: int(height * 0.40)].sum()),
-        int(pink[int(height * 0.60) :].sum()),
-    )
+def digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def test_mascot_has_pink_outfit_but_blue_hair():
-    before = pink_stats(ROOT / "docs" / "assets" / "dafeiyu.png")
-    after = pink_stats(MASCOT)
+def test_mascot_is_the_unmodified_upstream_artwork():
+    # 面板换成粉色，但角色只能是原作者的现成图：不重绘、不调色、不改衣着。
+    assert digest(MASCOT) == digest(UPSTREAM_MASCOT)
 
-    assert after[0] > before[0] + 10_000, "女仆装没有染成粉色"
-    # 头发在画面上半部，保持蓝色；粉色只应来自原有的肤色/嘴唇。
-    assert after[1] <= before[1] + 100
-    assert after[2] > before[2] + 8_000
 
 def test_native_loading_screen_matches_pink_theme():
     source = (ROOT / "scripts" / "native" / "WebShell.cs").read_text(encoding="utf-8")

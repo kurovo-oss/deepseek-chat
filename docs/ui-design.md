@@ -159,7 +159,7 @@ QQ 与连接
 
 - 正式版用网上开源的「大肥鱼／鲸鱼娘」设定：来自 [`YunYueSama/codex-deepseek-pet`](https://github.com/YunYueSama/codex-deepseek-pet) 的 `assets/whale/portrait.png`（透明 PNG，599×820），裁掉透明边距后放在 `docs/assets/dafeiyu.png`。形象上游参考了上善无形、ZipZipPipe 的设定；按仓库《大肥鱼项目署名许可 1.0》署名、非官方授权，控制台只负责位置、尺寸、状态，不把形象写死在代码里。
 
-- 品牌吉祥物是网上二创的「大肥鱼」：樱花粉 `#FF8FBD`、珊瑚粉 `#FF6F9F`、奶油白 `#FFF1F4`、梅子墨 `#1A0812`。2026-11-09 起把原图的蓝色女仆装布料染成粉色（`scripts/pink-maid.py`），头发、皮肤和白色围裙保持原样；欢迎图和安装器侧栏图由 `scripts/make-brand-assets.py` 从 `qqbot/ui/assets/dafeiyu.png` 裁切、排版；安装包与 exe 图标也直接裁切这张图，保留原作者署名，不另画角色。
+- 品牌吉祥物是网上二创的「大肥鱼」：界面用樱花粉 `#FF8FBD`、珊瑚粉 `#FF6F9F`、奶油白 `#FFF1F4`、梅子墨 `#1A0812`，但角色保留原作者的深蓝女仆装原图，不重绘、不改色；欢迎图和安装器侧栏图由 `scripts/make-brand-assets.py` 从 `qqbot/ui/assets/dafeiyu.png` 裁切、排版；安装包与 exe 图标也直接裁切这张图，保留原作者署名，不另画角色。
 
 ![大肥鱼形象](ui-mascot.png)
 
@@ -396,7 +396,7 @@ QQ 与连接
 ## 10. 素材署名
 
 - 大肥鱼形象：作者 **YunYueSama**，仓库 <https://github.com/YunYueSama/codex-deepseek-pet>，素材 `assets/whale/portrait.png`；适用《大肥鱼项目署名许可 1.0》，允许修改与分享，须保留作者与仓库地址。完整许可与修改说明见 [`docs/assets/dafeiyu-LICENSE.md`](assets/dafeiyu-LICENSE.md)、[`docs/assets/NOTICE.md`](assets/NOTICE.md)。
-- 本项目的修改：裁掉透明边距、按 UI 尺寸缩放；2026-11-09 将女仆装的蓝色布料染成粉色，保留原图轮廓、头发和白色围裙，未重画角色。
+- 本项目的修改：只裁掉透明边距、按 UI 尺寸缩放；角色衣着、发色和轮廓均保持原图，不重画、不改色。
 - 上游参考：上善无形（鲸鱼娘原始形象）、ZipZipPipe（DeepSeek 女仆鲸鱼娘二次设计）；本项目不声称 DeepSeek 官方授权。
 - 署名会同时放在控制台「设置 → 关于」里，不只写在文档。
 
