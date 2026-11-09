@@ -222,9 +222,12 @@ class ContextMixin:
             pairs = int(getattr(self.settings, "exemplar_pairs", 2) or 0)
             if pairs > 0:
                 tag = persona_mod.pick_overlay(turn_plan.intent, mood_values)
+                tags = [tag]
+                if turn_plan.reference:
+                    tags.append("reference")
                 seed = int(time.time() // 3600) + len(selected)
                 samples = exemplars_mod.messages(
-                    self.settings.base_dir, [tag], limit=pairs, seed=seed
+                    self.settings.base_dir, tags, limit=pairs, seed=seed
                 )
         if not samples:
             samples = samples_mod.messages(self.settings.sample_pairs)

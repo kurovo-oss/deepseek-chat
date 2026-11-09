@@ -63,3 +63,21 @@ def test_render_is_compact():
 
     assert "【这一轮】" in text
     assert len(text) < 220
+
+def test_pronoun_plan_names_the_previous_topic():
+    history = [
+        {"role": "user", "content": "你想刷抖音吗"},
+        {"role": "assistant", "content": "想呀"},
+        {"role": "user", "content": "你有没有这个功能"},
+    ]
+
+    plan = make_plan("你有没有这个功能", history)
+
+    assert plan.reference == "你想刷抖音吗"
+    assert "这个/那个" in plan.render()
+
+
+def test_no_reference_line_without_pronoun():
+    plan = make_plan("今天吃什么", [{"role": "user", "content": "今天吃什么"}])
+
+    assert plan.reference == ""

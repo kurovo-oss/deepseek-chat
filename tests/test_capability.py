@@ -71,3 +71,24 @@ def test_block_shrinks_as_capabilities_arrive():
     after = capability.block(snap(douyin_enabled=True, web_enabled=True))
 
     assert len(after) < len(before)
+
+def test_can_claim_about_douyin_is_cut():
+    """11-09 评测里她说"抖音我能刷呀"，能力没开就是假的。"""
+    out = capability.soften("抖音我能刷呀，你想看啥。", snap())
+
+    assert "我能刷" not in out
+    assert "刷不了抖音" in out
+
+
+def test_cannot_claim_still_passes():
+    assert capability.soften("抖音我刷不了呀。", snap()) == "抖音我刷不了呀。"
+
+def test_claiming_internet_access_is_cut():
+    out = capability.soften("自己上网查东西倒是行。", snap())
+
+    assert "上网查东西" not in out
+    assert "上不了网" in out
+
+
+def test_cannot_access_internet_still_passes():
+    assert capability.soften("我上不了网呀。", snap()) == "我上不了网呀。"
