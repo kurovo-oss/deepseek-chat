@@ -358,3 +358,31 @@ def test_bedtime_skips_until_due(tmp_path, monkeypatch):
 
     assert dream.bedtime(store, None, settings) is False
     assert called == []
+
+def test_dream_processes_more_than_one_batch(env):
+    """超过 400 条要分批吃完，不能把第 401 条之后永久漏掉。"""
+    for index in range(450):
+        env.store.save_message("100", "user", f"第 {index} 条", created_at=at(21) + index)
+    env.llm.payload = {"journal": "x", "ops": []}
+
+    result = env.dreamer.dream(at(23, 30))
+
+    assert result["ok"] is True
+    assert result["messages"] == 451
+    assert len(env.llm.calls) == 2
+
+
+def test_dream_cursor_continues_after_a_full_batch(env):
+    """分批之后游标要停在第 400 条，下次从第 401 条继续。"""
+    for index in range(420):
+        env.store.save_message("100", "user", f"第 {index} 条", created_at=at(21) + index)
+    env.llm.payload = {"journal": "x", "ops": []}
+
+    env.dreamer.dream(at(23, 30))
+    calls = len(env.llm.calls)
+    env.store.save_message("100", "user", "新的一条", created_at=at(22))
+
+    result = env.dreamer.dream(at(23, 40))
+
+    assert result["messages"] == 1
+    assert len(env.llm.calls) == calls + 1

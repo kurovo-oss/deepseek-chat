@@ -39,6 +39,11 @@ ALLOWED_KINDS = ("identity", "preference", "fact", "event", "chat")
 MAX_SUMMARY = 40
 MAX_JOURNAL = 4000
 MAX_CARDS_INLINE = 200
+# 一次做梦最多吃这么多消息：超过就分批，游标按 message id 前进。
+# 以前一次只取 400 条又把 last_dream_at 推到当前时间，第 401 条之后永远进不了梦。
+DREAM_BATCH = 400
+MAX_DREAM_BATCHES = 10
+DREAM_CURSOR = "dream_message_id"
 
 _JSON_BLOCK = re.compile(r"\{.*\}", re.DOTALL)
 
@@ -103,15 +108,91 @@ class Dreamer:
         return stamp >= target or (stamp - last) >= 20 * 3600
 
     # ---------------- 主体 ----------------
+    def _cursor_after(self) -> int:
+        """上次处理到哪条消息。老库没有游标时，用上次做梦时间反推。"""
+        try:
+            after = int(self.store.get_cursor(DREAM_CURSOR, "0") or 0)
+        except (TypeError, ValueError):
+            after = 0
+        if after > 0:
+            return after
+        last = self.store.last_dream_at()
+        if last is None:
+            return 0
+        return self.store.last_message_id_before(last)
+
     def dream(self, now: int | None = None) -> dict:
         """做一次梦，返回结果摘要（也用于 /dream 回复）。"""
         stamp = int(now if now is not None else self._clock())
         journal_file = self.settings.journal_file
         dream_id = self.store.start_dream(stamp)
 
-        since = self.store.last_dream_at() or 0
-        messages = self.store.messages_since(since)
-        if not messages:
+        after_id = self._cursor_after()
+        old_journal = self._read_journal()
+        current_journal = old_journal
+        counts = {OP_ADD: 0, OP_MERGE: 0, OP_REWEIGHT: 0}
+        seen = 0
+        batches = 0
+
+        while batches < MAX_DREAM_BATCHES:
+            messages = self.store.messages_after_id(after_id, DREAM_BATCH)
+            if not messages:
+                break
+
+            cards = self.store.list_cards(status="active", limit=MAX_CARDS_INLINE)
+            prompt = (
+                self._load_prompt()
+                .replace("{{JOURNAL}}", current_journal or "（还没有）")
+                .replace("{{CARDS}}", _format_cards(cards))
+                .replace("{{MESSAGES}}", _format_messages(messages))
+            )
+
+            try:
+                # max_tokens 必须给足，而且要比"写多少字"大很多：
+                # deepseek-flash 是推理模型，推理 token 也算在这个额度里。
+                # 真实踩过两次——1600 全被推理吃掉，finish_reason=length、正文 0 字。
+                result = self.llm.chat(
+                    [{"role": "user", "content": prompt}],
+                    temperature=0.4,
+                    max_tokens=6000,
+                    purpose="dream",
+                )
+            except Exception as exc:  # noqa: BLE001 - 做梦失败不该影响任何东西
+                log.warning("做梦失败（模型调用）：%s", exc)
+                self.store.finish_dream(
+                    dream_id, finished_at=stamp, messages_seen=seen,
+                    ok=False, note=str(exc)[:200],
+                )
+                return {"ok": False, "messages": seen, "note": str(exc)[:80]}
+
+            raw = getattr(result, "text", "") or ""
+            data = parse_dream(raw)
+            if data is None:
+                note = "模型没返回正文（推理占满额度）" if not raw.strip() else "输出不是 JSON"
+                log.warning("做梦失败（%s）：%r", note, raw[:200])
+                self.store.finish_dream(
+                    dream_id, finished_at=stamp, messages_seen=seen,
+                    ok=False, note=note,
+                )
+                return {"ok": False, "messages": seen, "note": note}
+
+            batch_counts = self._apply(data.get("ops"), stamp)
+            for key in counts:
+                counts[key] += batch_counts[key]
+
+            journal = str(data.get("journal") or "").strip()[:MAX_JOURNAL]
+            if journal:
+                current_journal = journal
+                self._write_journal(journal_file, current_journal)
+
+            after_id = int(messages[-1]["id"])
+            self.store.set_cursor(DREAM_CURSOR, str(after_id))
+            seen += len(messages)
+            batches += 1
+            if len(messages) < DREAM_BATCH:
+                break
+
+        if seen == 0:
             self.store.finish_dream(
                 dream_id, finished_at=stamp, ok=True, note="没有新消息"
             )
@@ -119,74 +200,33 @@ class Dreamer:
             return {"ok": True, "messages": 0, "added": 0, "merged": 0,
                     "reweight": 0, "chars": 0, "note": "没有新消息"}
 
-        old_journal = self._read_journal()
-        cards = self.store.list_cards(status="active", limit=MAX_CARDS_INLINE)
-        prompt = (
-            self._load_prompt()
-            .replace("{{JOURNAL}}", old_journal or "（还没有）")
-            .replace("{{CARDS}}", _format_cards(cards))
-            .replace("{{MESSAGES}}", _format_messages(messages))
-        )
-
-        try:
-            # max_tokens 必须给足，而且要比"写多少字"大很多：
-            # deepseek-flash 是推理模型，推理 token 也算在这个额度里。
-            # 真实踩过两次——1600 全被推理吃掉，finish_reason=length、正文 0 字。
-            result = self.llm.chat(
-                [{"role": "user", "content": prompt}],
-                temperature=0.4,
-                max_tokens=6000,
-                purpose="dream",
-            )
-        except Exception as exc:  # noqa: BLE001 - 做梦失败不该影响任何东西
-            log.warning("做梦失败（模型调用）：%s", exc)
-            self.store.finish_dream(
-                dream_id, finished_at=stamp, messages_seen=len(messages),
-                ok=False, note=str(exc)[:200],
-            )
-            return {"ok": False, "messages": len(messages), "note": str(exc)[:80]}
-
-        raw = getattr(result, "text", "") or ""
-        data = parse_dream(raw)
-        if data is None:
-            note = "模型没返回正文（推理占满额度）" if not raw.strip() else "输出不是 JSON"
-            log.warning("做梦失败（%s）：%r", note, raw[:200])
-            self.store.finish_dream(
-                dream_id, finished_at=stamp, messages_seen=len(messages),
-                ok=False, note=note,
-            )
-            return {"ok": False, "messages": len(messages), "note": note}
-
-        counts = self._apply(data.get("ops"), stamp)
-        journal = str(data.get("journal") or "").strip()[:MAX_JOURNAL]
-        if journal:
-            self._write_journal(journal_file, journal)
-
+        journal_chars = len(current_journal) if current_journal != old_journal else 0
         self.store.finish_dream(
             dream_id,
             finished_at=stamp,
-            messages_seen=len(messages),
+            messages_seen=seen,
             cards_added=counts[OP_ADD],
             cards_merged=counts[OP_MERGE],
             cards_reweight=counts[OP_REWEIGHT],
-            journal_chars=len(journal),
+            journal_chars=journal_chars,
             ok=True,
         )
         log.info(
-            "做梦完成：%d 条消息，新增 %d，合并 %d，调权 %d，记忆本 %d 字",
-            len(messages),
+            "做梦完成：%d 条消息（%d 批），新增 %d，合并 %d，调权 %d，记忆本 %d 字",
+            seen,
+            batches,
             counts[OP_ADD],
             counts[OP_MERGE],
             counts[OP_REWEIGHT],
-            len(journal),
+            journal_chars,
         )
         return {
             "ok": True,
-            "messages": len(messages),
+            "messages": seen,
             "added": counts[OP_ADD],
             "merged": counts[OP_MERGE],
             "reweight": counts[OP_REWEIGHT],
-            "chars": len(journal),
+            "chars": journal_chars,
         }
 
     # ---------------- 应用操作 ----------------

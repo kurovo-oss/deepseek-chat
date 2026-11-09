@@ -951,6 +951,24 @@ class Store:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def messages_after_id(self, after_id: int, limit: int = 400) -> list[dict]:
+        """按 message id 取下一批（做梦游标用，不会因为同一秒而卡住）。"""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM messages WHERE id > ? ORDER BY id ASC LIMIT ?",
+                (int(after_id), int(limit)),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def last_message_id_before(self, stamp: int) -> int:
+        """时间戳之前最后一条消息的 id；用来给老库初始化做梦游标。"""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COALESCE(MAX(id), 0) FROM messages WHERE created_at < ?",
+                (int(stamp),),
+            ).fetchone()
+        return int(row[0] or 0)
+
     def messages_between(self, start: int, end: int, limit: int = 800) -> list[dict]:
         """某个时间段的消息（按时间正序），给日摘要用。"""
         with self._lock:

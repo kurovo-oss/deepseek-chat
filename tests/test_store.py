@@ -234,3 +234,22 @@ def test_migration_is_idempotent(tmp_path):
     again = Store(path)
     assert again.count_cards() == 1
     again.close()
+
+def test_messages_after_id_walks_a_cursor(store):
+    first = store.save_message("1", "user", "a", created_at=100)
+    second = store.save_message("1", "user", "b", created_at=101)
+    third = store.save_message("1", "user", "c", created_at=102)
+
+    batch = store.messages_after_id(0, limit=2)
+    assert [row["id"] for row in batch] == [first, second]
+    assert [row["content"] for row in store.messages_after_id(second)] == ["c"]
+    assert store.messages_after_id(third) == []
+
+
+def test_last_message_id_before_initializes_cursor(store):
+    store.save_message("1", "user", "a", created_at=100)
+    second = store.save_message("1", "user", "b", created_at=200)
+
+    assert store.last_message_id_before(150) == 1
+    assert store.last_message_id_before(201) == second
+    assert store.last_message_id_before(99) == 0
