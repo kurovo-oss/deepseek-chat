@@ -19,9 +19,9 @@ UI_ASSETS = ROOT / "qqbot" / "ui" / "assets"
 INSTALLER_ASSETS = ROOT / "installer" / "assets"
 SOURCE = UI_ASSETS / "dafeiyu.png"
 
-INK = (26, 8, 18, 255)
-INK_SOFT = (52, 20, 38, 255)
-CYAN = (255, 143, 183, 255)
+INK = (255, 247, 250, 255)
+INK_SOFT = (255, 232, 240, 255)
+CYAN = (255, 190, 212, 255)
 
 
 def mix(a: tuple[int, int, int, int], b: tuple[int, int, int, int], t: float) -> tuple[int, int, int, int]:

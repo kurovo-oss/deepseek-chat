@@ -24,9 +24,9 @@ SetOverwrite on
 BrandingText "大肥鱼 · DAFEIYU"
 
 ; 品牌配色与欢迎/完成页。侧栏图由 scripts\make-brand-assets.py 生成。
-!define MUI_BGCOLOR "1A0812"
-!define MUI_TEXTCOLOR "FFF1F6"
-!define MUI_FINISHPAGE_LINK_COLOR "FF8FBD"
+!define MUI_BGCOLOR "FFF7FA"
+!define MUI_TEXTCOLOR "4A2334"
+!define MUI_FINISHPAGE_LINK_COLOR "C63A60"
 !define MUI_WELCOMEFINISHPAGE_BITMAP "..\installer\assets\brand-panel.bmp"
 !define MUI_WELCOMEPAGE_TITLE "把大肥鱼接回家"
 !define MUI_WELCOMEPAGE_TEXT "她会记住你说过的话，也会在自己想说话的时候先开口。$\r$\n$\r$\n先连上模型和 QQ，剩下的交给她。"

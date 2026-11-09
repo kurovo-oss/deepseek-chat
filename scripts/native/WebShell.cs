@@ -60,8 +60,8 @@ namespace DafeiyuNative
             _shot = shot;
 
             Text = "大肥鱼 · 她今天怎么样";
-            BackColor = Color.FromArgb(26, 8, 18);
-            ForeColor = Color.FromArgb(255, 241, 246);
+            BackColor = Color.FromArgb(255, 247, 250);
+            ForeColor = Color.FromArgb(74, 35, 52);
             Font = new Font("Microsoft YaHei UI", 9F);
             AutoScaleMode = AutoScaleMode.None;
             StartPosition = FormStartPosition.CenterScreen;
@@ -71,8 +71,8 @@ namespace DafeiyuNative
 
             _web = new WebView2();
             _web.Dock = DockStyle.Fill;
-            _web.BackColor = Color.FromArgb(26, 8, 18);
-            try { _web.DefaultBackgroundColor = Color.FromArgb(26, 8, 18); } catch { }
+            _web.BackColor = Color.FromArgb(255, 247, 250);
+            try { _web.DefaultBackgroundColor = Color.FromArgb(255, 247, 250); } catch { }
             Controls.Add(_web);
 
             SetupTray();
@@ -468,11 +468,11 @@ namespace DafeiyuNative
         {
             string html =
                 "<!doctype html><html><head><meta charset=\"utf-8\"><style>" +
-                "html,body{height:100%;margin:0;background:#1a0812;color:#fff1f6;font-family:'Microsoft YaHei UI',sans-serif}" +
-                "body{display:flex;align-items:center;justify-content:center;background:radial-gradient(800px 500px at 70% 0%,rgba(255,143,183,.16),transparent 60%),#1a0812}" +
-                ".box{text-align:center;padding:32px 42px;border:1px solid rgba(255,174,205,.18);border-radius:22px;background:rgba(44,19,34,.74);box-shadow:0 24px 70px rgba(35,0,16,.42)}" +
-                ".ring{width:34px;height:34px;margin:0 auto 20px;border-radius:50%;border:2px solid rgba(255,143,183,.18);border-top-color:#ff8fbd;animation:spin 1s linear infinite}" +
-                "@keyframes spin{to{transform:rotate(360deg)}}h1{font-size:20px;font-weight:600;margin:0 0 8px}p{font-size:12px;color:#d8a9bb;margin:0;line-height:1.8;white-space:pre-line}" +
+                "html,body{height:100%;margin:0;background:#fff7fa;color:#4a2334;font-family:'Microsoft YaHei UI',sans-serif}" +
+                "body{display:flex;align-items:center;justify-content:center;background:radial-gradient(800px 500px at 70% 0%,rgba(255,190,212,.6),transparent 60%),#fff7fa}" +
+                ".box{text-align:center;padding:32px 42px;border:1px solid rgba(198,105,136,.22);border-radius:22px;background:rgba(255,255,255,.78);box-shadow:0 24px 70px rgba(126,58,84,.14)}" +
+                ".ring{width:34px;height:34px;margin:0 auto 20px;border-radius:50%;border:2px solid rgba(198,58,96,.18);border-top-color:#c63a60;animation:spin 1s linear infinite}" +
+                "@keyframes spin{to{transform:rotate(360deg)}}h1{font-size:20px;font-weight:600;margin:0 0 8px}p{font-size:12px;color:#85596a;margin:0;line-height:1.8;white-space:pre-line}" +
                 "</style></head><body><div class=\"box\"><div class=\"ring\"></div><h1>" + Escape(title) + "</h1><p>" + Escape(detail) + "</p></div></body></html>";
             return html;
         }
