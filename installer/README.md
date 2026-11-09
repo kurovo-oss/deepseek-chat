@@ -20,6 +20,12 @@ dist\Dafeiyu-Setup-1.0.0.exe
 构建只读取项目目录，不往 C 盘安装 NSIS；安装包本身建议用代码签名证书签名后再发布，
 否则 Windows SmartScreen 会提示“未知发布者”。
 
+> 安装包不会携带本机 NapCat 账号数据：`build-installer.ps1` 会把
+> `tools\NapCat-*\napcat\config` 换成 `installer\napcat\` 里的出厂配置，
+> 并删除 `logs\`、`cache\`。这样不会把主人的 QQ 号、WebUI token、二维码
+> 或聊天缓存发给别人。出厂配置只保留 `127.0.0.1:3001` 的 OneBot HTTP 服务
+> 和上报到 `127.0.0.1:8080/event` 的客户端，token 留空。
+
 安装包图标、欢迎页/完成页侧栏图和网页吉祥物欢迎图都来自 `qqbot/ui/assets/dafeiyu.png` 这张网上二创形象，脚本只做裁切与品牌底色排版；改了品牌色后先运行：
 
 ```powershell

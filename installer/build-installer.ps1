@@ -56,6 +56,19 @@ $napcat = Get-ChildItem (Join-Path $root "tools") -Directory -Filter "NapCat-*" 
 if ($null -eq $napcat) { throw "NapCat directory is missing under tools" }
 Copy-Tree $napcat.FullName (Join-Path $payload "tools\$($napcat.Name)") @("__pycache__", ".pytest_cache")
 
+# Never ship the local account profile: config/, logs/ and cache/ contain the
+# user's QQ number, WebUI token, login QR and message cache. Replace them with
+# tracked factory templates; NapCat creates the per-account files after login.
+$napcatDest = Join-Path $payload "tools\$($napcat.Name)"
+$napcatConfig = Join-Path $napcatDest "napcat\config"
+if (Test-Path $napcatConfig) { Remove-Item $napcatConfig -Recurse -Force }
+New-Item -ItemType Directory -Path $napcatConfig -Force | Out-Null
+Copy-Item (Join-Path $root "installer\napcat\*.json") $napcatConfig -Force
+foreach ($runtimeDir in @("logs", "cache")) {
+    $path = Join-Path $napcatDest "napcat\$runtimeDir"
+    if (Test-Path $path) { Remove-Item $path -Recurse -Force }
+}
+
 $exeName = ([string][char]0x5927) + ([char]0x80A5) + ([char]0x9C7C) + ".exe"
 foreach ($name in @(
     $exeName,

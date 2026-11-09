@@ -102,9 +102,9 @@ def test_installer_ships_safe_default_persona():
 def test_installer_does_not_ship_local_data_or_secrets():
     build = (ROOT / "installer" / "build-installer.ps1").read_text(encoding="utf-8")
     # 安装包只复制白名单目录；data、logs、.env 不在复制列表中。
-    assert '"data"' not in build
-    assert '"logs"' not in build
-    assert '"tests"' not in build
+    assert 'Copy-Tree (Join-Path $root "data")' not in build
+    assert 'Copy-Tree (Join-Path $root "logs")' not in build
+    assert 'Copy-Tree (Join-Path $root "tests")' not in build
     assert "Copy-File \".env\"" not in build
 
 
@@ -116,3 +116,27 @@ def test_env_example_has_one_setting_per_line():
             continue
         assert "\\n" not in line, f".env.example 第 {number} 行把换行写成了字面量"
         assert "=" in line, f".env.example 第 {number} 行不是 KEY=VALUE"
+
+def test_installer_ships_clean_napcat_profile():
+    """安装包不能带本机 NapCat 账号配置、WebUI token、二维码缓存或日志。"""
+    import json
+
+    build = (ROOT / "installer" / "build-installer.ps1").read_text(encoding="utf-8")
+    assert "installer\\napcat" in build
+    assert "napcat\\config" in build
+    assert "Remove-Item" in build
+    assert '"logs", "cache"' in build
+
+    template = json.loads(
+        (ROOT / "installer" / "napcat" / "onebot11.json").read_text(encoding="utf-8")
+    )
+    network = template["network"]
+    assert network["httpServers"][0]["port"] == 3001
+    assert network["httpClients"][0]["url"] == "http://127.0.0.1:8080/event"
+    assert network["httpServers"][0]["token"] == ""
+    assert network["httpClients"][0]["token"] == ""
+
+    napcat = json.loads(
+        (ROOT / "installer" / "napcat" / "napcat.json").read_text(encoding="utf-8")
+    )
+    assert napcat["bypass"]["js"] is False
