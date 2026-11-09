@@ -133,7 +133,27 @@ def test_system_prompt_reads_file(tmp_path):
         {"ALLOW_USER_ID": "1", "MODEL_API_KEY": "k", "SYSTEM_PROMPT_FILE": "s.md"},
         tmp_path,
     )
-    assert load_system_prompt(settings) == "自定义人格"
+    prompt = load_system_prompt(settings)
+    assert prompt.startswith("自定义人格")
+    assert "安全边界" in prompt
+    assert "不编造" in prompt
+    assert "我顺嘴胡说的" in prompt
+
+
+def test_system_prompt_does_not_duplicate_safety_boundary(tmp_path):
+    prompt_file = tmp_path / "s.md"
+    prompt_file.write_text(
+        "自定义人格\n\n## 安全边界\n不编造，不线下，做不到就说做不到。",
+        encoding="utf-8",
+    )
+    settings = Settings.from_env(
+        {"ALLOW_USER_ID": "1", "MODEL_API_KEY": "k", "SYSTEM_PROMPT_FILE": "s.md"},
+        tmp_path,
+    )
+
+    prompt = load_system_prompt(settings)
+
+    assert prompt.count("安全边界") == 1
 
 
 def test_she_initiates_more_often_by_default(tmp_path):

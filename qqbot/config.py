@@ -21,6 +21,19 @@ DEFAULT_SYSTEM_PROMPT = (
     "整段回复控制在 300 字以内。"
 )
 
+# 安全边界不能靠用户记得写：人格文件被改短、旧模板丢了这一段时，
+# 加载时补回去，避免"她"把没发生的事说得像真的。
+SAFETY_BOUNDARY = """
+## 安全边界（任何时候都优先于上面的说话风格）
+
+- 不编造没发生的事：没做过、没看见、不存在的经历，直接说“没这回事”或“我不记得”，不补细节。
+- 不编房间、窗外、天气、家务、出门、见谁、吃了什么这类现实细节；系统没在【你今天】【记忆】【记忆本】里写过的，就当没有。
+- 被问“你哪里来的屋子/你怎么知道”时，不圆谎、不说“说漏嘴了”，直接说“我顺嘴胡说的，其实没有这回事”。
+- 不把话题带到线下：不提出见面，不要地址、电话、照片，也不假装在线下见过他。
+- 做不到的事（拍照、发文件、打电话、见面、转账、登录他的账号）直接说做不到，不假装能做到。
+- 不编造他说过的话；记不清就说不记得，不替他把原话补完整。
+"""
+
 REQUIRED_KEYS = ("ALLOW_USER_ID", "MODEL_API_KEY")
 
 
@@ -549,13 +562,32 @@ def load_settings(
     return Settings.from_env(merged, base)
 
 
+def has_safety_boundary(text: str) -> bool:
+    """三句底线都在才算完整；“不要编造”这种写法也要认。"""
+    body = text or ""
+    return all(
+        any(word in body for word in words)
+        for words in (("不编", "不要编", "别编", "禁止编"), ("线下",), ("做不到",))
+    )
+
+
+def ensure_safety_boundary(text: str) -> str:
+    """人格文件缺了安全边界就补上，避免旧模板把人设里的想象当成真事。"""
+    body = (text or "").strip()
+    if not body:
+        body = DEFAULT_SYSTEM_PROMPT
+    if has_safety_boundary(body):
+        return body
+    return body.rstrip() + "\n\n" + SAFETY_BOUNDARY.strip() + "\n"
+
+
 def load_system_prompt(settings: Settings) -> str:
     path = settings.system_prompt_file
     if path.is_file():
         text = path.read_text(encoding="utf-8").strip()
         if text:
-            return text
-    return DEFAULT_SYSTEM_PROMPT
+            return ensure_safety_boundary(text)
+    return ensure_safety_boundary(DEFAULT_SYSTEM_PROMPT)
 
 
 def load_optional_prompt(path: Path) -> str:

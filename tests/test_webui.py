@@ -143,6 +143,8 @@ def test_persona_publish_versions_and_hot_reload(settings: Settings, engine):
         save_persona(settings, engine, "太短")
     with pytest.raises(ValueError, match="安全边界"):
         save_persona(settings, engine, "随便写" * 100)
+    with pytest.raises(ValueError, match="安全边界"):
+        save_persona(settings, engine, "# 大肥鱼\n\n" + "不要编造，好好说话。" * 30)
 
 
 def test_settings_payload_never_exposes_key(settings: Settings):

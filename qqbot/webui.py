@@ -168,8 +168,13 @@ def read_persona(settings) -> dict:
 
 def persona_warnings(text: str) -> list[str]:
     warnings = []
-    for word, label in (("不编", "缺少“不编造”边界"), ("线下", "缺少“不线下”边界"), ("做不到", "缺少能力边界")):
-        if word not in text:
+    checks = (
+        (("不编", "不要编", "别编", "禁止编"), "缺少“不编造”边界"),
+        (("线下",), "缺少“不线下”边界"),
+        (("做不到",), "缺少能力边界"),
+    )
+    for words, label in checks:
+        if not any(word in text for word in words):
             warnings.append(label)
     return warnings
 
@@ -181,8 +186,8 @@ def save_persona(settings, engine, text: str, note: str = "") -> dict:
     if len(text) > PERSONA_MAX_CHARS:
         raise ValueError(f"人格太长（最多 {PERSONA_MAX_CHARS} 字）")
     missing = persona_warnings(text)
-    if len(missing) >= 3:
-        raise ValueError("缺少安全边界：至少写清“不编造 / 不线下 / 能力边界”中的一条")
+    if missing:
+        raise ValueError("缺少安全边界：要写清“不编造 / 不线下 / 能力边界”三条，不能只写一条")
     path, versions_dir, index_path = _persona_paths(settings)
     stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime())
     version = f"{stamp}-{int(time.time() * 1000) % 1000:03d}"

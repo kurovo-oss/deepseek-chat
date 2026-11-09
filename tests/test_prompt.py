@@ -148,3 +148,14 @@ def test_emoji_survive_formatting():
 
     assert strip_markdown("好呀 🥺") == "好呀 🥺"
 
+
+def test_active_persona_has_no_fabrication_boundary():
+    """当前生效的人格也必须有不编造边界，不能只靠默认模板。"""
+    prompt = read_prompt()
+
+    assert "安全边界" in prompt
+    assert "不编造" in prompt
+    assert "不编房间" in prompt
+    assert "我顺嘴胡说的" in prompt
+    assert "你有自己的生活" not in prompt
+
