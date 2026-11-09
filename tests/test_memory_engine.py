@@ -95,8 +95,9 @@ def _system_prompt(calls):
     return next(call for call in calls if call[0]["role"] == "system")[0]["content"]
 
 
-def test_journal_is_injected_into_prompt(env):
+def test_journal_is_injected_into_prompt(tmp_path):
     """记忆本（做梦写出来的叙事）要和卡片一起进 system prompt。"""
+    env = build(tmp_path, replies=["好呀。"], journal_char_budget=1200)
     env.settings.journal_file.write_text("他在赶项目，常常十点才下班。\n", encoding="utf-8")
 
     env.engine.handle_message(make_message("在忙什么呀"))

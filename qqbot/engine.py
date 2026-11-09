@@ -31,6 +31,7 @@ from . import emoji as emoji_mod
 from . import refusal as refusal_mod
 from . import search as search_mod
 from . import recall_guard
+from . import style_guard
 from . import usage as usage_mod
 from . import mood as mood_mod
 from . import pc as pc_mod
@@ -419,7 +420,10 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
         )
         text = recall_guard.soften(text, evidence)
         # 没做过的事别说成做过：刷抖音、上网、剪视频这些系统现在都做不到
-        return capability_mod.soften(text, self.settings)
+        text = capability_mod.soften(text, self.settings)
+        if getattr(self.settings, "style_guard_enabled", True):
+            text = style_guard.soften(text)
+        return text
 
 
 

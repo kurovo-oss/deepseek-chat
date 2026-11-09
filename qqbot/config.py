@@ -284,6 +284,12 @@ class Settings:
     camera_enabled: bool = False
     # 开场样品组数（0 = 不要）
     sample_pairs: int = 8
+    # 人格 v2：场景 overlay / 本轮计划 / 动态范例 / 风格守卫
+    persona_v2_enabled: bool = True
+    turnplan_enabled: bool = True
+    relation_enabled: bool = True
+    exemplar_pairs: int = 2
+    style_guard_enabled: bool = True
     # 上下文预算（token）：人设固定，其余按优先级分配
     context_token_budget: int = 9000
     # 对话状态：她知道自己上一条问了什么、他答没答
@@ -514,6 +520,11 @@ class Settings:
     moments_enabled=_bool(env, "MOMENTS_ENABLED", False),
     camera_enabled=_bool(env, "CAMERA_ENABLED", False),
             sample_pairs=_int(env, "SAMPLE_PAIRS", 8, minimum=0),
+            persona_v2_enabled=_bool(env, "PERSONA_V2_ENABLED", True),
+            turnplan_enabled=_bool(env, "TURNPLAN_ENABLED", True),
+            relation_enabled=_bool(env, "RELATION_ENABLED", True),
+            exemplar_pairs=_int(env, "EXEMPLAR_PAIRS", 2, minimum=0),
+            style_guard_enabled=_bool(env, "STYLE_GUARD_ENABLED", True),
             context_token_budget=_int(env, "CONTEXT_TOKEN_BUDGET", 9000, minimum=1500),
             talkstate_enabled=_bool(env, "TALKSTATE_ENABLED", True),
             background_interval_seconds=_int(env, "BACKGROUND_INTERVAL_SECONDS", 20, minimum=5),

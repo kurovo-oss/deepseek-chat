@@ -13,16 +13,19 @@ from . import browse as browse_mod
 from . import budget as budget_mod
 from . import digest as digest_mod
 from . import facts as facts_mod
+from . import exemplars as exemplars_mod
 from . import growth as growth_mod
 from . import life as life_mod
 from . import memepedia as memepedia_mod
 from . import memes as memes_mod
+from . import persona as persona_mod
 from . import recap as recap_mod
 from . import refusal as refusal_mod
 from . import mood as mood_mod
 from . import samples as samples_mod
 from . import selfknow as selfknow_mod
 from . import talkstate as talkstate_mod
+from . import turnplan as turnplan_mod
 from . import usage as usage_mod
 from .formatting import fix_address
 from .onebot import IncomingMessage
@@ -53,10 +56,34 @@ class ContextMixin:
         while selected and selected[0]["role"] != "user":
             selected.pop(0)
 
+        last_user_text = next(
+            (str(m["content"]) for m in reversed(selected) if m["role"] == "user"), ""
+        )
+        mood_values = self.mood.snapshot() if self.mood is not None else {}
+        turn_plan = turnplan_mod.make_plan(last_user_text, selected, mood_values)
+
         # system 不再是字符串一路拼：每段声明优先级和配额，由预算统一分配
         sections: list[budget_mod.Section] = [
             budget_mod.Section("人设", self.system_prompt, priority=1000, fixed=True)
         ]
+        if getattr(self.settings, "persona_v2_enabled", True):
+            overlay = persona_mod.block(
+                turn_plan.intent, mood_values, self.settings.base_dir
+            )
+            if overlay:
+                sections.append(
+                    budget_mod.Section("这轮的样子", overlay, priority=94, quota=160)
+                )
+            if getattr(self.settings, "turnplan_enabled", True):
+                sections.append(
+                    budget_mod.Section("这一轮", turn_plan.render(), priority=93, quota=180)
+                )
+            if getattr(self.settings, "relation_enabled", True):
+                relation = persona_mod.relation_block(self.store, session)
+                if relation:
+                    sections.append(
+                        budget_mod.Section("关系", relation, priority=78, quota=80)
+                    )
         if self.memory is not None:
             context = self.memory.context()
             if context:
@@ -174,8 +201,19 @@ class ContextMixin:
         # 历史也按 token 算：system 占完剩下的才是它的
         cap = budget_mod.history_budget(token_budget, fitted.tokens)
 
-        # 开场样品排在历史前面，占的也是历史的额度；额度不够就整段不要
-        samples = samples_mod.messages(self.settings.sample_pairs)
+        # 开场样品排在历史前面，占的也是历史的额度；额度不够就整段不要。
+        # v2：按这一轮的场景选两组，别再每天用同样八组。
+        samples: list[dict] = []
+        if getattr(self.settings, "persona_v2_enabled", True):
+            pairs = int(getattr(self.settings, "exemplar_pairs", 2) or 0)
+            if pairs > 0:
+                tag = persona_mod.pick_overlay(turn_plan.intent, mood_values)
+                seed = int(time.time() // 3600) + len(selected)
+                samples = exemplars_mod.messages(
+                    self.settings.base_dir, [tag], limit=pairs, seed=seed
+                )
+        if not samples:
+            samples = samples_mod.messages(self.settings.sample_pairs)
         if self.mood is not None:
             # 情绪也体现在"样子里"：累的时候多给一组有气无力的，比讲规矩管用
             for said, answered in mood_mod.style_samples(self.mood.snapshot()):

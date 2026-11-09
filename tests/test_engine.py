@@ -951,8 +951,8 @@ def test_tight_budget_drops_low_priority_sections(tmp_path):
 
     # 梗表是优先级最低的，预算紧的时候该被压掉
     assert "已老实=认输" not in content
-    # 能力表优先级稍高，通常还在
-    assert "【你会的】" in content or "刷抖音" in content
+    # 本轮计划优先级高，预算再紧也要在
+    assert "【这一轮】" in content
 
 
 # ------------------------------------------------ 引用回复
@@ -1717,3 +1717,12 @@ def test_record_usage_skips_probe(env):
     env.engine._record_usage(ChatResult("x", 12, 3, "m"), "probe", True)
 
     assert env.store._conn.execute("SELECT COUNT(*) FROM usage_log").fetchone()[0] == 0
+
+def test_style_guard_strips_assistant_tone(env):
+    env.llm.text = "我能理解你的感受。那你先躺会儿。"
+
+    env.engine.handle_message(make_message("今天好累"))
+
+    sent = "".join(text for _, text in env.sender.sent)
+    assert "我能理解" not in sent
+    assert "先躺会儿" in sent

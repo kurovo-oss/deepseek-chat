@@ -397,6 +397,20 @@ class Store:
             ).fetchone()
         return int(row["n"])
 
+    def first_message_at(self, session_id: str | None = None) -> int | None:
+        """最早一条消息的时间；用来算关系阶段。"""
+        with self._lock:
+            if session_id is None:
+                row = self._conn.execute(
+                    "SELECT MIN(created_at) AS ts FROM messages"
+                ).fetchone()
+            else:
+                row = self._conn.execute(
+                    "SELECT MIN(created_at) AS ts FROM messages WHERE session_id = ?",
+                    (session_id,),
+                ).fetchone()
+        return int(row["ts"]) if row and row["ts"] is not None else None
+
     def recent_messages_after(self, session_id: str, after_id: int, limit: int) -> list[dict]:
         """取窗口内的消息（id > after_id），供 /reset 之后的上下文使用。"""
         with self._lock:
