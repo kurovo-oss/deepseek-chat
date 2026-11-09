@@ -53,8 +53,8 @@ def test_installer_has_branded_welcome_and_finish_pages():
     data = (ROOT / "installer" / "Dafeiyu.nsi").read_bytes()
     assert data[:3] == b"\xef\xbb\xbf", "NSIS Unicode 脚本必须带 UTF-8 BOM"
     script = data.decode("utf-8-sig")
-    assert '!define MUI_BGCOLOR "061B2C"' in script
-    assert '!define MUI_TEXTCOLOR "EAF6FF"' in script
+    assert '!define MUI_BGCOLOR "1A0812"' in script
+    assert '!define MUI_TEXTCOLOR "FFF1F6"' in script
     assert "brand-panel.bmp" in script
     assert '!define MUI_WELCOMEPAGE_TITLE "把大肥鱼接回家"' in script
     assert '!define MUI_FINISHPAGE_TITLE "大肥鱼已经住进你的电脑"' in script
