@@ -29,6 +29,7 @@ from . import backup as backup_mod
 from . import capability as capability_mod
 from . import emoji as emoji_mod
 from . import goals as goals_mod
+from . import style_review as style_review_mod
 from . import refusal as refusal_mod
 from . import search as search_mod
 from . import recall_guard
@@ -343,6 +344,12 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
                 goals_mod.tick(self.store, self.llm, self.settings, now=stamp)
             except Exception:  # noqa: BLE001 - 目标复盘坏了不能拖累聊天
                 log.exception("目标复盘异常")
+
+        if getattr(self.settings, "style_review_enabled", False):
+            try:
+                style_review_mod.tick(self.store, self.llm, self.settings, now=stamp)
+            except Exception:  # noqa: BLE001 - 相处整理坏了不能拖累聊天
+                log.exception("相处方式整理异常")
 
     def background_loop(self, stop_event: threading.Event) -> None:
         while not stop_event.is_set():

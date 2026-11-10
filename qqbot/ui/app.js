@@ -123,7 +123,10 @@
     $('#crumb').textContent = crumb;
     if (location.hash !== `#${page}`) history.replaceState(null, '', `#${page}`);
     if (page === 'chat') loadChat();
-    if (page === 'memory') loadMemory();
+    if (page === 'memory') {
+      loadMemory();
+      loadStyleSuggestions();
+    }
     if (page === 'goals') loadGoals();
     if (page === 'persona') loadPersona();
     if (page === 'config') loadSettings();
@@ -582,6 +585,71 @@
       await api('/api/memory/preference', { method: 'POST', body: { summary: summary.trim() } });
       toast('偏好记下了，下一条消息生效');
       await loadMemory();
+    } catch (err) {
+      toast(err.message, true);
+    }
+  }
+
+  function renderStyleSuggestion(item) {
+    const card = el('article', 'style-suggestion');
+    const head = el('div', 'style-suggestion-head');
+    head.append(el('span', 'memory-kind', '相处方式建议'));
+    head.append(el('span', 'tag', `#${item.id}`));
+    card.append(head, el('p', 'style-suggestion-text', item.text || ''));
+    const actions = el('div', 'memory-actions');
+    actions.append(goalActionButton('采用', 'primary-btn', () => applyStyleSuggestion(item)));
+    actions.append(goalActionButton('忽略', '', () => dismissStyleSuggestion(item)));
+    card.append(actions);
+    return card;
+  }
+
+  async function loadStyleSuggestions() {
+    const box = $('#style-suggestions');
+    if (!box) return;
+    try {
+      const data = await api('/api/styles');
+      const items = data.items || [];
+      box.replaceChildren();
+      box.hidden = !items.length;
+      if (!items.length) return;
+      box.append(el('p', 'style-suggestion-title', '根据反馈整理的相处方式（采用后才会生效）'));
+      items.forEach((item) => box.append(renderStyleSuggestion(item)));
+    } catch (_) {
+      box.hidden = true;
+    }
+  }
+
+  async function reviewStyles() {
+    const button = $('#style-review');
+    button.disabled = true;
+    button.textContent = '整理中…';
+    try {
+      const data = await api('/api/styles/review', { method: 'POST', body: {} });
+      toast((data.created || []).length ? '整理出新的相处建议' : '这次没有新的建议');
+      await loadStyleSuggestions();
+    } catch (err) {
+      toast(err.message, true);
+    } finally {
+      button.disabled = false;
+      button.textContent = '整理相处方式';
+    }
+  }
+
+  async function applyStyleSuggestion(item) {
+    try {
+      await api('/api/styles/apply', { method: 'POST', body: { id: item.id } });
+      toast('已采用，下一条消息开始生效');
+      await Promise.all([loadStyleSuggestions(), loadMemory()]);
+    } catch (err) {
+      toast(err.message, true);
+    }
+  }
+
+  async function dismissStyleSuggestion(item) {
+    try {
+      await api('/api/styles/dismiss', { method: 'POST', body: { id: item.id } });
+      toast('这条先不采用');
+      await loadStyleSuggestions();
     } catch (err) {
       toast(err.message, true);
     }
@@ -1275,6 +1343,7 @@
     $('#reload-chat').addEventListener('click', loadChat);
     $('#reload-memory').addEventListener('click', loadMemory);
     $('#add-preference').addEventListener('click', addPreference);
+    $('#style-review').addEventListener('click', reviewStyles);
     $('#reload-goals').addEventListener('click', loadGoals);
     $('#goal-review').addEventListener('click', reviewGoals);
     let memorySearchTimer = null;

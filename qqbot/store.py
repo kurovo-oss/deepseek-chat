@@ -116,6 +116,16 @@ CREATE TABLE IF NOT EXISTS outcomes (
 );
 CREATE INDEX IF NOT EXISTS idx_outcomes_action ON outcomes(action_id);
 
+CREATE TABLE IF NOT EXISTS style_suggestions (
+  id          INTEGER PRIMARY KEY,
+  text        TEXT NOT NULL,
+  evidence    TEXT NOT NULL DEFAULT '[]',
+  status      TEXT NOT NULL DEFAULT 'suggested',
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_style_suggestions_status ON style_suggestions(status);
+
 CREATE TABLE IF NOT EXISTS proactive_events (
   id          INTEGER PRIMARY KEY,
   kind        TEXT NOT NULL,
@@ -1208,6 +1218,59 @@ class Store:
         values = list(updates.values()) + [int(action_id)]
         with self._lock:
             cur = self._conn.execute(f"UPDATE goal_actions SET {assignments} WHERE id = ?", values)
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    def add_style_suggestion(
+        self, text: str, evidence: list[int] | None = None, created_at: int | None = None
+    ) -> int:
+        now = int(created_at if created_at is not None else time.time())
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO style_suggestions(text, evidence, created_at, updated_at)"
+                " VALUES (?,?,?,?)",
+                (str(text), json.dumps(evidence or []), now, now),
+            )
+            self._conn.commit()
+            return int(cur.lastrowid)
+
+    def list_style_suggestions(self, status: str = "suggested", limit: int = 20) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM style_suggestions WHERE status = ? ORDER BY id DESC LIMIT ?",
+                (status, max(1, int(limit))),
+            ).fetchall()
+        result = []
+        for row in rows:
+            item = dict(row)
+            try:
+                item["evidence"] = json.loads(item.get("evidence") or "[]")
+            except json.JSONDecodeError:
+                item["evidence"] = []
+            result.append(item)
+        return result
+
+    def get_style_suggestion(self, suggestion_id: int) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM style_suggestions WHERE id = ?", (int(suggestion_id),)
+            ).fetchone()
+        if row is None:
+            return None
+        item = dict(row)
+        try:
+            item["evidence"] = json.loads(item.get("evidence") or "[]")
+        except json.JSONDecodeError:
+            item["evidence"] = []
+        return item
+
+    def update_style_suggestion(self, suggestion_id: int, status: str) -> bool:
+        now = int(time.time())
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE style_suggestions SET status = ?, updated_at = ? WHERE id = ?",
+                (str(status), now, int(suggestion_id)),
+            )
             self._conn.commit()
             return cur.rowcount > 0
 

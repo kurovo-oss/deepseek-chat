@@ -42,6 +42,7 @@ def test_defaults(tmp_path):
     assert settings.window_char_budget == int(4000 / 0.6)
     assert settings.memory_pending_inject is False
     assert settings.goals_enabled is False
+    assert settings.style_review_enabled is False
 
 
 def test_memory_pending_inject_can_be_enabled(tmp_path):

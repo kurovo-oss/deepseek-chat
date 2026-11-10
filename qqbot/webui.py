@@ -815,6 +815,36 @@ class WebUI:
         self._audit("cancel_goal_action", target=str(action_id))
         return {"ok": True, "action": action}
 
+    def api_style_suggestions(self) -> dict:
+        return {
+            "items": self.engine.store.list_style_suggestions(status="suggested", limit=20)
+        }
+
+    def api_style_review(self, body: dict) -> dict:
+        from . import style_review as style_review_mod
+
+        created = style_review_mod.review(
+            self.engine.store, self.engine.llm, self.settings
+        )
+        self._audit("style_review", result=f"{len(created)} suggestions")
+        return {"ok": True, "created": created}
+
+    def api_style_apply(self, body: dict) -> dict:
+        from . import style_review as style_review_mod
+
+        suggestion_id = _as_int(body.get("id"), "建议编号", 1, 10**9)
+        result = style_review_mod.apply(self.engine.store, suggestion_id)
+        self._audit("apply_style", target=str(suggestion_id))
+        return result
+
+    def api_style_dismiss(self, body: dict) -> dict:
+        from . import style_review as style_review_mod
+
+        suggestion_id = _as_int(body.get("id"), "建议编号", 1, 10**9)
+        result = style_review_mod.dismiss(self.engine.store, suggestion_id)
+        self._audit("dismiss_style", target=str(suggestion_id))
+        return result
+
     def api_goal_review(self, body: dict) -> dict:
         """手动让她想一次；只写候选目标，不执行任何动作。"""
         from . import goals as goals_mod
@@ -1105,6 +1135,8 @@ def make_handler(app: WebUI):
                     self._json(app.api_onboarding())
                 elif path == "/api/goals":
                     self._json(app.api_goals())
+                elif path == "/api/styles":
+                    self._json(app.api_style_suggestions())
                 elif path == "/health":
                     self._json({"ok": True})
                 else:
@@ -1144,6 +1176,12 @@ def make_handler(app: WebUI):
                     self._json(app.api_goal_approve(body))
                 elif path == "/api/goals/action/cancel":
                     self._json(app.api_goal_cancel(body))
+                elif path == "/api/styles/review":
+                    self._json(app.api_style_review(body))
+                elif path == "/api/styles/apply":
+                    self._json(app.api_style_apply(body))
+                elif path == "/api/styles/dismiss":
+                    self._json(app.api_style_dismiss(body))
                 elif path == "/api/persona/preview":
                     self._json(app.api_persona_preview(body))
                 elif path == "/api/persona/apply":

@@ -348,6 +348,11 @@ hr{border:0;border-top:1px dashed rgba(198,105,136,.12);margin:8px 0}
 .goal-preview-label{display:block;margin-bottom:5px;font-size:9px;color:#a96a18}
 .goal-preview-text{margin:0;font-size:11px;line-height:1.7;color:#4a2334}
 .goal-preview .memory-actions{margin-top:8px}
+.style-suggestions{display:grid;gap:8px;margin:0 0 14px;padding:12px;border:1px solid rgba(217,95,136,.16);border-radius:14px;background:rgba(255,201,217,.08)}
+.style-suggestion-title{margin:0 0 2px;font-size:10px;color:#8a3a55}
+.style-suggestion{padding:10px 11px;border:1px solid rgba(198,105,136,.12);border-radius:10px;background:rgba(255,255,255,.58)}
+.style-suggestion-head{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.style-suggestion-text{margin:0;font-size:11px;line-height:1.7;color:#4a2334}
 .memory-card-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
 .memory-kind{font-size:9px;letter-spacing:.08em;color:var(--cyan);border:1px solid rgba(217,95,136,.24);border-radius:999px;padding:3px 7px;white-space:nowrap}
 .memory-badge{font-size:9px;color:#9a6414;border:1px solid rgba(154,100,20,.3);border-radius:999px;padding:3px 7px;white-space:nowrap}

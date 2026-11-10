@@ -401,7 +401,12 @@ def main(argv: list[str] | None = None) -> int:
         start_watchdog(engine.sender, settings.adapter_watchdog_seconds, stop_event)
 
     start_replayer(engine, engine.store, settings, stop_event)
-    if settings.backup_enabled or settings.recap_enabled or settings.goals_enabled:
+    if (
+        settings.backup_enabled
+        or settings.recap_enabled
+        or settings.goals_enabled
+        or settings.style_review_enabled
+    ):
         threading.Thread(
             target=engine.background_loop, args=(stop_event,), name="background", daemon=True
         ).start()
