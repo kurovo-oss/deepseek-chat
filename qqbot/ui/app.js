@@ -385,6 +385,7 @@
       actions.append(goalActionButton('先放着', '', () => setGoalStatus(item, 'paused')));
     } else if (item.status === 'active') {
       actions.append(goalActionButton('准备主动', 'primary-btn', () => prepareGoalAction(item)));
+      actions.append(goalActionButton('记笔记', '', () => saveGoalNote(item)));
       actions.append(goalActionButton('暂停', '', () => setGoalStatus(item, 'paused')));
       actions.append(goalActionButton('完成', '', () => setGoalStatus(item, 'done')));
     } else if (item.status === 'paused') {
@@ -395,6 +396,15 @@
     }
     if (actions.childNodes.length) card.append(actions);
     return card;
+  }
+
+  async function saveGoalNote(item) {
+    try {
+      await api('/api/goals/note', { method: 'POST', body: { id: item.id } });
+      toast('记到她的私有小本子里了，不会发出去');
+    } catch (err) {
+      toast(err.message, true);
+    }
   }
 
   async function prepareGoalAction(item) {

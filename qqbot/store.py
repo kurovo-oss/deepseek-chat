@@ -126,6 +126,14 @@ CREATE TABLE IF NOT EXISTS style_suggestions (
 );
 CREATE INDEX IF NOT EXISTS idx_style_suggestions_status ON style_suggestions(status);
 
+CREATE TABLE IF NOT EXISTS notes (
+  id          INTEGER PRIMARY KEY,
+  goal_id     INTEGER,
+  text        TEXT NOT NULL,
+  created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_notes_goal ON notes(goal_id);
+
 CREATE TABLE IF NOT EXISTS proactive_events (
   id          INTEGER PRIMARY KEY,
   kind        TEXT NOT NULL,
@@ -1273,6 +1281,28 @@ class Store:
             )
             self._conn.commit()
             return cur.rowcount > 0
+
+    def add_note(self, goal_id: int | None, text: str, created_at: int | None = None) -> int:
+        now = int(created_at if created_at is not None else time.time())
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO notes(goal_id, text, created_at) VALUES (?,?,?)",
+                (int(goal_id) if goal_id else None, str(text), now),
+            )
+            self._conn.commit()
+            return int(cur.lastrowid)
+
+    def list_notes(self, goal_id: int | None = None, limit: int = 50) -> list[dict]:
+        if goal_id is None:
+            sql, args = "SELECT * FROM notes ORDER BY id DESC LIMIT ?", (max(1, int(limit)),)
+        else:
+            sql, args = (
+                "SELECT * FROM notes WHERE goal_id = ? ORDER BY id DESC LIMIT ?",
+                (int(goal_id), max(1, int(limit))),
+            )
+        with self._lock:
+            rows = self._conn.execute(sql, args).fetchall()
+        return [dict(row) for row in rows]
 
     def add_outcome(self, action_id: int, signal: str, note: str = "", created_at: int | None = None) -> int:
         now = int(created_at if created_at is not None else time.time())

@@ -85,6 +85,27 @@ def test_approve_respects_gate_and_keeps_action_pending(tmp_path):
     assert engine.proactive_scheduler.sent == []
 
 
+def test_save_note_is_local_only(tmp_path):
+    _settings, store, engine, goal_id = _env(tmp_path)
+    service = GoalActionService(engine)
+
+    result = service.save_note(goal_id)
+
+    assert result["ok"] is True
+    assert store.list_notes(goal_id)[0]["text"].startswith("问问他面试结果")
+    assert store.list_goal_actions(status="done")[0]["action"] == "save_note"
+    assert engine.proactive_scheduler.sent == []
+
+
+def test_tool_allowlist_keeps_external_schedule_disabled():
+    tools = GoalActionService.available_tools()
+
+    assert tools["send_message"]["enabled"] is True
+    assert tools["send_message"]["approval"] == "confirm"
+    assert tools["save_note"]["enabled"] is True
+    assert tools["schedule_checkin"]["enabled"] is False
+
+
 def test_candidate_goal_cannot_prepare_action(tmp_path):
     _settings, _store, engine, goal_id = _env(tmp_path, status="candidate")
 

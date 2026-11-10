@@ -797,6 +797,17 @@ class WebUI:
 
         return GoalActionService(self.engine)
 
+    def api_goal_tools(self) -> dict:
+        from .goal_actions import GoalActionService
+
+        return {"items": GoalActionService.available_tools()}
+
+    def api_goal_note(self, body: dict) -> dict:
+        goal_id = _as_int(body.get("id"), "目标编号", 1, 10**9)
+        result = self._action_service().save_note(goal_id)
+        self._audit("save_goal_note", target=str(goal_id))
+        return result
+
     def api_goal_prepare(self, body: dict) -> dict:
         goal_id = _as_int(body.get("id"), "目标编号", 1, 10**9)
         action = self._action_service().prepare(goal_id)
@@ -1137,6 +1148,8 @@ def make_handler(app: WebUI):
                     self._json(app.api_goals())
                 elif path == "/api/styles":
                     self._json(app.api_style_suggestions())
+                elif path == "/api/goals/tools":
+                    self._json(app.api_goal_tools())
                 elif path == "/health":
                     self._json({"ok": True})
                 else:
@@ -1172,6 +1185,8 @@ def make_handler(app: WebUI):
                     self._json(app.api_goal_review(body))
                 elif path == "/api/goals/action/prepare":
                     self._json(app.api_goal_prepare(body))
+                elif path == "/api/goals/note":
+                    self._json(app.api_goal_note(body))
                 elif path == "/api/goals/action/approve":
                     self._json(app.api_goal_approve(body))
                 elif path == "/api/goals/action/cancel":

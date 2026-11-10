@@ -28,10 +28,45 @@ def _prompt(settings) -> str:
 
 
 class GoalActionService:
+    TOOLS = {
+        "send_message": {"enabled": True, "approval": "confirm"},
+        "save_note": {"enabled": True, "approval": "auto", "external": False},
+        "schedule_checkin": {"enabled": False, "approval": "confirm", "external": False},
+    }
+
     def __init__(self, engine) -> None:
         self.engine = engine
         self.store = engine.store
         self.settings = engine.settings
+
+    @classmethod
+    def available_tools(cls) -> dict:
+        return {name: dict(meta) for name, meta in cls.TOOLS.items()}
+
+    def save_note(self, goal_id: int, now: int | None = None) -> dict:
+        """写一条只在本机的私人笔记，不发 QQ、不改记忆。"""
+        goal = self.store.get_goal(int(goal_id))
+        if goal is None:
+            raise ValueError("这个目标已经不在了")
+        text = "；".join(
+            part for part in (str(goal.get("title") or ""), str(goal.get("why") or "")) if part
+        )[:MAX_TEXT]
+        if not text:
+            raise ValueError("这个目标还没有内容")
+        stamp = int(now if now is not None else time.time())
+        note_id = self.store.add_note(int(goal_id), text, created_at=stamp)
+        action_id = self.store.add_goal_action(
+            int(goal_id),
+            "save_note",
+            payload={"note_id": note_id, "text": text},
+            run_at=stamp,
+            status="done",
+            approval="auto",
+            created_at=stamp,
+        )
+        self.store.update_goal_action(int(action_id), result="note")
+        self.store.add_outcome(int(action_id), "note", created_at=stamp)
+        return {"ok": True, "note_id": note_id, "action_id": action_id, "text": text}
 
     def _compose(self, goal: dict) -> str | None:
         messages = self.engine._build_messages(
