@@ -16,6 +16,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from . import memory_epoch
+
 log = logging.getLogger("qqbot")
 
 RECENT_KEEP = 40  # 最近这么多条永远不摘要（大致就是上下文窗口大小）
@@ -83,6 +85,9 @@ def note(settings: Any, session: str, now: float | None = None) -> str:
     recap = get(settings, session)
     if not recap.text.strip():
         return ""
+    cutoff = memory_epoch.read(settings.base_dir)
+    if cutoff and recap.at < cutoff:
+        return ""
     stamp = now if now is not None else time.time()
     if recap.at and stamp - recap.at > STALE_SECONDS:
         return ""
@@ -123,6 +128,9 @@ def tick(engine: Any, session: str, now: float | None = None) -> str | None:
     """
     settings = engine.settings
     rows = engine.store.recent_messages(session, RECENT_KEEP + 120)
+    cutoff = memory_epoch.read(settings.base_dir)
+    if cutoff:
+        rows = [row for row in rows if int(row.get("created_at") or 0) >= cutoff]
     recap = get(settings, session)
     todo = pending(rows, recap.upto_id)
     if len(todo) < MIN_PENDING:

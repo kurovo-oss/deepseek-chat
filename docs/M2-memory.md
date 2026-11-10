@@ -248,6 +248,7 @@ CREATE TABLE IF NOT EXISTS dream_log (
 - 偏好卡和普通记忆卡一样参与权重、预算和 `/pin`，但不会把用户原话写成事实。
 - `tools\python\python.exe scripts\memory-doctor.py` 只读体检；加 `--clean-pending` / `--clean-derived` / `--reset-all` 并配 `--apply` 才执行，执行前会自动备份到 `backups\memory-doctor-*`。
 - 清理前先停机器人；`--reset-all` 会清空消息、卡片、日摘要、前情和记忆本，保留 `.env`、人格文件和 `data/persona/`。
+- `--clean-pending` / `--clean-derived` 会写 `data/memory-clean-at` 时间点：旧消息仍留在库里可查，但不再参与新的抽取、摘要、梦、前情、原话召回和上下文，避免清完又被旧测试重新生成。删掉这个文件就恢复全部历史。
 
 ## 9. 配置项
 

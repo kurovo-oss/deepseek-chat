@@ -15,6 +15,7 @@ import re
 import time
 
 from . import growth
+from . import memory_epoch
 
 log = logging.getLogger("qqbot")
 
@@ -110,7 +111,9 @@ def reflect(store, llm, settings, now: int | None = None) -> list[str]:
     if not getattr(settings, "reflect_enabled", False):
         return []
     stamp = int(now if now is not None else time.time())
-    events = growth.recent(store, since=stamp - 86400, limit=40)
+    cutoff = memory_epoch.read(settings.base_dir)
+    since = max(stamp - 86400, cutoff)
+    events = growth.recent(store, since=since, limit=40)
 
     event_lines = []
     for row in events:
@@ -119,7 +122,7 @@ def reflect(store, llm, settings, now: int | None = None) -> list[str]:
         )
         event_lines.append(f"{who}：{str(row.get('text') or '')[:80]}")
 
-    said_rows = store.messages_between(stamp - 86400, stamp + 1, limit=60)
+    said_rows = store.messages_between(since, stamp + 1, limit=60)
     said = []
     for row in said_rows:
         text = str(row.get("content") or "").replace("\n", " ")[:60]

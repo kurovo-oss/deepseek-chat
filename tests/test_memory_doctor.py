@@ -62,6 +62,7 @@ def test_clean_pending_dry_run_then_apply(tmp_path):
     assert result["removed"] == 1
     assert result["after"]["cards_pending"] == 0
     assert result["after"]["cards_active"] == 1
+    assert result["after"]["clean_mark"] > 0
     assert (Path(result["backup"]) / "chat.db").is_file()
 
 
@@ -75,6 +76,7 @@ def test_clean_derived_keeps_database(tmp_path):
     assert result["after"]["daily_files"] == 0
     assert result["after"]["journal_chars"] == 0
     assert result["after"]["recap_exists"] is False
+    assert result["after"]["clean_mark"] > 0
     assert paths["db_path"].is_file()
     assert (Path(result["backup"]) / "daily" / "2026-11-10.md").is_file()
 

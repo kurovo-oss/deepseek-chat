@@ -15,6 +15,7 @@ from datetime import datetime
 from difflib import SequenceMatcher
 
 from .formatting import fix_address
+from . import memory_epoch
 
 log = logging.getLogger("qqbot")
 
@@ -468,6 +469,9 @@ class Memory:
 
         cards = self.store.list_cards(status="active", limit=80)
         recent = self.store.recent_messages(session, 6)
+        cutoff = memory_epoch.read(self.settings.base_dir)
+        if cutoff:
+            recent = [row for row in recent if int(row.get("created_at") or 0) >= cutoff]
         if not recent:
             return 0
 
@@ -579,6 +583,9 @@ class Memory:
         window_key = f"window_start:{session}"
         window_start = int(self.store.get_cursor(window_key, "0") or 0)
         history = self.store.recent_messages_after(session, window_start, limit=400)
+        cutoff = memory_epoch.read(self.settings.base_dir)
+        if cutoff:
+            history = [row for row in history if int(row.get("created_at") or 0) >= cutoff]
         total = sum(len(str(item.get("content") or "")) for item in history)
         if total <= self.settings.context_soft_char_budget:
             return False

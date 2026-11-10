@@ -110,9 +110,11 @@ def _similar(left: str, right: str) -> float:
     return SequenceMatcher(None, _norm(left), _norm(right)).ratio()
 
 
-def self_view(store, limit: int = 4, max_chars: int = 100) -> list[str]:
+def self_view(
+    store, limit: int = 4, max_chars: int = 100, since: int = 0
+) -> list[str]:
     """她最近想通的、或者被推翻后改口的那些话。"""
-    rows = recent(store, limit=60)
+    rows = recent(store, limit=60, since=since or None)
     picked: list[str] = []
     for row in rows:
         if row["kind"] not in ("self", "turn") or row["salience"] < 0.55:
@@ -128,9 +130,11 @@ def self_view(store, limit: int = 4, max_chars: int = 100) -> list[str]:
     return list(reversed(picked))
 
 
-def beliefs(store, min_count: int = 2, limit: int = 3, max_chars: int = 90) -> list[str]:
+def beliefs(
+    store, min_count: int = 2, limit: int = 3, max_chars: int = 90, since: int = 0
+) -> list[str]:
     """被自己说过两次以上的，才算固化下来的认知。"""
-    rows = recent(store, limit=200)
+    rows = recent(store, limit=200, since=since or None)
     texts: list[tuple[str, str]] = []
     for row in rows:
         if row["kind"] not in ("self", "turn"):
@@ -153,11 +157,11 @@ def beliefs(store, min_count: int = 2, limit: int = 3, max_chars: int = 90) -> l
     return result
 
 
-def persona_block(store, budget: int = 300) -> str:
+def persona_block(store, budget: int = 300, since: int = 0) -> str:
     """进上下文的那一小段：她"是谁"里靠经历长出来的部分。"""
     lines: list[str] = []
-    fixed = beliefs(store)
-    fresh = self_view(store)
+    fixed = beliefs(store, since=since)
+    fresh = self_view(store, since=since)
     if fixed:
         lines.append("【你已经认定的事】")
         # 90 字和 100 字截断后字符串不等，得按相似度去重

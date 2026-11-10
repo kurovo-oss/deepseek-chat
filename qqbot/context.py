@@ -17,6 +17,7 @@ from . import exemplars as exemplars_mod
 from . import growth as growth_mod
 from . import life as life_mod
 from . import memepedia as memepedia_mod
+from . import memory_epoch
 from . import memes as memes_mod
 from . import persona as persona_mod
 from . import recap as recap_mod
@@ -42,6 +43,9 @@ class ContextMixin:
         window_start = int(self.store.get_cursor(self._window_key(session), "0") or 0)
         limit = self.settings.history_max_turns * 2
         history = self.store.recent_messages_after(session, window_start, limit)
+        cutoff = memory_epoch.read(self.settings.base_dir)
+        if cutoff:
+            history = [row for row in history if int(row.get("created_at") or 0) >= cutoff]
 
         budget = self.settings.context_hard_char_budget
         selected: list[dict] = []
@@ -163,7 +167,9 @@ class ContextMixin:
                 )
 
         if self.settings.growth_enabled and self.store is not None:
-            persona = growth_mod.persona_block(self.store)
+            persona = growth_mod.persona_block(
+                self.store, since=memory_epoch.read(self.settings.base_dir)
+            )
             if persona:
                 sections.append(budget_mod.Section("你自己", persona, priority=74, quota=320))
 
@@ -276,6 +282,9 @@ class ContextMixin:
         except Exception:  # noqa: BLE001 - 召回是加分项，失败就当没想起来
             log.exception("原话召回失败")
             return ""
+        cutoff = memory_epoch.read(self.settings.base_dir)
+        if cutoff:
+            rows = [row for row in rows if int(row.get("created_at") or 0) >= cutoff]
         if not rows:
             return ""
 

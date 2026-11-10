@@ -28,6 +28,7 @@ from .memory import crossed_day
 
 from . import facts as facts_mod
 from . import growth as growth_mod
+from . import memory_epoch
 from . import reflect as reflect_mod
 
 log = logging.getLogger("qqbot")
@@ -134,10 +135,19 @@ class Dreamer:
         seen = 0
         batches = 0
 
+        cutoff = memory_epoch.read(self.settings.base_dir)
         while batches < MAX_DREAM_BATCHES:
             messages = self.store.messages_after_id(after_id, DREAM_BATCH)
             if not messages:
                 break
+            if cutoff:
+                raw = messages
+                messages = [row for row in raw if int(row.get("created_at") or 0) >= cutoff]
+                if not messages:
+                    # 旧消息不再参与新的记忆生成，但游标要往前走，避免每晚重扫。
+                    after_id = int(raw[-1]["id"])
+                    self.store.set_cursor(DREAM_CURSOR, str(after_id))
+                    continue
 
             cards = self.store.list_cards(status="active", limit=MAX_CARDS_INLINE)
             prompt = (

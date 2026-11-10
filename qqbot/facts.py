@@ -16,6 +16,8 @@ import re
 import time
 from difflib import SequenceMatcher
 
+from . import memory_epoch
+
 log = logging.getLogger("qqbot")
 
 MAX_OBJECT = 60
@@ -434,6 +436,9 @@ def extract(store, llm, settings, now: int | None = None, hours: int = 24) -> li
         return []
     stamp = _now(now)
     rows = store.messages_between(stamp - hours * 3600, stamp + 1, limit=80)
+    cutoff = memory_epoch.read(settings.base_dir)
+    if cutoff:
+        rows = [row for row in rows if int(row.get("created_at") or 0) >= cutoff]
     dialog = []
     evidence = []
     for row in rows:

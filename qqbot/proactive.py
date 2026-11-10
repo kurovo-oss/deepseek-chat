@@ -25,6 +25,7 @@ import time
 from datetime import datetime
 
 from .llm import LLMError
+from . import memory_epoch
 from .mood import MISS_LIMIT, TIRED_LIMIT
 
 log = logging.getLogger("qqbot")
@@ -113,6 +114,9 @@ class ProactiveScheduler:
                 return None, "刚找过他"
 
         last_user = self.store.last_message_time(self.session, role="user")
+        cutoff = memory_epoch.read(settings.base_dir)
+        if cutoff and last_user is not None and last_user < cutoff:
+            last_user = None
         if last_user is not None and now - last_user < settings.proactive_quiet_minutes * 60:
             return None, "他刚说话"
 

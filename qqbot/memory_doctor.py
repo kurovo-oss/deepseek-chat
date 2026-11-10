@@ -13,6 +13,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from . import memory_epoch
+
 MEMORY_FILES = ("journal.md", "recap.json")
 
 
@@ -62,6 +64,7 @@ def inspect(
         "daily_files": len(list(daily_dir.glob("*.md"))) if daily_dir.is_dir() else 0,
         "journal_chars": 0,
         "recap_exists": recap_file.exists(),
+        "clean_mark": memory_epoch.read(Path(db_path).parent.parent),
     }
     if journal_file.exists():
         try:
@@ -160,6 +163,7 @@ def clean_pending(
     if not apply:
         return result
     result["backup"] = str(backup(db_path, daily_dir, journal_file, recap_file, backup_dir))
+    memory_epoch.mark(Path(db_path).parent.parent)
     conn = _connect(Path(db_path))
     if conn is None:
         result["removed"] = 0
@@ -190,6 +194,7 @@ def clean_derived(
     if not apply:
         return result
     target = backup(db_path, daily_dir, journal_file, recap_file, backup_dir)
+    memory_epoch.mark(Path(db_path).parent.parent)
     result["backup"] = str(target)
     removed = []
     for path in (Path(journal_file), Path(recap_file), Path(daily_dir)):

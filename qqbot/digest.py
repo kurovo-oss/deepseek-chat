@@ -18,6 +18,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from .formatting import fix_address
+from . import memory_epoch
 
 log = logging.getLogger("qqbot")
 
@@ -94,6 +95,9 @@ def generate(store, llm, settings, day: date) -> str | None:
     """生成某天的摘要并落盘；那天没说话就返回 None。"""
     start, end = bounds(day)
     rows = store.messages_between(start, end)
+    cutoff = memory_epoch.read(settings.base_dir)
+    if cutoff:
+        rows = [row for row in rows if int(row.get("created_at") or 0) >= cutoff]
     body = format_messages(rows)
     if not body.strip():
         return None
@@ -126,9 +130,12 @@ def ensure_recent(store, llm, settings, days: int | None = None, clock=time.time
     """补最近几天缺的摘要。返回生成了几篇。"""
     count = days if days is not None else int(getattr(settings, "digest_catchup_days", 3))
     today = day_of(clock())
+    cutoff = memory_epoch.read(settings.base_dir)
     made = 0
     for offset in range(count):
         day = today - timedelta(days=offset)
+        if cutoff and bounds(day)[1] <= cutoff:
+            continue
         if read(settings, day) is not None:
             continue
         try:
@@ -157,6 +164,9 @@ def recent_text(settings, days: int | None = None, today: date | None = None) ->
         return ""
     count = days if days is not None else int(getattr(settings, "digest_days_in_prompt", 3))
     entries = collect(settings, count, today)
+    cutoff = memory_epoch.read(settings.base_dir)
+    if cutoff:
+        entries = [item for item in entries if bounds(item[0])[1] > cutoff]
     if not entries:
         return ""
     budget = int(getattr(settings, "digest_in_prompt_chars", 600))
