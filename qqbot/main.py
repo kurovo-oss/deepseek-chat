@@ -401,7 +401,7 @@ def main(argv: list[str] | None = None) -> int:
         start_watchdog(engine.sender, settings.adapter_watchdog_seconds, stop_event)
 
     start_replayer(engine, engine.store, settings, stop_event)
-    if settings.backup_enabled or settings.recap_enabled:
+    if settings.backup_enabled or settings.recap_enabled or settings.goals_enabled:
         threading.Thread(
             target=engine.background_loop, args=(stop_event,), name="background", daemon=True
         ).start()
@@ -422,6 +422,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         # /proactive 手动触发，方便立刻验证效果（不用等 72 小时）
         engine.proactive_trigger = scheduler.force
+        engine.proactive_scheduler = scheduler
         log.info(
             "主动消息已启用：每天最多 %d 条，%d–%d 点，间隔 ≥%.0f 小时，静默 %.0f 小时触发",
             settings.proactive_max_per_day,

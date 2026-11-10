@@ -1164,6 +1164,20 @@ class Store:
             self._conn.commit()
             return int(cur.lastrowid)
 
+    def get_goal_action(self, action_id: int) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM goal_actions WHERE id = ?", (int(action_id),)
+            ).fetchone()
+        if row is None:
+            return None
+        item = dict(row)
+        try:
+            item["payload"] = json.loads(item.get("payload") or "{}")
+        except json.JSONDecodeError:
+            item["payload"] = {}
+        return item
+
     def list_goal_actions(self, status: str | None = None, limit: int = 100) -> list[dict]:
         sql = "SELECT * FROM goal_actions"
         args: list = []

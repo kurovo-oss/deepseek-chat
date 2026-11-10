@@ -344,6 +344,10 @@ hr{border:0;border-top:1px dashed rgba(198,105,136,.12);margin:8px 0}
 .goal-badge.active{color:#2f8f68;border-color:rgba(47,143,104,.28);background:rgba(47,143,104,.08)}
 .goal-badge.candidate{color:#a96a18;border-color:rgba(169,106,24,.24);background:rgba(169,106,24,.06)}
 .goal-badge.paused{color:#8f6275;background:rgba(143,98,117,.06)}
+.goal-preview{margin-top:10px;padding:10px 11px;border:1px dashed rgba(217,95,136,.28);border-radius:10px;background:rgba(217,95,136,.035)}
+.goal-preview-label{display:block;margin-bottom:5px;font-size:9px;color:#a96a18}
+.goal-preview-text{margin:0;font-size:11px;line-height:1.7;color:#4a2334}
+.goal-preview .memory-actions{margin-top:8px}
 .memory-card-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
 .memory-kind{font-size:9px;letter-spacing:.08em;color:var(--cyan);border:1px solid rgba(217,95,136,.24);border-radius:999px;padding:3px 7px;white-space:nowrap}
 .memory-badge{font-size:9px;color:#9a6414;border:1px solid rgba(154,100,20,.3);border-radius:999px;padding:3px 7px;white-space:nowrap}

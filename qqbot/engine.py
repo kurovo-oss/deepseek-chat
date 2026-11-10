@@ -104,6 +104,7 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
         self.runtime = runtime
         # 主动消息调度器建好后由 main 注入：/proactive 用它手动试一句
         self.proactive_trigger = None
+        self.proactive_scheduler = None
         # 做梦器同样由 main 注入：/dream 手动整理一次
         self.dreamer = None
         # 情绪/驱力状态由 main 注入：没配就当没有，clone 也能跑

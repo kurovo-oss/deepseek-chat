@@ -776,7 +776,8 @@ class WebUI:
             "paused": store.count_goals(status="paused"),
             "dropped": store.count_goals(status="dropped"),
         }
-        return {"items": items, "counts": counts}
+        actions = store.list_goal_actions(status="waiting_approval", limit=50)
+        return {"items": items, "actions": actions, "counts": counts}
 
     def api_goal_update(self, body: dict) -> dict:
         goal_id = _as_int(body.get("id"), "目标编号", 1, 10**9)
@@ -790,6 +791,29 @@ class WebUI:
         self.engine.store.update_goal(goal_id, status=status)
         self._audit("update_goal", target=str(goal_id), result=status)
         return {"ok": True, "item": self.engine.store.get_goal(goal_id)}
+
+    def _action_service(self):
+        from .goal_actions import GoalActionService
+
+        return GoalActionService(self.engine)
+
+    def api_goal_prepare(self, body: dict) -> dict:
+        goal_id = _as_int(body.get("id"), "目标编号", 1, 10**9)
+        action = self._action_service().prepare(goal_id)
+        self._audit("prepare_goal_action", target=str(goal_id))
+        return {"ok": True, "action": action}
+
+    def api_goal_approve(self, body: dict) -> dict:
+        action_id = _as_int(body.get("id"), "动作编号", 1, 10**9)
+        action = self._action_service().approve(action_id)
+        self._audit("approve_goal_action", target=str(action_id))
+        return {"ok": True, "action": action}
+
+    def api_goal_cancel(self, body: dict) -> dict:
+        action_id = _as_int(body.get("id"), "动作编号", 1, 10**9)
+        action = self._action_service().cancel(action_id)
+        self._audit("cancel_goal_action", target=str(action_id))
+        return {"ok": True, "action": action}
 
     def api_goal_review(self, body: dict) -> dict:
         """手动让她想一次；只写候选目标，不执行任何动作。"""
@@ -1114,6 +1138,12 @@ def make_handler(app: WebUI):
                     self._json(app.api_goal_update(body))
                 elif path == "/api/goals/review":
                     self._json(app.api_goal_review(body))
+                elif path == "/api/goals/action/prepare":
+                    self._json(app.api_goal_prepare(body))
+                elif path == "/api/goals/action/approve":
+                    self._json(app.api_goal_approve(body))
+                elif path == "/api/goals/action/cancel":
+                    self._json(app.api_goal_cancel(body))
                 elif path == "/api/persona/preview":
                     self._json(app.api_persona_preview(body))
                 elif path == "/api/persona/apply":

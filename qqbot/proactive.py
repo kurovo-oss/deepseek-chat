@@ -300,6 +300,27 @@ class ProactiveScheduler:
             return self._fire_scheduled(stamp)
         return self._fire_followup(stamp)
 
+    def can_send(self, now: int | None = None) -> tuple[bool, str]:
+        """给已确认的目标动作用：只检查闸门，不生成内容。"""
+        stamp = int(now if now is not None else self._clock())
+        kind, reason = self._decide(stamp)
+        return kind is not None, reason
+
+    def send_approved(self, text: str, now: int | None = None) -> tuple[bool, str]:
+        """发送一条已经由主人确认的主动消息；仍然受全部主动消息闸门约束。"""
+        stamp = int(now if now is not None else self._clock())
+        body = str(text or "").strip()
+        if not body:
+            return False, "内容为空"
+        kind, reason = self._decide(stamp)
+        if kind is None:
+            return False, reason
+        ok = self.engine.send_proactive(self.session, body)
+        self.store.add_proactive_event(
+            "goal", body, trigger_at=stamp, status="sent" if ok else "failed"
+        )
+        return bool(ok), reason
+
     def force(self, now: int | None = None) -> str:
         """手动试一次（/proactive）：有到点事件就发事件，否则发 followup。"""
         stamp = int(now if now is not None else self._clock())

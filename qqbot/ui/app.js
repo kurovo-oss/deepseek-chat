@@ -350,7 +350,7 @@
     return button;
   }
 
-  function renderGoal(item) {
+  function renderGoal(item, pendingAction) {
     const card = el('article', `goal-card ${item.status || 'candidate'}`);
     const head = el('div', 'goal-card-head');
     head.append(el('span', 'memory-kind', goalKind(item.kind)));
@@ -366,11 +366,22 @@
     }
     meta.append(el('span', '', item.updated_at ? `更新 ${fmtTime(item.updated_at, true)}` : ''));
     card.append(meta);
+    if (pendingAction) {
+      const preview = el('div', 'goal-preview');
+      preview.append(el('span', 'goal-preview-label', '准备发给她的话'));
+      preview.append(el('p', 'goal-preview-text', (pendingAction.payload || {}).text || '（空）'));
+      const previewActions = el('div', 'memory-actions');
+      previewActions.append(goalActionButton('确认发送', 'primary-btn', () => approveGoalAction(pendingAction)));
+      previewActions.append(goalActionButton('取消', '', () => cancelGoalAction(pendingAction)));
+      preview.append(previewActions);
+      card.append(preview);
+    }
     const actions = el('div', 'memory-actions');
     if (item.status === 'candidate') {
       actions.append(goalActionButton('确认', 'primary-btn', () => setGoalStatus(item, 'active')));
       actions.append(goalActionButton('先放着', '', () => setGoalStatus(item, 'paused')));
     } else if (item.status === 'active') {
+      actions.append(goalActionButton('准备主动', 'primary-btn', () => prepareGoalAction(item)));
       actions.append(goalActionButton('暂停', '', () => setGoalStatus(item, 'paused')));
       actions.append(goalActionButton('完成', '', () => setGoalStatus(item, 'done')));
     } else if (item.status === 'paused') {
@@ -381,6 +392,36 @@
     }
     if (actions.childNodes.length) card.append(actions);
     return card;
+  }
+
+  async function prepareGoalAction(item) {
+    try {
+      await api('/api/goals/action/prepare', { method: 'POST', body: { id: item.id } });
+      toast('准备好一句话，确认后才会发送');
+      await loadGoals();
+    } catch (err) {
+      toast(err.message, true);
+    }
+  }
+
+  async function approveGoalAction(action) {
+    try {
+      await api('/api/goals/action/approve', { method: 'POST', body: { id: action.id } });
+      toast('已经发出去了');
+      await loadGoals();
+    } catch (err) {
+      toast(err.message, true);
+    }
+  }
+
+  async function cancelGoalAction(action) {
+    try {
+      await api('/api/goals/action/cancel', { method: 'POST', body: { id: action.id } });
+      toast('这次先不发了');
+      await loadGoals();
+    } catch (err) {
+      toast(err.message, true);
+    }
   }
 
   async function setGoalStatus(item, status, confirm = false) {
@@ -402,13 +443,14 @@
       const data = await api('/api/goals');
       const items = (data.items || []).filter((item) => item.status !== 'dropped');
       const counts = data.counts || {};
+      const byGoal = new Map((data.actions || []).map((action) => [String(action.goal_id), action]));
       $('#goal-count').textContent = `${items.length} 个 / 候选 ${counts.candidate ?? 0}`;
       list.replaceChildren();
       if (!items.length) {
         list.append(el('p', 'muted', '她还没有想做的事。可以点右上角「让她想一次」，或者在记忆页写几条偏好。'));
         return;
       }
-      items.forEach((item) => list.append(renderGoal(item)));
+      items.forEach((item) => list.append(renderGoal(item, byGoal.get(String(item.id)))));
     } catch (err) {
       list.replaceChildren(el('p', 'muted', err.message));
     }
