@@ -28,6 +28,7 @@ from . import talkstate as talkstate_mod
 from . import backup as backup_mod
 from . import capability as capability_mod
 from . import emoji as emoji_mod
+from . import goals as goals_mod
 from . import refusal as refusal_mod
 from . import search as search_mod
 from . import recall_guard
@@ -335,6 +336,12 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
                 recap_mod.tick(self, str(self.settings.allow_user_id), now=stamp)
             except Exception:  # noqa: BLE001 - 摘要坏了不能拖累聊天
                 log.exception("前情摘要异常")
+
+        if getattr(self.settings, "goals_enabled", False):
+            try:
+                goals_mod.tick(self.store, self.llm, self.settings, now=stamp)
+            except Exception:  # noqa: BLE001 - 目标复盘坏了不能拖累聊天
+                log.exception("目标复盘异常")
 
     def background_loop(self, stop_event: threading.Event) -> None:
         while not stop_event.is_set():

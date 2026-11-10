@@ -27,6 +27,7 @@
     overview: ['她今天怎么样', '首页'],
     chat: ['', '对话'],
     memory: ['她记住的事', '记忆'],
+    goals: ['她想做的事', '计划'],
     persona: ['她是谁，由你写', '人格'],
     config: ['把连接和边界调好', '配置'],
     logs: ['她都做了什么', '日志'],
@@ -123,6 +124,7 @@
     if (location.hash !== `#${page}`) history.replaceState(null, '', `#${page}`);
     if (page === 'chat') loadChat();
     if (page === 'memory') loadMemory();
+    if (page === 'goals') loadGoals();
     if (page === 'persona') loadPersona();
     if (page === 'config') loadSettings();
     if (page === 'logs') loadLogs();
@@ -315,6 +317,116 @@
     } catch (err) {
       $$('button', bar).forEach((button) => { button.disabled = false; });
       toast(err.message, true);
+    }
+  }
+
+  const GOAL_KIND = {
+    relationship: '关系',
+    self: '她自己',
+    curiosity: '好奇',
+    routine: '日常',
+    shared: '一起',
+  };
+  const GOAL_STATUS = {
+    candidate: '候选',
+    active: '进行中',
+    paused: '暂停',
+    done: '完成',
+    dropped: '已删除',
+  };
+
+  function goalKind(kind) {
+    return GOAL_KIND[kind] || kind || '目标';
+  }
+
+  function goalStatus(status) {
+    return GOAL_STATUS[status] || status || '候选';
+  }
+
+  function goalActionButton(text, cls, handler) {
+    const button = el('button', cls, text);
+    button.type = 'button';
+    button.addEventListener('click', handler);
+    return button;
+  }
+
+  function renderGoal(item) {
+    const card = el('article', `goal-card ${item.status || 'candidate'}`);
+    const head = el('div', 'goal-card-head');
+    head.append(el('span', 'memory-kind', goalKind(item.kind)));
+    head.append(el('span', `goal-badge ${item.status || 'candidate'}`, goalStatus(item.status)));
+    head.append(el('span', 'tag', `#${item.id}`));
+    card.append(head);
+    card.append(el('h3', 'goal-title', item.title || '（空目标）'));
+    if (item.why) card.append(el('p', 'goal-why', item.why));
+    const meta = el('div', 'memory-meta');
+    meta.append(el('span', '', `重要度 ${Number(item.priority || 0).toFixed(2)}`));
+    if ((item.evidence || []).length) {
+      meta.append(el('span', '', `证据 ${item.evidence.map((id) => `#${id}`).join(' ')}`));
+    }
+    meta.append(el('span', '', item.updated_at ? `更新 ${fmtTime(item.updated_at, true)}` : ''));
+    card.append(meta);
+    const actions = el('div', 'memory-actions');
+    if (item.status === 'candidate') {
+      actions.append(goalActionButton('确认', 'primary-btn', () => setGoalStatus(item, 'active')));
+      actions.append(goalActionButton('先放着', '', () => setGoalStatus(item, 'paused')));
+    } else if (item.status === 'active') {
+      actions.append(goalActionButton('暂停', '', () => setGoalStatus(item, 'paused')));
+      actions.append(goalActionButton('完成', '', () => setGoalStatus(item, 'done')));
+    } else if (item.status === 'paused') {
+      actions.append(goalActionButton('恢复', 'primary-btn', () => setGoalStatus(item, 'active')));
+    }
+    if (item.status !== 'dropped') {
+      actions.append(goalActionButton('删除', 'danger', () => setGoalStatus(item, 'dropped', true)));
+    }
+    if (actions.childNodes.length) card.append(actions);
+    return card;
+  }
+
+  async function setGoalStatus(item, status, confirm = false) {
+    if (confirm && !window.confirm(`删掉「${item.title}」这个目标？`)) return;
+    try {
+      await api('/api/goals/update', { method: 'POST', body: { id: item.id, status } });
+      toast(`目标已${status === 'active' ? '确认' : status === 'paused' ? '暂停' : status === 'done' ? '完成' : '删除'}`);
+      await loadGoals();
+    } catch (err) {
+      toast(err.message, true);
+    }
+  }
+
+  async function loadGoals() {
+    const list = $('#goal-list');
+    if (!list) return;
+    list.replaceChildren(el('p', 'muted', '加载中……'));
+    try {
+      const data = await api('/api/goals');
+      const items = (data.items || []).filter((item) => item.status !== 'dropped');
+      const counts = data.counts || {};
+      $('#goal-count').textContent = `${items.length} 个 / 候选 ${counts.candidate ?? 0}`;
+      list.replaceChildren();
+      if (!items.length) {
+        list.append(el('p', 'muted', '她还没有想做的事。可以点右上角「让她想一次」，或者在记忆页写几条偏好。'));
+        return;
+      }
+      items.forEach((item) => list.append(renderGoal(item)));
+    } catch (err) {
+      list.replaceChildren(el('p', 'muted', err.message));
+    }
+  }
+
+  async function reviewGoals() {
+    const button = $('#goal-review');
+    button.disabled = true;
+    button.textContent = '她在想…';
+    try {
+      const data = await api('/api/goals/review', { method: 'POST', body: {} });
+      toast((data.created || []).length ? `她想到了 ${data.created.length} 个候选计划` : '这次没有值得写下来的计划');
+      await loadGoals();
+    } catch (err) {
+      toast(err.message, true);
+    } finally {
+      button.disabled = false;
+      button.textContent = '让她想一次';
     }
   }
 
@@ -1121,6 +1233,8 @@
     $('#reload-chat').addEventListener('click', loadChat);
     $('#reload-memory').addEventListener('click', loadMemory);
     $('#add-preference').addEventListener('click', addPreference);
+    $('#reload-goals').addEventListener('click', loadGoals);
+    $('#goal-review').addEventListener('click', reviewGoals);
     let memorySearchTimer = null;
     $('#memory-search').addEventListener('input', () => {
       clearTimeout(memorySearchTimer);

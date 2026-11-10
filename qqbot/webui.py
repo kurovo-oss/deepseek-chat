@@ -767,6 +767,40 @@ class WebUI:
         self._audit("feedback", target=str(message_id), result=rating)
         return {"ok": True, "feedback_id": feedback_id, "card_id": card_id}
 
+    def api_goals(self) -> dict:
+        store = self.engine.store
+        items = store.list_goals(limit=100)
+        counts = {
+            "candidate": store.count_goals(status="candidate"),
+            "active": store.count_goals(status="active"),
+            "paused": store.count_goals(status="paused"),
+            "dropped": store.count_goals(status="dropped"),
+        }
+        return {"items": items, "counts": counts}
+
+    def api_goal_update(self, body: dict) -> dict:
+        goal_id = _as_int(body.get("id"), "目标编号", 1, 10**9)
+        goal = self.engine.store.get_goal(goal_id)
+        if goal is None:
+            raise ValueError("这个目标已经不在了")
+        status = str(body.get("status") or "").strip().lower()
+        allowed = {"candidate", "active", "paused", "done", "dropped"}
+        if status not in allowed:
+            raise ValueError("目标状态不正确")
+        self.engine.store.update_goal(goal_id, status=status)
+        self._audit("update_goal", target=str(goal_id), result=status)
+        return {"ok": True, "item": self.engine.store.get_goal(goal_id)}
+
+    def api_goal_review(self, body: dict) -> dict:
+        """手动让她想一次；只写候选目标，不执行任何动作。"""
+        from . import goals as goals_mod
+
+        created = goals_mod.review(
+            self.engine.store, self.engine.llm, self.settings
+        )
+        self._audit("goal_review", result=f"{len(created)} candidates")
+        return {"ok": True, "created": created, "items": self.engine.store.list_goals(limit=100)}
+
     def api_persona(self) -> dict:
         return read_persona(self.settings)
 
@@ -1045,6 +1079,8 @@ def make_handler(app: WebUI):
                     self._json(app.api_export_diagnostics())
                 elif path == "/api/onboarding":
                     self._json(app.api_onboarding())
+                elif path == "/api/goals":
+                    self._json(app.api_goals())
                 elif path == "/health":
                     self._json({"ok": True})
                 else:
@@ -1074,6 +1110,10 @@ def make_handler(app: WebUI):
                     self._json(app.api_memory_preference(body))
                 elif path == "/api/feedback":
                     self._json(app.api_feedback(body))
+                elif path == "/api/goals/update":
+                    self._json(app.api_goal_update(body))
+                elif path == "/api/goals/review":
+                    self._json(app.api_goal_review(body))
                 elif path == "/api/persona/preview":
                     self._json(app.api_persona_preview(body))
                 elif path == "/api/persona/apply":

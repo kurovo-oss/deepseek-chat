@@ -301,6 +301,11 @@ class Settings:
     extract_enabled: bool = True
     # 自动抽取出来的卡片默认只进记忆页，不直接进上下文；避免“猜的”被当事实
     memory_pending_inject: bool = False
+    # 目标系统：默认关闭自动复盘；手动“让她想一次”不依赖这个开关。
+    goals_enabled: bool = False
+    goals_review_hours: int = 20
+    goals_max_candidates: int = 2
+    goals_prompt_file: Path = Path("prompts/goals.md")
     decay_half_life_days: float = 30.0
     card_weight_threshold: float = 0.15
     card_inject_token_budget: int = 1500
@@ -533,6 +538,11 @@ class Settings:
             memory_enabled=_bool(env, "MEMORY_ENABLED", True),
             extract_enabled=_bool(env, "EXTRACT_ENABLED", True),
             memory_pending_inject=_bool(env, "MEMORY_PENDING_INJECT", False),
+            goals_enabled=_bool(env, "GOALS_ENABLED", False),
+            goals_review_hours=_int(env, "GOALS_REVIEW_HOURS", 20, minimum=1),
+            goals_max_candidates=_int(env, "GOALS_MAX_CANDIDATES", 2, minimum=1),
+            goals_prompt_file=base_dir
+            / env.get("GOALS_PROMPT_FILE", "prompts/goals.md").strip(),
             decay_half_life_days=half_life,
             card_weight_threshold=threshold,
             card_inject_token_budget=_int(env, "CARD_INJECT_TOKEN_BUDGET", 1500),

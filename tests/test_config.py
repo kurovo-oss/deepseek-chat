@@ -41,6 +41,7 @@ def test_defaults(tmp_path):
     assert settings.segment_delay_ms == 1500
     assert settings.window_char_budget == int(4000 / 0.6)
     assert settings.memory_pending_inject is False
+    assert settings.goals_enabled is False
 
 
 def test_memory_pending_inject_can_be_enabled(tmp_path):
@@ -53,6 +54,20 @@ def test_memory_pending_inject_can_be_enabled(tmp_path):
         tmp_path,
     )
     assert settings.memory_pending_inject is True
+
+
+def test_goals_can_be_enabled_without_forcing_actions(tmp_path):
+    settings = Settings.from_env(
+        {
+            "ALLOW_USER_ID": "123",
+            "MODEL_API_KEY": "k",
+            "GOALS_ENABLED": "true",
+            "GOALS_MAX_CANDIDATES": "1",
+        },
+        tmp_path,
+    )
+    assert settings.goals_enabled is True
+    assert settings.goals_max_candidates == 1
 
 
 def test_proactive_quiet_hours_config(tmp_path):

@@ -73,6 +73,49 @@ CREATE TABLE IF NOT EXISTS feedback (
 CREATE INDEX IF NOT EXISTS idx_feedback_message ON feedback(message_id);
 CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback(created_at);
 
+CREATE TABLE IF NOT EXISTS goals (
+  id          INTEGER PRIMARY KEY,
+  kind        TEXT NOT NULL,
+  title       TEXT NOT NULL,
+  why         TEXT NOT NULL DEFAULT '',
+  horizon     TEXT NOT NULL DEFAULT 'week',
+  priority    REAL NOT NULL DEFAULT 0.5,
+  status      TEXT NOT NULL DEFAULT 'candidate',
+  source      TEXT NOT NULL DEFAULT 'reflection',
+  evidence    TEXT NOT NULL DEFAULT '[]',
+  confidence  REAL NOT NULL DEFAULT 0.5,
+  due_at      INTEGER,
+  review_at   INTEGER,
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_goals_status ON goals(status, priority);
+CREATE INDEX IF NOT EXISTS idx_goals_due ON goals(due_at);
+
+CREATE TABLE IF NOT EXISTS goal_actions (
+  id          INTEGER PRIMARY KEY,
+  goal_id     INTEGER,
+  action      TEXT NOT NULL,
+  payload     TEXT NOT NULL DEFAULT '{}',
+  run_at      INTEGER,
+  status      TEXT NOT NULL DEFAULT 'pending',
+  approval    TEXT NOT NULL DEFAULT 'auto',
+  attempts    INTEGER NOT NULL DEFAULT 0,
+  result      TEXT NOT NULL DEFAULT '',
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_goal_actions_status ON goal_actions(status, run_at);
+
+CREATE TABLE IF NOT EXISTS outcomes (
+  id          INTEGER PRIMARY KEY,
+  action_id   INTEGER,
+  signal      TEXT NOT NULL,
+  note        TEXT NOT NULL DEFAULT '',
+  created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_outcomes_action ON outcomes(action_id);
+
 CREATE TABLE IF NOT EXISTS proactive_events (
   id          INTEGER PRIMARY KEY,
   kind        TEXT NOT NULL,
@@ -192,6 +235,9 @@ def trigrams(text: str, limit: int = 12) -> list[str]:
 _LEGACY_KIND = {"fact": "fact", "preference": "preference", "event": "event"}
 _CARD_UPDATABLE = frozenset(
     {"kind", "summary", "detail", "entities", "occurred_at", "importance", "status", "updated_at"}
+)
+_GOAL_UPDATABLE = frozenset(
+    {"kind", "title", "why", "horizon", "priority", "status", "evidence", "confidence", "due_at", "review_at", "updated_at"}
 )
 
 
@@ -418,6 +464,13 @@ class Store:
             )
             self._conn.commit()
             return int(cur.lastrowid)
+
+    def list_feedback(self, limit: int = 20) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM feedback ORDER BY id DESC LIMIT ?", (max(1, int(limit)),)
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def count_by_origin(self, origin: str) -> int:
         """发过多少条某类消息（语音/表情/画）——比数缓存文件准。"""
@@ -984,6 +1037,175 @@ class Store:
             )
             self._conn.commit()
             return int(cur.rowcount)
+
+    # ---------------- goals ----------------
+    @staticmethod
+    def _goal_row(row) -> dict:
+        item = dict(row)
+        try:
+            item["evidence"] = json.loads(item.get("evidence") or "[]")
+        except json.JSONDecodeError:
+            item["evidence"] = []
+        item["priority"] = float(item.get("priority") or 0)
+        item["confidence"] = float(item.get("confidence") or 0)
+        return item
+
+    def add_goal(
+        self,
+        kind: str,
+        title: str,
+        why: str = "",
+        horizon: str = "week",
+        priority: float = 0.5,
+        status: str = "candidate",
+        source: str = "reflection",
+        evidence: list[int] | None = None,
+        confidence: float = 0.5,
+        due_at: int | None = None,
+        review_at: int | None = None,
+        created_at: int | None = None,
+    ) -> int:
+        now = int(created_at if created_at is not None else time.time())
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO goals(kind, title, why, horizon, priority, status, source,"
+                " evidence, confidence, due_at, review_at, created_at, updated_at)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    kind,
+                    title,
+                    why,
+                    horizon,
+                    float(priority),
+                    status,
+                    source,
+                    json.dumps(evidence or []),
+                    float(confidence),
+                    due_at,
+                    review_at,
+                    now,
+                    now,
+                ),
+            )
+            self._conn.commit()
+            return int(cur.lastrowid)
+
+    def get_goal(self, goal_id: int) -> dict | None:
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM goals WHERE id = ?", (int(goal_id),)).fetchone()
+        return self._goal_row(row) if row else None
+
+    def list_goals(self, status: str | None = None, limit: int = 100) -> list[dict]:
+        sql = "SELECT * FROM goals"
+        args: list = []
+        if status:
+            sql += " WHERE status = ?"
+            args.append(status)
+        sql += " ORDER BY priority DESC, id DESC LIMIT ?"
+        args.append(max(1, int(limit)))
+        with self._lock:
+            rows = self._conn.execute(sql, args).fetchall()
+        return [self._goal_row(row) for row in rows]
+
+    def count_goals(self, status: str | None = None) -> int:
+        if status:
+            sql, args = "SELECT COUNT(*) AS n FROM goals WHERE status = ?", (status,)
+        else:
+            sql, args = "SELECT COUNT(*) AS n FROM goals", ()
+        with self._lock:
+            row = self._conn.execute(sql, args).fetchone()
+        return int(row["n"] or 0)
+
+    def update_goal(self, goal_id: int, **fields) -> bool:
+        updates = {k: v for k, v in fields.items() if k in _GOAL_UPDATABLE}
+        if not updates:
+            return False
+        if "evidence" in updates and isinstance(updates["evidence"], list):
+            updates["evidence"] = json.dumps(updates["evidence"])
+        if "priority" in updates:
+            updates["priority"] = float(updates["priority"])
+        if "confidence" in updates:
+            updates["confidence"] = float(updates["confidence"])
+        if "updated_at" not in updates:
+            updates["updated_at"] = int(time.time())
+        assignments = ", ".join(f"{key} = ?" for key in updates)
+        values = list(updates.values()) + [int(goal_id)]
+        with self._lock:
+            cur = self._conn.execute(f"UPDATE goals SET {assignments} WHERE id = ?", values)
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    def add_goal_action(
+        self,
+        goal_id: int,
+        action: str,
+        payload: dict | None = None,
+        run_at: int | None = None,
+        status: str = "pending",
+        approval: str = "auto",
+        created_at: int | None = None,
+    ) -> int:
+        now = int(created_at if created_at is not None else time.time())
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO goal_actions(goal_id, action, payload, run_at, status, approval,"
+                " created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+                (
+                    int(goal_id),
+                    action,
+                    json.dumps(payload or {}, ensure_ascii=False),
+                    run_at,
+                    status,
+                    approval,
+                    now,
+                    now,
+                ),
+            )
+            self._conn.commit()
+            return int(cur.lastrowid)
+
+    def list_goal_actions(self, status: str | None = None, limit: int = 100) -> list[dict]:
+        sql = "SELECT * FROM goal_actions"
+        args: list = []
+        if status:
+            sql += " WHERE status = ?"
+            args.append(status)
+        sql += " ORDER BY run_at ASC, id ASC LIMIT ?"
+        args.append(max(1, int(limit)))
+        with self._lock:
+            rows = self._conn.execute(sql, args).fetchall()
+        result = []
+        for row in rows:
+            item = dict(row)
+            try:
+                item["payload"] = json.loads(item.get("payload") or "{}")
+            except json.JSONDecodeError:
+                item["payload"] = {}
+            result.append(item)
+        return result
+
+    def update_goal_action(self, action_id: int, **fields) -> bool:
+        allowed = {"status", "attempts", "result", "run_at", "approval", "updated_at"}
+        updates = {k: v for k, v in fields.items() if k in allowed}
+        if not updates:
+            return False
+        updates.setdefault("updated_at", int(time.time()))
+        assignments = ", ".join(f"{key} = ?" for key in updates)
+        values = list(updates.values()) + [int(action_id)]
+        with self._lock:
+            cur = self._conn.execute(f"UPDATE goal_actions SET {assignments} WHERE id = ?", values)
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    def add_outcome(self, action_id: int, signal: str, note: str = "", created_at: int | None = None) -> int:
+        now = int(created_at if created_at is not None else time.time())
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO outcomes(action_id, signal, note, created_at) VALUES (?,?,?,?)",
+                (int(action_id), signal, note, now),
+            )
+            self._conn.commit()
+            return int(cur.lastrowid)
 
     def merge_cards(self, source_id: int, target_id: int) -> bool:
         """把信息少的卡并进信息多的那张：detail 合并、命中次数累加、源卡归档。

@@ -332,6 +332,18 @@ hr{border:0;border-top:1px dashed rgba(198,105,136,.12);margin:8px 0}
 .memory-hint{margin:0 0 14px;color:var(--muted);font-size:10px;line-height:1.7}
 .memory-list{display:grid;gap:10px}
 .memory-card{padding:15px 16px;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.55)}
+.goal-note{margin:0 0 12px;padding:10px 12px;border-left:2px solid rgba(217,95,136,.38);border-radius:0 9px 9px 0;background:rgba(217,95,136,.045);color:#85596a;font-size:10px;line-height:1.7}
+.goal-list{display:grid;gap:10px}
+.goal-card{padding:15px 16px;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.55)}
+.goal-card.active{border-color:rgba(47,143,104,.24);background:rgba(255,255,255,.65)}
+.goal-card.paused{opacity:.78}
+.goal-card-head{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+.goal-title{margin:0 0 6px;font-size:14px;line-height:1.5;color:#4a2334}
+.goal-why{margin:0 0 8px;font-size:10px;line-height:1.7;color:#85596a}
+.goal-badge{font-size:8px;padding:3px 7px;border-radius:99px;border:1px solid rgba(198,105,136,.2);color:#85596a}
+.goal-badge.active{color:#2f8f68;border-color:rgba(47,143,104,.28);background:rgba(47,143,104,.08)}
+.goal-badge.candidate{color:#a96a18;border-color:rgba(169,106,24,.24);background:rgba(169,106,24,.06)}
+.goal-badge.paused{color:#8f6275;background:rgba(143,98,117,.06)}
 .memory-card-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
 .memory-kind{font-size:9px;letter-spacing:.08em;color:var(--cyan);border:1px solid rgba(217,95,136,.24);border-radius:999px;padding:3px 7px;white-space:nowrap}
 .memory-badge{font-size:9px;color:#9a6414;border:1px solid rgba(154,100,20,.3);border-radius:999px;padding:3px 7px;white-space:nowrap}
