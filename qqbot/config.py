@@ -299,6 +299,8 @@ class Settings:
     # ---- 长期记忆（M2）----
     memory_enabled: bool = True
     extract_enabled: bool = True
+    # 自动抽取出来的卡片默认只进记忆页，不直接进上下文；避免“猜的”被当事实
+    memory_pending_inject: bool = False
     decay_half_life_days: float = 30.0
     card_weight_threshold: float = 0.15
     card_inject_token_budget: int = 1500
@@ -530,6 +532,7 @@ class Settings:
             background_interval_seconds=_int(env, "BACKGROUND_INTERVAL_SECONDS", 20, minimum=5),
             memory_enabled=_bool(env, "MEMORY_ENABLED", True),
             extract_enabled=_bool(env, "EXTRACT_ENABLED", True),
+            memory_pending_inject=_bool(env, "MEMORY_PENDING_INJECT", False),
             decay_half_life_days=half_life,
             card_weight_threshold=threshold,
             card_inject_token_budget=_int(env, "CARD_INJECT_TOKEN_BUDGET", 1500),

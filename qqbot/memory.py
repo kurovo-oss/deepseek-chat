@@ -427,16 +427,18 @@ class Memory:
             self.store.touch_cards([card["id"] for card in selected], int(now))
             parts.append(build_block(selected))
 
-        # 待确认的单独给一小份预算：不碰权重（被注入不该等于变可信），最多 4 条
-        pending_selected = select_cards(
-            pending,
-            now=now,
-            threshold=0.0,
-            char_budget=400,
-            half_life_days=self.settings.decay_half_life_days,
-        )
-        if pending_selected:
-            parts.append(build_pending_block(pending_selected[:4]))
+        # 待确认卡默认不进上下文：模型很容易把“听来的”当成事实。
+        # 需要旧行为时显式打开 MEMORY_PENDING_INJECT=1。
+        if getattr(self.settings, "memory_pending_inject", False):
+            pending_selected = select_cards(
+                pending,
+                now=now,
+                threshold=0.0,
+                char_budget=400,
+                half_life_days=self.settings.decay_half_life_days,
+            )
+            if pending_selected:
+                parts.append(build_pending_block(pending_selected[:4]))
 
         return "\n\n".join(part for part in parts if part)
 
@@ -486,7 +488,13 @@ class Memory:
 
         now = int(self._clock())
         ops = parse_ops(result.text, [card["id"] for card in cards])
-        applied = self._apply_ops(ops, cards)
+        message_ids = [int(row["id"]) for row in recent if row.get("id")]
+        applied = self._apply_ops(
+            ops,
+            cards,
+            source_from=min(message_ids) if message_ids else None,
+            source_to=max(message_ids) if message_ids else None,
+        )
         if applied:
             log.info("记忆抽取：应用 %d 条操作", applied)
 
@@ -502,7 +510,13 @@ class Memory:
             registered += 1
         return registered
 
-    def _apply_ops(self, ops: list[dict], cards: list[dict]) -> int:
+    def _apply_ops(
+        self,
+        ops: list[dict],
+        cards: list[dict],
+        source_from: int | None = None,
+        source_to: int | None = None,
+    ) -> int:
         applied = 0
         now = int(self._clock())
         for op in ops:
@@ -530,6 +544,8 @@ class Memory:
                     entities=op["entities"],
                     occurred_at=op["occurred_at"],
                     importance=op["importance"],
+                    source_from=source_from,
+                    source_to=source_to,
                     confirmed=False,  # 抽出来的先按"听来的"算，确认了才当真
                 )
                 applied += 1

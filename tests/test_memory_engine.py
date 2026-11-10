@@ -230,6 +230,8 @@ def test_extraction_adds_card(tmp_path):
     assert len(cards) == 1
     assert cards[0]["summary"] == "不喜欢被叫起床"
     assert cards[0]["importance"] == pytest.approx(0.7)
+    assert cards[0]["source_from"] is not None
+    assert cards[0]["source_to"] >= cards[0]["source_from"]
     ctx.store.close()
 
 

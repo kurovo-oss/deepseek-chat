@@ -62,6 +62,17 @@ CREATE INDEX IF NOT EXISTS idx_cards_kind   ON cards(kind, status);
 CREATE INDEX IF NOT EXISTS idx_cards_status ON cards(status);
 CREATE INDEX IF NOT EXISTS idx_cards_source ON cards(source_from, source_to);
 
+CREATE TABLE IF NOT EXISTS feedback (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  message_id  INTEGER,
+  rating      TEXT NOT NULL,
+  note        TEXT NOT NULL DEFAULT '',
+  card_id     INTEGER,
+  created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_feedback_message ON feedback(message_id);
+CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback(created_at);
+
 CREATE TABLE IF NOT EXISTS proactive_events (
   id          INTEGER PRIMARY KEY,
   kind        TEXT NOT NULL,
@@ -381,6 +392,32 @@ class Store:
                 (session_id, limit),
             ).fetchall()
         return [dict(r) for r in reversed(rows)]
+
+    def get_message(self, message_id: int) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM messages WHERE id = ?", (int(message_id),)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def add_feedback(
+        self,
+        message_id: int,
+        rating: str,
+        note: str = "",
+        card_id: int | None = None,
+        created_at: int | None = None,
+    ) -> int:
+        """记录一次“这句合拍/不准确”，只做信号，不直接改写人格。"""
+        now = int(created_at if created_at is not None else time.time())
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO feedback(message_id, rating, note, card_id, created_at)"
+                " VALUES (?,?,?,?,?)",
+                (int(message_id), str(rating), str(note or ""), card_id, now),
+            )
+            self._conn.commit()
+            return int(cur.lastrowid)
 
     def count_by_origin(self, origin: str) -> int:
         """发过多少条某类消息（语音/表情/画）——比数缓存文件准。"""

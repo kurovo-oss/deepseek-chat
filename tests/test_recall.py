@@ -18,7 +18,7 @@ def store(tmp_path):
     store.close()
 
 
-def _memory(tmp_path, store):
+def _memory(tmp_path, store, pending=False):
     settings = Settings(
         allow_user_id=1,
         model_api_key="k",
@@ -26,6 +26,7 @@ def _memory(tmp_path, store):
         db_path=tmp_path / "d.db",
         system_prompt_file=tmp_path / "s.md",
         journal_file=tmp_path / "journal.md",
+        memory_pending_inject=pending,
     )
     return Memory(settings, store, None)
 
@@ -110,7 +111,7 @@ def test_block_separates_pending_from_confirmed(tmp_path, store):
     store.add_card("fact", "他养了一只橘猫", importance=0.9)
     store.add_card("fact", "他好像喜欢爬山", importance=0.9, confirmed=False)
 
-    block = _memory(tmp_path, store).block()
+    block = _memory(tmp_path, store, pending=True).block()
 
     main = block.split(PENDING_TITLE)[0]
     assert BLOCK_TITLE in main
@@ -118,6 +119,17 @@ def test_block_separates_pending_from_confirmed(tmp_path, store):
     assert "爬山" not in main  # 推测不能混进正文
     assert PENDING_TITLE in block
     assert "爬山" in block.split(PENDING_TITLE)[1]
+
+
+def test_pending_cards_are_not_injected_by_default(tmp_path, store):
+    store.add_card("fact", "他养了一只橘猫", importance=0.9)
+    store.add_card("fact", "他好像喜欢爬山", importance=0.9, confirmed=False)
+
+    block = _memory(tmp_path, store).block()
+
+    assert "橘猫" in block
+    assert "爬山" not in block
+    assert PENDING_TITLE not in block
 
 
 def test_block_without_pending_has_no_pending_section(tmp_path, store):
@@ -129,7 +141,7 @@ def test_block_without_pending_has_no_pending_section(tmp_path, store):
 def test_injecting_pending_does_not_raise_its_weight(tmp_path, store):
     """被注入 ≠ 变可信。"""
     card_id = store.add_card("fact", "他好像喜欢爬山", confirmed=False)
-    memory = _memory(tmp_path, store)
+    memory = _memory(tmp_path, store, pending=True)
     memory.block()
     memory.block()
     assert store.get_card(card_id)["hit_count"] == 0

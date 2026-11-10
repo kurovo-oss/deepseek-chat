@@ -169,6 +169,7 @@ if pinned or kind == 'identity':
 
 **约束**：
 
+0. 自动抽取的新卡先算“听来的”，默认**只进记忆页，不进上下文**；需要旧行为时显式设 `MEMORY_PENDING_INJECT=true`。这样“猜的”不会先污染对话。
 1. 只允许 `add` / `update`，`delete` / `archive` 一律在代码层过滤掉
 2. 去重兜底：同 `kind` 下 `difflib.SequenceMatcher.ratio() > 0.8` 视为同一条，改走 `update`
 3. `pinned=1` 的卡片不接受自动 `update`
@@ -240,11 +241,20 @@ CREATE TABLE IF NOT EXISTS dream_log (
 | `/dream` | 手动触发一次做梦（调试用） |
 | `/status` | 增加：卡片数、记忆本字数、上次做梦时间 |
 
+## 8.1 偏好反馈与记忆清理
+
+- 对话页每条她说的话有「合拍 / 不准确」；点「不准确」写一句“她该记住的偏好”，会落一张已确认的 `preference` 卡，下一条消息开始生效。
+- 记忆页「+ 记一条偏好」可以不经过聊天，直接写相处偏好；适合重新养成的第一阶段。
+- 偏好卡和普通记忆卡一样参与权重、预算和 `/pin`，但不会把用户原话写成事实。
+- `tools\python\python.exe scripts\memory-doctor.py` 只读体检；加 `--clean-pending` / `--clean-derived` / `--reset-all` 并配 `--apply` 才执行，执行前会自动备份到 `backups\memory-doctor-*`。
+- 清理前先停机器人；`--reset-all` 会清空消息、卡片、日摘要、前情和记忆本，保留 `.env`、人格文件和 `data/persona/`。
+
 ## 9. 配置项
 
 ```dotenv
 MEMORY_ENABLED=1
 EXTRACT_ENABLED=1
+MEMORY_PENDING_INJECT=false
 DREAM_ENABLED=1
 DREAM_AT=23:30
 DECAY_HALF_LIFE_DAYS=30

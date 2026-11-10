@@ -40,6 +40,19 @@ def test_defaults(tmp_path):
     assert settings.reply_max_chars == 300
     assert settings.segment_delay_ms == 1500
     assert settings.window_char_budget == int(4000 / 0.6)
+    assert settings.memory_pending_inject is False
+
+
+def test_memory_pending_inject_can_be_enabled(tmp_path):
+    settings = Settings.from_env(
+        {
+            "ALLOW_USER_ID": "123",
+            "MODEL_API_KEY": "k",
+            "MEMORY_PENDING_INJECT": "true",
+        },
+        tmp_path,
+    )
+    assert settings.memory_pending_inject is True
 
 
 def test_proactive_quiet_hours_config(tmp_path):

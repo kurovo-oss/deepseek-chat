@@ -237,6 +237,11 @@ input[type=checkbox]:checked:after{left:18px;background:var(--cyan);box-shadow:0
 .chat-body{min-width:0}
 .chat-meta{display:flex;gap:8px;align-items:center;margin-bottom:3px;font-size:8px;color:#85596a}
 .chat-body p{margin:0;font-size:11px;line-height:1.75;color:#4a2334;white-space:pre-wrap;word-break:break-word}
+.chat-feedback{display:flex;align-items:center;gap:6px;margin-top:7px}
+.chat-feedback button{height:22px;padding:0 8px;border:1px solid rgba(198,105,136,.18);border-radius:7px;background:rgba(255,255,255,.48);color:#85596a;font:9px inherit;cursor:pointer}
+.chat-feedback button:hover{border-color:rgba(217,95,136,.36);color:#4a2334}
+.chat-feedback button:disabled{opacity:.5;cursor:default}
+.chat-feedback-done{font-size:9px;color:#2f8f68}
 
 .grid-persona{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(260px,.7fr);gap:16px}
 .editor-card{display:flex;flex-direction:column;min-height:620px}

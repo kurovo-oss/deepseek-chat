@@ -272,12 +272,49 @@
         meta.append(el('span', '', ORIGIN_LABEL[msg.origin] || msg.origin || '回复'));
         meta.append(el('time', '', fmtTime(msg.created_at, true)));
         body.append(meta, el('p', '', msg.content || ''));
+        if (bot) body.append(feedbackBar(msg));
         row.append(body);
         list.append(row);
       });
       list.scrollTop = list.scrollHeight;
     } catch (err) {
       list.replaceChildren(el('p', 'muted', err.message));
+    }
+  }
+
+  function feedbackBar(msg) {
+    const bar = el('div', 'chat-feedback');
+    const good = el('button', '', '合拍');
+    const bad = el('button', '', '不准确');
+    good.type = 'button';
+    bad.type = 'button';
+    good.addEventListener('click', () => sendFeedback(msg, 'good', bar));
+    bad.addEventListener('click', () => sendFeedback(msg, 'bad', bar));
+    bar.append(good, bad);
+    return bar;
+  }
+
+  async function sendFeedback(msg, rating, bar) {
+    let note = '';
+    if (rating === 'bad') {
+      const answer = window.prompt(
+        '哪里不合适？写成她该记住的偏好，比如：回复别太长、别把测试内容当成记忆。',
+        '',
+      );
+      if (answer === null) return;
+      note = answer.trim();
+    }
+    $$('button', bar).forEach((button) => { button.disabled = true; });
+    try {
+      const data = await api('/api/feedback', {
+        method: 'POST',
+        body: { message_id: msg.id, rating, note },
+      });
+      bar.replaceChildren(el('span', 'chat-feedback-done', data.card_id ? '已记下偏好' : '已收到'));
+      toast(data.card_id ? '记下了，她以后会注意' : '收到，这条反馈已记录');
+    } catch (err) {
+      $$('button', bar).forEach((button) => { button.disabled = false; });
+      toast(err.message, true);
     }
   }
 
@@ -379,6 +416,21 @@
     editor.append(foot);
     card.append(editor);
     summary.focus();
+  }
+
+  async function addPreference() {
+    const summary = window.prompt(
+      '写一条她该记住的相处偏好，比如：先问我怎么了，不要急着给建议；回复别太长。',
+      '',
+    );
+    if (summary === null || !summary.trim()) return;
+    try {
+      await api('/api/memory/preference', { method: 'POST', body: { summary: summary.trim() } });
+      toast('偏好记下了，下一条消息生效');
+      await loadMemory();
+    } catch (err) {
+      toast(err.message, true);
+    }
   }
 
   async function deleteMemory(item) {
@@ -1068,6 +1120,7 @@
     $('#diag-test-model').addEventListener('click', testDiagnosticsModel);
     $('#reload-chat').addEventListener('click', loadChat);
     $('#reload-memory').addEventListener('click', loadMemory);
+    $('#add-preference').addEventListener('click', addPreference);
     let memorySearchTimer = null;
     $('#memory-search').addEventListener('input', () => {
       clearTimeout(memorySearchTimer);

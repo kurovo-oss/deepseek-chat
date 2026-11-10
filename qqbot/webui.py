@@ -719,6 +719,54 @@ class WebUI:
         self._audit("delete_memory", target=str(card_id))
         return {"ok": True}
 
+    def api_memory_preference(self, body: dict) -> dict:
+        """手动记一条相处偏好；这是用户明确给的，直接算确认。"""
+        summary = _as_text(body.get("summary"), "偏好内容", 300)
+        card_id = self.engine.store.add_card(
+            kind="preference",
+            summary=summary,
+            detail="用户在面板手动添加的相处偏好",
+            importance=0.8,
+            confirmed=True,
+        )
+        self._audit("add_preference", target=str(card_id))
+        return {"ok": True, "card_id": card_id}
+
+    def api_feedback(self, body: dict) -> dict:
+        """对话反馈：good 只记信号；bad 带备注时落一张偏好卡。"""
+        store = self.engine.store
+        message_id = _as_int(body.get("message_id"), "消息编号", 1, 10**9)
+        message = store.get_message(message_id)
+        if message is None:
+            raise ValueError("这条消息已经不在了")
+        if message.get("role") != "assistant":
+            raise ValueError("只能对她说的话做反馈")
+        if str(message.get("session_id") or "") != str(self.settings.allow_user_id):
+            raise ValueError("这条消息不属于当前会话")
+        rating = str(body.get("rating") or "").strip().lower()
+        if rating not in ("good", "bad"):
+            raise ValueError("反馈只能是 good 或 bad")
+        note = body.get("note")
+        if note is None:
+            note = ""
+        if not isinstance(note, str):
+            raise ValueError("备注必须是字符串")
+        note = note.strip()[:200]
+        card_id = None
+        if note:
+            card_id = store.add_card(
+                kind="preference",
+                summary=note,
+                detail=f"来自对话 #{message_id} 的反馈",
+                importance=0.8,
+                source_from=message_id,
+                source_to=message_id,
+                confirmed=True,
+            )
+        feedback_id = store.add_feedback(message_id, rating, note=note, card_id=card_id)
+        self._audit("feedback", target=str(message_id), result=rating)
+        return {"ok": True, "feedback_id": feedback_id, "card_id": card_id}
+
     def api_persona(self) -> dict:
         return read_persona(self.settings)
 
@@ -1022,6 +1070,10 @@ def make_handler(app: WebUI):
                     self._json(app.api_memory_correct(body))
                 elif path == "/api/memory/delete":
                     self._json(app.api_memory_delete(body))
+                elif path == "/api/memory/preference":
+                    self._json(app.api_memory_preference(body))
+                elif path == "/api/feedback":
+                    self._json(app.api_feedback(body))
                 elif path == "/api/persona/preview":
                     self._json(app.api_persona_preview(body))
                 elif path == "/api/persona/apply":
