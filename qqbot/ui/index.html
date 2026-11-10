@@ -3,9 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark">
+<meta name="color-scheme" content="light">
 <title>大肥鱼 · 她今天怎么样</title>
 <link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/startup.css">
 </head>
 <body>
 <div class="aurora aurora-a"></div>
@@ -15,6 +16,34 @@
   <i class="petal"></i><i class="petal"></i><i class="petal"></i><i class="petal"></i>
   <i class="petal"></i><i class="petal"></i><i class="petal"></i><i class="petal"></i>
   <i class="petal"></i><i class="petal"></i>
+</div>
+
+<div id="startup" class="startup" aria-label="大肥鱼开机动画">
+  <i class="startup-petal"></i><i class="startup-petal"></i><i class="startup-petal"></i><i class="startup-petal"></i>
+  <i class="startup-petal"></i><i class="startup-petal"></i><i class="startup-petal"></i><i class="startup-petal"></i>
+  <button class="startup-skip" id="startup-skip" type="button">跳过</button>
+  <div class="startup-stage">
+    <div class="startup-aura" aria-hidden="true"></div>
+    <div class="startup-burst" aria-hidden="true"></div>
+    <div class="startup-hp" aria-hidden="true">
+      <span class="startup-hp-label">HP</span>
+      <span class="startup-hp-track"><i></i></span>
+    </div>
+    <div class="startup-mutter" aria-hidden="true">咕噜…</div>
+    <img class="startup-char" src="/assets/welcome-mascot.png" alt="">
+    <div class="startup-eyes" aria-hidden="true"><i></i><i></i></div>
+    <div class="startup-bowl" aria-hidden="true">
+      <span class="startup-chopstick a"></span>
+      <span class="startup-chopstick b"></span>
+      <span class="startup-bowl-body"></span>
+      <span class="startup-rice"></span>
+    </div>
+  </div>
+  <div class="startup-caption">
+    <span class="startup-caption-a">开机中 · 正在补充能量…</span>
+    <span class="startup-caption-b">满血复活！</span>
+  </div>
+  <p class="startup-hint">点击任意处跳过</p>
 </div>
 
 <aside class="sidebar">
@@ -316,5 +345,6 @@
 
 <div id="toast" class="toast" role="status"></div>
 <script src="/app.js"></script>
+<script src="/startup.js"></script>
 </body>
 </html>

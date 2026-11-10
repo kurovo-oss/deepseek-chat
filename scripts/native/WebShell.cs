@@ -245,7 +245,9 @@ namespace DafeiyuNative
             if (token.Length == 0) return;
             _navigating = true;
             Log("navigate token=" + token.Length);
-            _web.CoreWebView2.Navigate("http://127.0.0.1:" + _port + "/?token=" + Uri.EscapeDataString(token));
+            string url = "http://127.0.0.1:" + _port + "/?token=" + Uri.EscapeDataString(token);
+            if (_shot) url += "&screenshot=1";
+            _web.CoreWebView2.Navigate(url);
         }
 
         private bool StartBackend()

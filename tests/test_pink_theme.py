@@ -11,7 +11,9 @@ UPSTREAM_MASCOT = ROOT / "docs" / "assets" / "dafeiyu.png"
 
 def test_css_uses_light_sakura_palette():
     css = CSS.read_text(encoding="utf-8")
+    html = (ROOT / "qqbot" / "ui" / "index.html").read_text(encoding="utf-8")
 
+    assert '<meta name="color-scheme" content="light">' in html
     assert "--brand-ink:#4a2334" in css
     assert "--brand-ocean:#e46f95" in css
     assert "--brand-cyan:#ffc9d9" in css
