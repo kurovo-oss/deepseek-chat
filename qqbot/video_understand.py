@@ -241,18 +241,33 @@ def context_block(store, days: int = 2, limit: int = 2, max_chars: int = 240) ->
     return ("【最近看过的视频】\n" + "\n".join(lines))[:max_chars]
 
 
-def probe_page(page, llm, desc: str = "") -> dict | None:
-    """用一帧做内容预判；不值得继续时返回低分，失败返回 None 交给旧流程。"""
-    if page is None or llm is None:
+def probe_page(
+    page,
+    llm,
+    desc: str = "",
+    media_url: str = "",
+    settings=None,
+) -> dict | None:
+    """用一帧做内容预判；页面不渲染时下载媒体再截这一帧。"""
+    if llm is None:
         return None
-    frames = capture_frames(page, fractions=(0.22,))
-    if not frames:
-        return None
-    result = vision.classify_frame(llm, frames[0], context=desc)
-    if result is None:
-        return None
-    result["frame"] = frames[0]
-    return result
+    frames = capture_frames(page, fractions=(0.22,)) if page is not None else []
+    work = None
+    if not frames and media_url and settings is not None:
+        media_path, work = _download_media(media_url, settings)
+        if media_path is not None:
+            frames = capture_frames_from_file(media_path, settings, (0.22,))
+    try:
+        if not frames:
+            return None
+        result = vision.classify_frame(llm, frames[0], context=desc)
+        if result is None:
+            return None
+        result["frame"] = frames[0]
+        return result
+    finally:
+        if work is not None:
+            shutil.rmtree(work, ignore_errors=True)
 
 
 def analyze_page(

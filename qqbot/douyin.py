@@ -687,6 +687,7 @@ def run_once(store, settings, guard, sender, browser: Browser, now: int | None =
         probe_limit = max(1, int(getattr(settings, "douyin_content_probe_max", 3)))
         probe_on = bool(getattr(settings, "douyin_content_probe_enabled", True)) and llm is not None
         probe_min = float(getattr(settings, "douyin_content_probe_min_score", 0.42))
+        like_failures = 0
         for item in feed:
             if item["id"] in today:
                 continue
@@ -705,10 +706,17 @@ def run_once(store, settings, guard, sender, browser: Browser, now: int | None =
                 continue
             page.goto(video_url.format(aweme_id=item["id"]), timeout=40)
             time.sleep(2)
+            media_url = video_media_url(page, item["id"])
             probe = None
             if probe_on and probe_count < probe_limit:
                 probe_count += 1
-                probe = video_understand.probe_page(page, llm, item.get("text", ""))
+                probe = video_understand.probe_page(
+                    page,
+                    llm,
+                    item.get("text", ""),
+                    media_url=media_url,
+                    settings=settings,
+                )
                 if probe is not None:
                     result["probed"] += 1
                     if float(probe.get("score") or 0) < probe_min:
@@ -721,6 +729,7 @@ def run_once(store, settings, guard, sender, browser: Browser, now: int | None =
                         result["content_skipped"] += 1
                         result["skipped"] += 1
                         continue
+            like_ok = False
             wait_like_icon(page)
             outcome = like_current(page)
             if outcome.get("already"):
@@ -728,59 +737,77 @@ def run_once(store, settings, guard, sender, browser: Browser, now: int | None =
                              result="skipped", now=stamp)
                 remember(store, item["id"], item.get("text", ""), liked=False, now=stamp)
                 result["skipped"] += 1
-                continue
-            ok = bool(outcome.get("ok")) and bool(outcome.get("changed", True))
-            guard.record("douyin", "like", target=item["id"], payload=item.get("text", ""),
-                         result="ok" if ok else "failed",
-                         error="" if ok else str(outcome.get("reason") or outcome.get("after") or "")[:200],
-                         now=stamp)
-            remember(store, item["id"], item.get("text", ""), liked=ok, now=stamp)
-            if not ok:
-                result["error"] = "like_failed"
-                break
-            result["liked"] += 1
-            if result["shared"] < plan["max_shares"] and interesting(item.get("text", "")):
-                share = guard.check("douyin_share", "share", target=item["id"],
-                                    user_id=settings.allow_user_id, now=stamp)
-                ok_send = False
-                if share.allowed:
-                    summary = ""
-                    if (
-                        not share.dry_run
-                        and llm is not None
-                        and getattr(settings, "video_understanding_enabled", True)
-                    ):
-                        summary = video_understand.analyze_page(
-                            store,
-                            llm,
-                            page,
-                            item["id"],
-                            item.get("text", ""),
-                            now=stamp,
-                            media_url=video_media_url(page, item["id"]),
-                            settings=settings,
+            else:
+                like_ok = bool(outcome.get("ok")) and bool(outcome.get("changed", True))
+                guard.record("douyin", "like", target=item["id"], payload=item.get("text", ""),
+                             result="ok" if like_ok else "failed",
+                             error="" if like_ok else str(outcome.get("reason") or outcome.get("after") or "")[:200],
+                             now=stamp)
+                remember(store, item["id"], item.get("text", ""), liked=like_ok, now=stamp)
+                if like_ok:
+                    result["liked"] += 1
+                else:
+                    result["error"] = "like_failed"
+                    like_failures += 1
+
+            # 页面播放器没渲染时，点赞会失败；但内容已经通过媒体兜底看懂了，
+            # 仍然允许分享，不能因为按钮点不到就整轮放弃。
+            can_share_after_like = like_ok or bool(media_url) or probe is not None
+            if can_share_after_like and result["shared"] < plan["max_shares"]:
+                content_ok = probe is None or float(probe.get("score") or 0) >= probe_min
+                worth_trying = bool(media_url) or probe is not None or interesting(item.get("text", ""))
+                if content_ok and worth_trying:
+                    share = guard.check(
+                        "douyin_share", "share", target=item["id"],
+                        user_id=settings.allow_user_id, now=stamp,
+                    )
+                    ok_send = False
+                    if share.allowed:
+                        summary = ""
+                        if (
+                            not share.dry_run
+                            and llm is not None
+                            and getattr(settings, "video_understanding_enabled", True)
+                        ):
+                            summary = video_understand.analyze_page(
+                                store,
+                                llm,
+                                page,
+                                item["id"],
+                                item.get("text", ""),
+                                now=stamp,
+                                media_url=media_url,
+                                settings=settings,
+                            )
+                        if not summary and probe is not None:
+                            summary = str(probe.get("summary") or "")
+                        # 有视频理解能力时必须看到内容才分享；关闭理解时才允许旧的标题分享。
+                        video_ok = (
+                            getattr(settings, "video_understanding_enabled", True)
+                            and llm is not None
                         )
-                    if not summary and probe is not None:
-                        summary = str(probe.get("summary") or "")
-                    comment = "" if share.dry_run else comment_on(
-                        llm, item.get("text", ""), values=values, content=summary
-                    )
-                    text = share_text(
-                        item.get("text", ""),
-                        item["id"],
-                        prefix=plan["prefix"] if result["shared"] == 0 else "",
-                        comment=comment,
-                    )
-                    if share.dry_run:
-                        guard.record("douyin_share", "share", target=item["id"], payload=text,
-                                     result="dry_run", now=stamp)
-                    else:
-                        ok_send = sender.send_private(settings.allow_user_id, text)
-                        guard.record("douyin_share", "share", target=item["id"], payload=text,
-                                     result="ok" if ok_send else "failed", now=stamp)
-                    if share.dry_run or ok_send:
-                        result["shared"] += 1
-                        remember(store, item["id"], item.get("text", ""), liked=ok, shared=True, now=stamp)
+                        if share.dry_run or not video_ok or summary:
+                            comment = "" if share.dry_run else comment_on(
+                                llm, item.get("text", ""), values=values, content=summary
+                            )
+                            text = share_text(
+                                item.get("text", ""),
+                                item["id"],
+                                prefix=plan["prefix"] if result["shared"] == 0 else "",
+                                comment=comment,
+                            )
+                            if share.dry_run:
+                                guard.record("douyin_share", "share", target=item["id"], payload=text,
+                                             result="dry_run", now=stamp)
+                            else:
+                                ok_send = sender.send_private(settings.allow_user_id, text)
+                                guard.record("douyin_share", "share", target=item["id"], payload=text,
+                                             result="ok" if ok_send else "failed", now=stamp)
+                            if share.dry_run or ok_send:
+                                result["shared"] += 1
+                                remember(store, item["id"], item.get("text", ""), liked=like_ok, shared=True, now=stamp)
+            if like_failures >= 2:
+                break
             time.sleep(8)  # 两个动作之间至少隔 8 秒，别像脚本
     except Exception as exc:  # noqa: BLE001 - 浏览器/网络问题不该拖垮主进程
         result["error"] = str(exc)[:200]

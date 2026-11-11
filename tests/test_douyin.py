@@ -24,12 +24,24 @@ class FakePage:
     def evaluate(self, expression, **kwargs):
         if "has_login_button" in expression:
             return self.login
+        if "duration" in expression and "currentTime" not in expression:
+            return {
+                "ok": True,
+                "duration": 30,
+                "rect": {"x": 100, "y": 80, "width": 500, "height": 300},
+                "viewport": {"width": 1280, "height": 900},
+            }
+        if "currentTime" in expression:
+            return True
         if "feed-item" in expression:
             return self.feed
         if "like-icon" in expression:
             self.like_calls += 1
             return self.like
         return None
+
+    def screenshot(self, clip=None, quality=72, timeout=20):
+        return b"fake-video-frame"
 
     def goto(self, url, timeout=30):
         self.visited.append(url)
@@ -385,7 +397,9 @@ def test_share_uses_her_own_comment(tmp_path, monkeypatch):
 
 def test_share_falls_back_when_comment_fails(tmp_path, monkeypatch):
     monkeypatch.setattr(time, "sleep", lambda seconds: None)
-    cfg, store, gate = env(tmp_path, douyin_dry_run=False)
+    cfg, store, gate = env(
+        tmp_path, douyin_dry_run=False, video_understanding_enabled=False
+    )
     sender = FakeSender()
     page = FakePage(feed=[{"id": "910", "text": "猫猫在门口等人"}])
 
