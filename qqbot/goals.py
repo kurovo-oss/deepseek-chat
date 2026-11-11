@@ -123,6 +123,12 @@ def _parse(raw: str, valid_ids: set[int], existing: list[dict]) -> list[dict]:
             priority = max(0.0, min(1.0, float(item.get("priority", 0.5))))
         except (TypeError, ValueError):
             priority = 0.5
+        try:
+            due_hours = int(item.get("due_hours"))
+            if not 1 <= due_hours <= 168:
+                due_hours = None
+        except (TypeError, ValueError):
+            due_hours = None
         norm = _title_norm(title)
         if any(SequenceMatcher(None, norm, old).ratio() >= DEDUPE_RATIO for old in seen_titles):
             continue
@@ -135,6 +141,7 @@ def _parse(raw: str, valid_ids: set[int], existing: list[dict]) -> list[dict]:
                 "horizon": horizon,
                 "priority": priority,
                 "evidence": evidence,
+                "due_hours": due_hours,
             }
         )
         if len(result) >= 2:
@@ -195,6 +202,7 @@ def review(store, llm, settings, now: int | None = None) -> list[dict]:
             source="reflection",
             evidence=item["evidence"],
             confidence=0.6,
+            due_at=stamp + item["due_hours"] * 3600 if item.get("due_hours") else None,
             created_at=stamp,
         )
         goal = store.get_goal(goal_id)
@@ -204,6 +212,64 @@ def review(store, llm, settings, now: int | None = None) -> list[dict]:
     if created:
         log.info("目标复盘：新增 %d 个候选目标", len(created))
     return created
+
+
+def _recent_sent_action(store, now: int, hours: int = 48) -> dict | None:
+    """最近一次真正发出去的目标动作。"""
+    for action in store.list_goal_actions(status="done", limit=40):
+        if action.get("action") != "send_message" or action.get("result") != "sent":
+            continue
+        if int(action.get("created_at") or 0) < now - hours * 3600:
+            continue
+        return action
+    return None
+
+
+def record_user_reply(store, now: int | None = None) -> dict | None:
+    """他回话后给最近一次目标主动记一个 replied，不猜情绪。"""
+    stamp = int(now if now is not None else time.time())
+    action = _recent_sent_action(store, stamp)
+    if action is None:
+        return None
+    if any(row.get("signal") == "replied" for row in store.list_outcomes(action["id"], limit=10)):
+        return None
+    store.add_outcome(int(action["id"]), "replied", created_at=stamp)
+    return store.goal_progress_delta(int(action.get("goal_id") or 0), 0.1, now=stamp)
+
+
+def record_feedback(store, rating: str, now: int | None = None) -> dict | None:
+    """把「合拍/不准确」也记到最近一次目标主动上；只作为弱信号。"""
+    if rating not in ("good", "bad"):
+        return None
+    stamp = int(now if now is not None else time.time())
+    action = _recent_sent_action(store, stamp, hours=6)
+    if action is None:
+        return None
+    signal = "feedback_good" if rating == "good" else "feedback_bad"
+    if any(row.get("signal") == signal for row in store.list_outcomes(action["id"], limit=10)):
+        return None
+    store.add_outcome(int(action["id"]), signal, created_at=stamp)
+    return store.goal_progress_delta(
+        int(action.get("goal_id") or 0), 0.1 if rating == "good" else -0.1, now=stamp
+    )
+
+
+def context_block(store, limit: int = 4, max_chars: int = 280) -> str:
+    """给正常对话用的目标摘要；只带进行中的目标，不带候选/已删除。"""
+    goals = store.list_goals(status="active", limit=max(1, int(limit)))
+    if not goals:
+        return ""
+    lines = ["【你现在在做的事】"]
+    for goal in goals:
+        progress = int(round(float(goal.get("progress") or 0) * 100))
+        why = str(goal.get("why") or "").strip()
+        line = f"- {goal.get('title', '')}"
+        if why:
+            line += f"（{why}）"
+        line += f" 进度 {progress}%"
+        lines.append(line)
+    text = "\n".join(lines)
+    return text[:max_chars]
 
 
 def tick(store, llm, settings, now: int | None = None) -> list[dict]:

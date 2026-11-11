@@ -406,6 +406,7 @@ def main(argv: list[str] | None = None) -> int:
         or settings.recap_enabled
         or settings.goals_enabled
         or settings.style_review_enabled
+        or settings.autonomy_enabled
     ):
         threading.Thread(
             target=engine.background_loop, args=(stop_event,), name="background", daemon=True

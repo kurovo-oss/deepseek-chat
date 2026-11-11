@@ -75,17 +75,21 @@ CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback(created_at);
 
 CREATE TABLE IF NOT EXISTS goals (
   id          INTEGER PRIMARY KEY,
+  parent_id   INTEGER,
   kind        TEXT NOT NULL,
   title       TEXT NOT NULL,
   why         TEXT NOT NULL DEFAULT '',
   horizon     TEXT NOT NULL DEFAULT 'week',
   priority    REAL NOT NULL DEFAULT 0.5,
+  progress    REAL NOT NULL DEFAULT 0,
   status      TEXT NOT NULL DEFAULT 'candidate',
+  autonomy    TEXT NOT NULL DEFAULT 'confirm',
   source      TEXT NOT NULL DEFAULT 'reflection',
   evidence    TEXT NOT NULL DEFAULT '[]',
   confidence  REAL NOT NULL DEFAULT 0.5,
   due_at      INTEGER,
   review_at   INTEGER,
+  last_outcome_at INTEGER,
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL
 );
@@ -255,7 +259,11 @@ _CARD_UPDATABLE = frozenset(
     {"kind", "summary", "detail", "entities", "occurred_at", "importance", "status", "updated_at"}
 )
 _GOAL_UPDATABLE = frozenset(
-    {"kind", "title", "why", "horizon", "priority", "status", "evidence", "confidence", "due_at", "review_at", "updated_at"}
+    {
+        "parent_id", "kind", "title", "why", "horizon", "priority", "progress",
+        "status", "autonomy", "evidence", "confidence", "due_at", "review_at",
+        "last_outcome_at", "updated_at",
+    }
 )
 
 
@@ -353,6 +361,22 @@ class Store:
             self._conn.execute(
                 "ALTER TABLE proactive_events ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0"
             )
+        goal_columns = {
+            row["name"]
+            for row in self._conn.execute("PRAGMA table_info(goals)").fetchall()
+        }
+        goal_migrations = {
+            "parent_id": "ALTER TABLE goals ADD COLUMN parent_id INTEGER",
+            "progress": "ALTER TABLE goals ADD COLUMN progress REAL NOT NULL DEFAULT 0",
+            "autonomy": "ALTER TABLE goals ADD COLUMN autonomy TEXT NOT NULL DEFAULT 'confirm'",
+            "last_outcome_at": "ALTER TABLE goals ADD COLUMN last_outcome_at INTEGER",
+        }
+        for name, sql in goal_migrations.items():
+            if name not in goal_columns:
+                self._conn.execute(sql)
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_goals_parent ON goals(parent_id)"
+        )
         card_columns = {
             row["name"]
             for row in self._conn.execute("PRAGMA table_info(cards)").fetchall()
@@ -1066,6 +1090,8 @@ class Store:
             item["evidence"] = []
         item["priority"] = float(item.get("priority") or 0)
         item["confidence"] = float(item.get("confidence") or 0)
+        item["progress"] = float(item.get("progress") or 0)
+        item["autonomy"] = str(item.get("autonomy") or "confirm")
         return item
 
     def add_goal(
@@ -1075,7 +1101,10 @@ class Store:
         why: str = "",
         horizon: str = "week",
         priority: float = 0.5,
+        progress: float = 0.0,
         status: str = "candidate",
+        autonomy: str = "confirm",
+        parent_id: int | None = None,
         source: str = "reflection",
         evidence: list[int] | None = None,
         confidence: float = 0.5,
@@ -1086,16 +1115,20 @@ class Store:
         now = int(created_at if created_at is not None else time.time())
         with self._lock:
             cur = self._conn.execute(
-                "INSERT INTO goals(kind, title, why, horizon, priority, status, source,"
-                " evidence, confidence, due_at, review_at, created_at, updated_at)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO goals(parent_id, kind, title, why, horizon, priority, progress,"
+                " status, autonomy, source, evidence, confidence, due_at, review_at,"
+                " created_at, updated_at)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
+                    int(parent_id) if parent_id else None,
                     kind,
                     title,
                     why,
                     horizon,
                     float(priority),
+                    max(0.0, min(1.0, float(progress))),
                     status,
+                    autonomy,
                     source,
                     json.dumps(evidence or []),
                     float(confidence),
@@ -1141,7 +1174,9 @@ class Store:
         if "evidence" in updates and isinstance(updates["evidence"], list):
             updates["evidence"] = json.dumps(updates["evidence"])
         if "priority" in updates:
-            updates["priority"] = float(updates["priority"])
+            updates["priority"] = max(0.0, min(1.0, float(updates["priority"])))
+        if "progress" in updates:
+            updates["progress"] = max(0.0, min(1.0, float(updates["progress"])))
         if "confidence" in updates:
             updates["confidence"] = float(updates["confidence"])
         if "updated_at" not in updates:
@@ -1181,6 +1216,14 @@ class Store:
             )
             self._conn.commit()
             return int(cur.lastrowid)
+
+    def count_goal_actions_since(self, since: int, action: str = "send_message") -> int:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COUNT(*) AS n FROM goal_actions WHERE created_at >= ? AND action = ?",
+                (int(since), action),
+            ).fetchone()
+        return int(row["n"] or 0)
 
     def get_goal_action(self, action_id: int) -> dict | None:
         with self._lock:
@@ -1313,6 +1356,32 @@ class Store:
             )
             self._conn.commit()
             return int(cur.lastrowid)
+
+    def list_outcomes(self, action_id: int | None = None, limit: int = 100) -> list[dict]:
+        if action_id is None:
+            sql, args = "SELECT * FROM outcomes ORDER BY id DESC LIMIT ?", (max(1, int(limit)),)
+        else:
+            sql, args = (
+                "SELECT * FROM outcomes WHERE action_id = ? ORDER BY id DESC LIMIT ?",
+                (int(action_id), max(1, int(limit))),
+            )
+        with self._lock:
+            rows = self._conn.execute(sql, args).fetchall()
+        return [dict(row) for row in rows]
+
+    def goal_progress_delta(self, goal_id: int, delta: float, now: int | None = None) -> dict | None:
+        goal = self.get_goal(goal_id)
+        if goal is None:
+            return None
+        progress = max(0.0, min(1.0, float(goal.get("progress") or 0) + float(delta)))
+        status = "done" if progress >= 1.0 else goal.get("status")
+        self.update_goal(
+            goal_id,
+            progress=progress,
+            status=status,
+            last_outcome_at=int(now if now is not None else time.time()),
+        )
+        return self.get_goal(goal_id)
 
     def merge_cards(self, source_id: int, target_id: int) -> bool:
         """把信息少的卡并进信息多的那张：detail 合并、命中次数累加、源卡归档。

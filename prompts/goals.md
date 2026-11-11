@@ -13,9 +13,10 @@
 - kind 只能是：relationship / self / curiosity / routine / shared
 - horizon 只能是：day / week / month
 - priority 0~1；低打扰、轻量的目标优先。
+- 如果有合适的发生时间，给 due_hours（1～168 小时）；没有就给 null。
 
 输出格式：
-{"goals":[{"kind":"shared","title":"问问他面试结果","why":"他提过这周有面试，之后没再说","horizon":"week","priority":0.7,"evidence":[12]}]}
+{"goals":[{"kind":"shared","title":"问问他面试结果","why":"他提过这周有面试，之后没再说","horizon":"week","priority":0.7,"due_hours":24,"evidence":[12]}]}
 
 【当前目标】
 {{GOALS}}

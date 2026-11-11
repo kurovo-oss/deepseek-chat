@@ -306,6 +306,10 @@ class Settings:
     goals_review_hours: int = 20
     goals_max_candidates: int = 2
     goals_prompt_file: Path = Path("prompts/goals.md")
+    # 目标调度：默认关闭；开启后也只把到期目标放进“待确认”，不自动发送。
+    autonomy_enabled: bool = False
+    autonomy_mode: str = "confirm"
+    autonomy_max_actions_per_day: int = 1
     # 相处方式周复盘：默认关闭自动跑；手动入口始终可用。
     style_review_enabled: bool = False
     style_review_days: int = 7
@@ -547,6 +551,11 @@ class Settings:
             goals_max_candidates=_int(env, "GOALS_MAX_CANDIDATES", 2, minimum=1),
             goals_prompt_file=base_dir
             / env.get("GOALS_PROMPT_FILE", "prompts/goals.md").strip(),
+            autonomy_enabled=_bool(env, "AUTONOMY_ENABLED", False),
+            autonomy_mode=env.get("AUTONOMY_MODE", "confirm").strip() or "confirm",
+            autonomy_max_actions_per_day=_int(
+                env, "AUTONOMY_MAX_ACTIONS_PER_DAY", 1, minimum=1
+            ),
             style_review_enabled=_bool(env, "STYLE_REVIEW_ENABLED", False),
             style_review_days=_int(env, "STYLE_REVIEW_DAYS", 7, minimum=1),
             style_review_prompt_file=base_dir

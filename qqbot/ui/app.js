@@ -358,12 +358,22 @@
     const head = el('div', 'goal-card-head');
     head.append(el('span', 'memory-kind', goalKind(item.kind)));
     head.append(el('span', `goal-badge ${item.status || 'candidate'}`, goalStatus(item.status)));
+    head.append(el('span', 'goal-badge autonomy', item.autonomy === 'auto' ? '自动' : '需确认'));
     head.append(el('span', 'tag', `#${item.id}`));
     card.append(head);
     card.append(el('h3', 'goal-title', item.title || '（空目标）'));
+    if (item.parent_id) card.append(el('p', 'goal-parent', `属于目标 #${item.parent_id}`));
     if (item.why) card.append(el('p', 'goal-why', item.why));
+    const progress = Math.max(0, Math.min(1, Number(item.progress || 0)));
+    const bar = el('div', 'goal-progress');
+    const fill = el('i');
+    fill.style.width = `${Math.round(progress * 100)}%`;
+    bar.append(fill);
+    card.append(bar);
     const meta = el('div', 'memory-meta');
+    meta.append(el('span', '', `进度 ${Math.round(progress * 100)}%`));
     meta.append(el('span', '', `重要度 ${Number(item.priority || 0).toFixed(2)}`));
+    if (item.due_at) meta.append(el('span', '', `计划 ${fmtTime(item.due_at, true)}`));
     if ((item.evidence || []).length) {
       meta.append(el('span', '', `证据 ${item.evidence.map((id) => `#${id}`).join(' ')}`));
     }
@@ -457,7 +467,8 @@
       const items = (data.items || []).filter((item) => item.status !== 'dropped');
       const counts = data.counts || {};
       const byGoal = new Map((data.actions || []).map((action) => [String(action.goal_id), action]));
-      $('#goal-count').textContent = `${items.length} 个 / 候选 ${counts.candidate ?? 0}`;
+      const mode = data.autonomy_enabled ? '自动排队' : '手动确认';
+      $('#goal-count').textContent = `${items.length} 个 / 候选 ${counts.candidate ?? 0} · ${mode}`;
       list.replaceChildren();
       if (!items.length) {
         list.append(el('p', 'muted', '她还没有想做的事。可以点右上角「让她想一次」，或者在记忆页写几条偏好。'));

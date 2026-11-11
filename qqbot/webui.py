@@ -764,6 +764,12 @@ class WebUI:
                 confirmed=True,
             )
         feedback_id = store.add_feedback(message_id, rating, note=note, card_id=card_id)
+        from . import goals as goals_mod
+
+        try:
+            goals_mod.record_feedback(store, rating)
+        except Exception:  # noqa: BLE001 - 目标进度是附加信息
+            log.info("记录目标反馈结果失败", exc_info=True)
         self._audit("feedback", target=str(message_id), result=rating)
         return {"ok": True, "feedback_id": feedback_id, "card_id": card_id}
 
@@ -777,7 +783,13 @@ class WebUI:
             "dropped": store.count_goals(status="dropped"),
         }
         actions = store.list_goal_actions(status="waiting_approval", limit=50)
-        return {"items": items, "actions": actions, "counts": counts}
+        return {
+            "items": items,
+            "actions": actions,
+            "counts": counts,
+            "autonomy_enabled": bool(getattr(self.settings, "autonomy_enabled", False)),
+            "autonomy_mode": getattr(self.settings, "autonomy_mode", "confirm"),
+        }
 
     def api_goal_update(self, body: dict) -> dict:
         goal_id = _as_int(body.get("id"), "目标编号", 1, 10**9)
@@ -788,7 +800,36 @@ class WebUI:
         allowed = {"candidate", "active", "paused", "done", "dropped"}
         if status not in allowed:
             raise ValueError("目标状态不正确")
-        self.engine.store.update_goal(goal_id, status=status)
+        updates = {"status": status}
+        if status == "done":
+            updates["progress"] = 1.0
+        if "progress" in body:
+            try:
+                updates["progress"] = max(0.0, min(1.0, float(body["progress"])))
+            except (TypeError, ValueError) as exc:
+                raise ValueError("进度必须是 0~1 的数字") from exc
+        if "autonomy" in body:
+            autonomy = str(body["autonomy"]).strip().lower()
+            if autonomy not in ("confirm", "auto"):
+                raise ValueError("自主级别只能是 confirm 或 auto")
+            updates["autonomy"] = autonomy
+        if "parent_id" in body:
+            parent_id = body.get("parent_id")
+            if parent_id in (None, "", 0):
+                updates["parent_id"] = None
+            else:
+                parent_id = _as_int(parent_id, "父目标编号", 1, 10**9)
+                if parent_id == goal_id:
+                    raise ValueError("目标不能成为自己的父目标")
+                if self.engine.store.get_goal(parent_id) is None:
+                    raise ValueError("父目标不存在")
+                updates["parent_id"] = parent_id
+        if "due_at" in body:
+            try:
+                updates["due_at"] = int(body["due_at"]) if body["due_at"] not in (None, "") else None
+            except (TypeError, ValueError) as exc:
+                raise ValueError("到期时间必须是时间戳") from exc
+        self.engine.store.update_goal(goal_id, **updates)
         self._audit("update_goal", target=str(goal_id), result=status)
         return {"ok": True, "item": self.engine.store.get_goal(goal_id)}
 

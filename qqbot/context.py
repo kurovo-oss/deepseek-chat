@@ -14,6 +14,7 @@ from . import budget as budget_mod
 from . import digest as digest_mod
 from . import facts as facts_mod
 from . import exemplars as exemplars_mod
+from . import goals as goals_mod
 from . import growth as growth_mod
 from . import life as life_mod
 from . import memepedia as memepedia_mod
@@ -106,6 +107,15 @@ class ContextMixin:
                         quota=int(getattr(self.settings, "card_inject_token_budget", 1500)),
                     )
                 )
+        try:
+            goal_note = goals_mod.context_block(self.store)
+        except Exception:  # noqa: BLE001 - 目标摘要不能影响主回复
+            goal_note = ""
+        if goal_note:
+            sections.append(
+                budget_mod.Section("目标", goal_note, priority=59, quota=260)
+            )
+
         recall = self._recall_section(selected)
         if recall:
             sections.append(budget_mod.Section("回忆", recall, priority=55, quota=450))

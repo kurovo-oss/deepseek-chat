@@ -28,6 +28,7 @@ from . import talkstate as talkstate_mod
 from . import backup as backup_mod
 from . import capability as capability_mod
 from . import emoji as emoji_mod
+from . import autonomy as autonomy_mod
 from . import goals as goals_mod
 from . import style_review as style_review_mod
 from . import refusal as refusal_mod
@@ -197,6 +198,12 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
             log.info("重复消息，跳过：qq_msg_id=%s", message.message_id)
             return
 
+        if not text.startswith("/"):
+            try:
+                goals_mod.record_user_reply(self.store)
+            except Exception:  # noqa: BLE001 - 结果记录不能拖垮对话
+                log.exception("记录目标回复结果失败")
+
         # 看图要花几秒（下载 + 多模态），必须在幂等占位之后做：
         # 否则 NapCat 超时重推会让同一张图被识别两遍、缓存也白做。
         note = ""
@@ -350,6 +357,12 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
                 style_review_mod.tick(self.store, self.llm, self.settings, now=stamp)
             except Exception:  # noqa: BLE001 - 相处整理坏了不能拖累聊天
                 log.exception("相处方式整理异常")
+
+        if getattr(self.settings, "autonomy_enabled", False):
+            try:
+                autonomy_mod.tick(self, self.store, self.settings, now=stamp)
+            except Exception:  # noqa: BLE001 - 目标调度坏了不能拖累聊天
+                log.exception("目标调度异常")
 
     def background_loop(self, stop_event: threading.Event) -> None:
         while not stop_event.is_set():
