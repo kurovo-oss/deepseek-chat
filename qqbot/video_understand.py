@@ -1,14 +1,19 @@
-"""抖音视频理解：在已打开的播放页截几张关键帧，交给多模态模型总结。
+"""抖音视频理解：优先截播放页关键帧；页面不渲染时用媒体文件兜底。
 
-不下载原视频，不绕过验证码；只截当前页面可见的播放器。
-截帧失败时返回空串，调用方必须降级成“只看到文案”。
+不绕过验证码；下载只用于本地截帧/ASR，临时文件放项目目录，
+失败时返回空串，调用方必须降级成“只看到文案”。
 """
 
 from __future__ import annotations
 
 import hashlib
 import logging
+import re
+import shutil
+import tempfile
 import time
+import urllib.request
+from pathlib import Path
 
 from . import asr
 from . import vision
@@ -123,6 +128,105 @@ def capture_frames(page, fractions: tuple[float, ...] = FRACTIONS) -> list[bytes
     return frames
 
 
+def _ffmpeg_path(settings) -> Path:
+    path = Path(settings.asr_ffmpeg)
+    return path if path.is_absolute() else Path(settings.base_dir) / path
+
+
+def _duration(video_path: Path, settings) -> float:
+    try:
+        result = asr._run([str(_ffmpeg_path(settings)), "-i", str(video_path)], settings, 30)
+    except Exception:  # noqa: BLE001
+        return 0.0
+    match = re.search(
+        r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)",
+        (result.stderr or "") + (result.stdout or ""),
+    )
+    if not match:
+        return 0.0
+    return int(match.group(1)) * 3600 + int(match.group(2)) * 60 + float(match.group(3))
+
+
+def capture_frames_from_file(
+    video_path: Path | str,
+    settings,
+    fractions: tuple[float, ...] = FRACTIONS,
+) -> list[bytes]:
+    """用 ffmpeg 从本地音视频提取关键帧；页面不渲染时的兜底。"""
+    duration = _duration(Path(video_path), settings)
+    if duration <= 0:
+        return []
+    work = Path(tempfile.mkdtemp(prefix="frames-", dir=str(asr.temp_dir(settings))))
+    frames: list[bytes] = []
+    try:
+        for index, fraction in enumerate(fractions[:MAX_FRAMES]):
+            target = max(0.0, min(duration - 0.2, duration * fraction))
+            output = work / f"frame-{index}.jpg"
+            try:
+                result = asr._run(
+                    [
+                        str(_ffmpeg_path(settings)),
+                        "-y",
+                        "-ss",
+                        str(target),
+                        "-i",
+                        str(video_path),
+                        "-frames:v",
+                        "1",
+                        "-vf",
+                        "scale=640:-2",
+                        "-q:v",
+                        "3",
+                        str(output),
+                    ],
+                    settings,
+                    30,
+                )
+            except Exception:  # noqa: BLE001
+                continue
+            if result.returncode == 0 and output.is_file():
+                data = output.read_bytes()
+                if data:
+                    frames.append(data)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    return frames
+
+
+def _download_media(url: str, settings) -> tuple[Path | None, Path | None]:
+    if not str(url or "").startswith(("http://", "https://")):
+        return None, None
+    work = Path(tempfile.mkdtemp(prefix="media-", dir=str(asr.temp_dir(settings))))
+    target = work / "media.bin"
+    request = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": asr.USER_AGENT,
+            "Referer": "https://www.douyin.com/",
+        },
+    )
+    try:
+        written = 0
+        with urllib.request.urlopen(request, timeout=getattr(settings, "asr_timeout", 120)) as response:
+            with target.open("wb") as output:
+                while True:
+                    chunk = response.read(1024 * 256)
+                    if not chunk:
+                        break
+                    written += len(chunk)
+                    if written > asr.MAX_DOWNLOAD_BYTES:
+                        shutil.rmtree(work, ignore_errors=True)
+                        return None, None
+                    output.write(chunk)
+        if written <= 0:
+            shutil.rmtree(work, ignore_errors=True)
+            return None, None
+        return target, work
+    except Exception:  # noqa: BLE001
+        shutil.rmtree(work, ignore_errors=True)
+        return None, None
+
+
 def context_block(store, days: int = 2, limit: int = 2, max_chars: int = 240) -> str:
     """最近看过的视频摘要；让正常聊天也能接上“刚刷到的那个视频”。"""
     since = int(time.time()) - max(1, int(days)) * 86400
@@ -170,23 +274,36 @@ def analyze_page(
     if cached:
         return cached
     frames = capture_frames(page)
-    if not frames:
-        return ""
     transcript = ""
-    if media_url and settings is not None and getattr(settings, "asr_enabled", False):
-        one_ok, _reason = asr.available(settings)
-        if one_ok:
-            transcript = asr.transcribe_url(media_url, settings)
-    summary = vision.describe_frames(
-        llm, frames, context=desc, transcript=transcript
-    )
-    if summary:
-        store.save_video_note(
-            str(aweme_id),
-            summary,
-            desc_hash=desc_hash,
-            transcript=transcript,
-            frames=[f"frame:{index}" for index in range(len(frames))],
-            now=now,
+    work = None
+    media_path = None
+    if (
+        media_url
+        and settings is not None
+        and (not frames or getattr(settings, "asr_enabled", False))
+    ):
+        media_path, work = _download_media(media_url, settings)
+        if media_path is not None:
+            if not frames:
+                frames = capture_frames_from_file(media_path, settings)
+            if getattr(settings, "asr_enabled", False):
+                transcript = asr.transcribe_video(media_path, settings)
+    try:
+        if not frames:
+            return ""
+        summary = vision.describe_frames(
+            llm, frames, context=desc, transcript=transcript
         )
-    return summary
+        if summary:
+            store.save_video_note(
+                str(aweme_id),
+                summary,
+                desc_hash=desc_hash,
+                transcript=transcript,
+                frames=[f"frame:{index}" for index in range(len(frames))],
+                now=now,
+            )
+        return summary
+    finally:
+        if work is not None:
+            shutil.rmtree(work, ignore_errors=True)

@@ -117,8 +117,14 @@ def test_analyze_page_combines_asr_transcript(monkeypatch):
         system_prompt_file=Path("prompts/system.md"),
         asr_enabled=True,
     )
-    monkeypatch.setattr(video_understand.asr, "available", lambda _settings: (True, ""))
-    monkeypatch.setattr(video_understand.asr, "transcribe_url", lambda *args, **kwargs: "视频里说的是接入步骤")
+    monkeypatch.setattr(
+        video_understand, "_download_media", lambda *args, **kwargs: (Path("dummy"), None)
+    )
+    monkeypatch.setattr(
+        video_understand.asr,
+        "transcribe_video",
+        lambda *args, **kwargs: "视频里说的是接入步骤",
+    )
 
     video_understand.analyze_page(
         store, llm, page, "456", "标题", media_url="https://example.com/v.mp4", settings=settings
