@@ -50,13 +50,15 @@ class ProbeLLM(FakeLLM):
 class FakeStore:
     def __init__(self):
         self.notes = {}
+        self.transcripts = {}
         self.recent = []
 
     def get_video_note(self, aweme_id, desc_hash=""):
         return self.notes.get(aweme_id, "")
 
-    def save_video_note(self, aweme_id, summary, desc_hash="", frames=None, now=None):
+    def save_video_note(self, aweme_id, summary, desc_hash="", transcript="", frames=None, now=None):
         self.notes[aweme_id] = summary
+        self.transcripts[aweme_id] = transcript
 
     def recent_video_notes(self, since, limit=3):
         return self.recent[:limit]
@@ -99,6 +101,36 @@ def test_probe_page_scores_one_frame():
     assert result["summary"] == "屏幕在演示接入流程"
     assert page.shots == 1
     assert len(llm.calls[0][0][0]["content"]) == 2
+
+
+def test_analyze_page_combines_asr_transcript(monkeypatch):
+    from qqbot.config import Settings
+
+    page = FakePage()
+    llm = FakeLLM()
+    store = FakeStore()
+    settings = Settings(
+        allow_user_id=123,
+        model_api_key="k",
+        base_dir=Path.cwd(),
+        db_path=Path("data/chat.db"),
+        system_prompt_file=Path("prompts/system.md"),
+        asr_enabled=True,
+    )
+    monkeypatch.setattr(video_understand.asr, "available", lambda _settings: (True, ""))
+    monkeypatch.setattr(video_understand.asr, "transcribe_url", lambda *args, **kwargs: "视频里说的是接入步骤")
+
+    video_understand.analyze_page(
+        store, llm, page, "456", "标题", media_url="https://example.com/v.mp4", settings=settings
+    )
+
+    prompt = "\n".join(
+        part.get("text", "")
+        for part in llm.calls[0][0][0]["content"]
+        if part.get("type") == "text"
+    )
+    assert "视频里说的是接入步骤" in prompt
+    assert store.transcripts["456"] == "视频里说的是接入步骤"
 
 
 def test_context_block_uses_recent_summaries():

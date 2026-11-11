@@ -190,6 +190,17 @@ class Settings:
     vision_enabled: bool = True
     # 抖音分享前用关键帧做视频理解；关闭后退回只读文案
     video_understanding_enabled: bool = True
+    # ---- 可选本地 ASR（SenseVoiceSmall + sherpa-onnx CLI）----
+    asr_enabled: bool = False
+    asr_bin: Path = Path("tools/asr/bin/sherpa-onnx-offline.exe")
+    asr_model: Path = Path("tools/asr/sensevoice/model.int8.onnx")
+    asr_tokens: Path = Path("tools/asr/sensevoice/tokens.txt")
+    asr_ffmpeg: Path = Path("tools/ffmpeg/ffmpeg.exe")
+    asr_language: str = "zh"
+    asr_max_seconds: int = 180
+    asr_timeout: int = 120
+    # 所有临时音频/下载都放项目内，绝不落 C 盘
+    asr_tmp_dir: Path = Path("data/tmp/asr")
     inbox_dir: Path = Path("data/inbox")
     inbox_max_files: int = 300
     draw_enabled: bool = True
@@ -467,6 +478,17 @@ class Settings:
             image_max_bytes=_int(env, "IMAGE_MAX_BYTES", 5 * 1024 * 1024),
             vision_enabled=_bool(env, "VISION_ENABLED", True),
     video_understanding_enabled=_bool(env, "VIDEO_UNDERSTANDING_ENABLED", True),
+    asr_enabled=_bool(env, "ASR_ENABLED", False),
+    asr_bin=base_dir / env.get("ASR_BIN", "tools/asr/bin/sherpa-onnx-offline.exe").strip(),
+    asr_model=base_dir
+    / env.get("ASR_MODEL", "tools/asr/sensevoice/model.int8.onnx").strip(),
+    asr_tokens=base_dir
+    / env.get("ASR_TOKENS", "tools/asr/sensevoice/tokens.txt").strip(),
+    asr_ffmpeg=base_dir / env.get("ASR_FFMPEG", "tools/ffmpeg/ffmpeg.exe").strip(),
+    asr_language=env.get("ASR_LANGUAGE", "zh").strip() or "zh",
+    asr_max_seconds=_int(env, "ASR_MAX_SECONDS", 180, minimum=5),
+    asr_timeout=_int(env, "ASR_TIMEOUT", 120, minimum=10),
+    asr_tmp_dir=base_dir / env.get("ASR_TMP_DIR", "data/tmp/asr").strip(),
             inbox_dir=base_dir / env.get("INBOX_DIR", "data/inbox").strip(),
             inbox_max_files=_int(env, "INBOX_MAX_FILES", 300, minimum=10),
             draw_enabled=_bool(env, "DRAW_ENABLED", True),

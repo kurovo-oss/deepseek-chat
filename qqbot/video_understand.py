@@ -10,6 +10,7 @@ import hashlib
 import logging
 import time
 
+from . import asr
 from . import vision
 
 log = logging.getLogger("qqbot")
@@ -157,6 +158,8 @@ def analyze_page(
     aweme_id: str,
     desc: str = "",
     now: int | None = None,
+    media_url: str = "",
+    settings=None,
 ) -> str:
     """分析当前打开的视频页；有缓存就直接返回。"""
     if llm is None or page is None or not aweme_id:
@@ -169,12 +172,20 @@ def analyze_page(
     frames = capture_frames(page)
     if not frames:
         return ""
-    summary = vision.describe_frames(llm, frames, context=desc)
+    transcript = ""
+    if media_url and settings is not None and getattr(settings, "asr_enabled", False):
+        one_ok, _reason = asr.available(settings)
+        if one_ok:
+            transcript = asr.transcribe_url(media_url, settings)
+    summary = vision.describe_frames(
+        llm, frames, context=desc, transcript=transcript
+    )
     if summary:
         store.save_video_note(
             str(aweme_id),
             summary,
             desc_hash=desc_hash,
+            transcript=transcript,
             frames=[f"frame:{index}" for index in range(len(frames))],
             now=now,
         )

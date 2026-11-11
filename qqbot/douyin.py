@@ -216,6 +216,27 @@ def login_probe(page: cdp_mod.CDP) -> dict:
     return state
 
 
+VIDEO_MEDIA_JS = """(async () => {
+  const m = location.href.match(/\\/video\\/(\\d+)/);
+  if (!m) return {};
+  const r = await fetch('/aweme/v1/web/aweme/detail/?aweme_id=' + m[1] + '&aid=6383', {credentials: 'include'});
+  const x = await r.json();
+  const v = (x.aweme_detail && x.aweme_detail.video) || {};
+  const urls = (v.play_addr && v.play_addr.url_list) || [];
+  return {url: urls[0] || '', duration: Number(v.duration) || 0};
+})()"""
+
+
+def video_media_url(page: cdp_mod.CDP, aweme_id: str = "") -> str:
+    """从已打开的视频页拿播放地址；拿不到就让 ASR 跳过。"""
+    try:
+        data = page.evaluate(VIDEO_MEDIA_JS, timeout=20) or {}
+    except Exception:  # noqa: BLE001 - 播放地址拿不到只降级
+        return ""
+    url = str(data.get("url") or "")
+    return url if url.startswith(("http://", "https://")) else ""
+
+
 SCROLL_FEED_JS = """(() => {
   const before = window.scrollY;
   window.scrollBy(0, Math.max(window.innerHeight * 0.85, 600));
@@ -581,7 +602,14 @@ def analyze_link(store, settings, llm, text: str, now: int | None = None) -> dic
         except Exception:  # noqa: BLE001
             desc = ""
         summary = video_understand.analyze_page(
-            store, llm, page, aweme_id, desc, now=now
+            store,
+            llm,
+            page,
+            aweme_id,
+            desc,
+            now=now,
+            media_url=video_media_url(page, aweme_id),
+            settings=settings,
         )
         if not summary:
             return None
@@ -723,7 +751,14 @@ def run_once(store, settings, guard, sender, browser: Browser, now: int | None =
                         and getattr(settings, "video_understanding_enabled", True)
                     ):
                         summary = video_understand.analyze_page(
-                            store, llm, page, item["id"], item.get("text", ""), now=stamp
+                            store,
+                            llm,
+                            page,
+                            item["id"],
+                            item.get("text", ""),
+                            now=stamp,
+                            media_url=video_media_url(page, item["id"]),
+                            settings=settings,
                         )
                     if not summary and probe is not None:
                         summary = str(probe.get("summary") or "")

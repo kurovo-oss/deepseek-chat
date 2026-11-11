@@ -119,6 +119,7 @@ def describe_frames(
     llm: LLMClient,
     frames: list[bytes],
     context: str = "",
+    transcript: str = "",
 ) -> str:
     """多帧视频理解：一次交给多模态模型，返回视频实际内容摘要。"""
     frames = [data for data in frames if data][:6]
@@ -131,9 +132,15 @@ def describe_frames(
                 "这是同一条抖音视频按时间顺序截取的关键帧。"
                 "请说明视频实际在讲什么、出现了哪些人物/物品/操作步骤，"
                 "以及画面上的文字、字幕或界面。"
-                "只根据画面判断，不确定就说不确定；不要复述标题，不要编造没看到的内容。"
+                "只根据画面和下面的口播转写判断，不确定就说不确定；"
+                "不要复述标题，不要编造没看到/没听到的内容。"
                 "用三到五句话概括。"
                 + (f"\n标题/文案（仅作辅助，不要照抄）：{context[:300]}" if context else "")
+                + (
+                    "\n口播转写（本地 ASR，可能有错；只作辅助）：" + transcript[:1200]
+                    if transcript
+                    else "\n（没有口播转写，只根据画面）"
+                )
             ),
         }
     ]

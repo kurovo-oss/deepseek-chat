@@ -142,6 +142,7 @@ CREATE TABLE IF NOT EXISTS video_notes (
   aweme_id   TEXT PRIMARY KEY,
   desc_hash  TEXT NOT NULL DEFAULT '',
   summary    TEXT NOT NULL,
+  transcript TEXT NOT NULL DEFAULT '',
   frames     TEXT NOT NULL DEFAULT '[]',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
@@ -369,6 +370,14 @@ class Store:
         if "attempts" not in event_columns:
             self._conn.execute(
                 "ALTER TABLE proactive_events ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0"
+            )
+        video_columns = {
+            row["name"]
+            for row in self._conn.execute("PRAGMA table_info(video_notes)").fetchall()
+        }
+        if "transcript" not in video_columns:
+            self._conn.execute(
+                "ALTER TABLE video_notes ADD COLUMN transcript TEXT NOT NULL DEFAULT ''"
             )
         goal_columns = {
             row["name"]
@@ -631,11 +640,18 @@ class Store:
             return ""
         return str(row["summary"] or "")
 
+    def get_video_transcript(self, aweme_id: str) -> str:
+        row = self._conn.execute(
+            "SELECT transcript FROM video_notes WHERE aweme_id = ?", (str(aweme_id),)
+        ).fetchone()
+        return str(row["transcript"] or "") if row else ""
+
     def save_video_note(
         self,
         aweme_id: str,
         summary: str,
         desc_hash: str = "",
+        transcript: str = "",
         frames: list[str] | None = None,
         now: int | None = None,
     ) -> None:
@@ -643,12 +659,13 @@ class Store:
         with self._lock:
             self._conn.execute(
                 "INSERT OR REPLACE INTO video_notes"
-                " (aweme_id, desc_hash, summary, frames, created_at, updated_at)"
-                " VALUES (?, ?, ?, ?, ?, ?)",
+                " (aweme_id, desc_hash, summary, transcript, frames, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     str(aweme_id),
                     desc_hash,
                     summary,
+                    str(transcript or ""),
                     json.dumps(frames or [], ensure_ascii=False),
                     stamp,
                     stamp,

@@ -54,6 +54,12 @@ DOUYIN_FEED_SCROLL_ROUNDS=2
 
 关闭后抖音分享恢复只读文案。`VISION_ENABLED` 仍然是总开关。
 
+## 可选 ASR
+
+如果装了本地 SenseVoiceSmall + sherpa-onnx，视频摘要会同时带上口播转写；
+所有临时音频都在项目 `data/tmp/asr`，不写 C 盘。安装见
+[asr.md](asr.md)。
+
 ## 局限
 
 - 关键帧能看画面、字幕、操作步骤，听不到口播；
