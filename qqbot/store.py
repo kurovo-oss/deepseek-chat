@@ -148,6 +148,29 @@ CREATE TABLE IF NOT EXISTS video_notes (
   updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS tasks (
+  id                INTEGER PRIMARY KEY,
+  kind              TEXT NOT NULL DEFAULT 'followup',
+  title             TEXT NOT NULL,
+  description       TEXT NOT NULL DEFAULT '',
+  status            TEXT NOT NULL DEFAULT 'pending',
+  due_at            INTEGER,
+  attempts          INTEGER NOT NULL DEFAULT 0,
+  result            TEXT NOT NULL DEFAULT '',
+  error             TEXT NOT NULL DEFAULT '',
+  source_message_id INTEGER,
+  notify_at         INTEGER,
+  notify_status     TEXT NOT NULL DEFAULT 'pending',
+  notified_at       INTEGER,
+  started_at        INTEGER,
+  finished_at       INTEGER,
+  created_at        INTEGER NOT NULL,
+  updated_at        INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_status_due ON tasks(status, due_at);
+CREATE INDEX IF NOT EXISTS idx_tasks_notify ON tasks(notify_status, notify_at);
+CREATE INDEX IF NOT EXISTS idx_tasks_source ON tasks(source_message_id);
+
 CREATE TABLE IF NOT EXISTS proactive_events (
   id          INTEGER PRIMARY KEY,
   kind        TEXT NOT NULL,
@@ -275,6 +298,13 @@ _GOAL_UPDATABLE = frozenset(
         "last_outcome_at", "updated_at",
     }
 )
+_TASK_UPDATABLE = frozenset(
+    {
+        "kind", "title", "description", "status", "due_at", "attempts", "result",
+        "error", "source_message_id", "notify_at", "notify_status", "notified_at",
+        "started_at", "finished_at", "updated_at",
+    }
+)
 
 
 def bigrams(text: str, limit: int = 12) -> list[str]:
@@ -371,6 +401,17 @@ class Store:
             self._conn.execute(
                 "ALTER TABLE proactive_events ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0"
             )
+        task_columns = {
+            row["name"]
+            for row in self._conn.execute("PRAGMA table_info(tasks)").fetchall()
+        }
+        task_migrations = {
+            "started_at": "ALTER TABLE tasks ADD COLUMN started_at INTEGER",
+            "finished_at": "ALTER TABLE tasks ADD COLUMN finished_at INTEGER",
+        }
+        for name, sql in task_migrations.items():
+            if name not in task_columns:
+                self._conn.execute(sql)
         video_columns = {
             row["name"]
             for row in self._conn.execute("PRAGMA table_info(video_notes)").fetchall()
@@ -1416,6 +1457,96 @@ class Store:
         with self._lock:
             rows = self._conn.execute(sql, args).fetchall()
         return [dict(row) for row in rows]
+
+    # ---------------- tasks ----------------
+    def add_task(
+        self,
+        title: str,
+        description: str = "",
+        kind: str = "followup",
+        due_at: int | None = None,
+        source_message_id: int | None = None,
+        status: str = "pending",
+        notify_at: int | None = None,
+        created_at: int | None = None,
+    ) -> int:
+        now = int(created_at if created_at is not None else time.time())
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO tasks(kind, title, description, status, due_at,"
+                " source_message_id, notify_at, created_at, updated_at)"
+                " VALUES (?,?,?,?,?,?,?,?,?)",
+                (
+                    kind,
+                    title,
+                    description,
+                    status,
+                    due_at,
+                    source_message_id,
+                    notify_at,
+                    now,
+                    now,
+                ),
+            )
+            self._conn.commit()
+            return int(cur.lastrowid)
+
+    def get_task(self, task_id: int) -> dict | None:
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM tasks WHERE id = ?", (int(task_id),)).fetchone()
+        return dict(row) if row else None
+
+    def list_tasks(self, status: str | None = None, limit: int = 100) -> list[dict]:
+        sql = "SELECT * FROM tasks"
+        args: list = []
+        if status:
+            sql += " WHERE status = ?"
+            args.append(status)
+        sql += " ORDER BY id DESC LIMIT ?"
+        args.append(max(1, int(limit)))
+        with self._lock:
+            rows = self._conn.execute(sql, args).fetchall()
+        return [dict(row) for row in rows]
+
+    def due_tasks(self, now: int, limit: int = 10) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM tasks WHERE status = 'pending' AND due_at IS NOT NULL"
+                " AND due_at <= ? ORDER BY due_at ASC, id ASC LIMIT ?",
+                (int(now), max(1, int(limit))),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def due_task_notifications(self, now: int, limit: int = 10) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM tasks WHERE status IN ('done','failed')"
+                " AND notify_status = 'pending' AND notify_at IS NOT NULL"
+                " AND notify_at <= ? ORDER BY notify_at ASC, id ASC LIMIT ?",
+                (int(now), max(1, int(limit))),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def update_task(self, task_id: int, **fields) -> bool:
+        updates = {k: v for k, v in fields.items() if k in _TASK_UPDATABLE}
+        if not updates:
+            return False
+        updates.setdefault("updated_at", int(time.time()))
+        assignments = ", ".join(f"{key} = ?" for key in updates)
+        values = list(updates.values()) + [int(task_id)]
+        with self._lock:
+            cur = self._conn.execute(f"UPDATE tasks SET {assignments} WHERE id = ?", values)
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    def count_tasks_notified_since(self, since: int) -> int:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COUNT(*) AS n FROM tasks WHERE notify_status = 'sent'"
+                " AND notified_at >= ?",
+                (int(since),),
+            ).fetchone()
+        return int(row["n"] or 0)
 
     def add_outcome(self, action_id: int, signal: str, note: str = "", created_at: int | None = None) -> int:
         now = int(created_at if created_at is not None else time.time())

@@ -37,6 +37,7 @@ from .logsetup import setup_logging
 from .memory import Memory
 from .onebot import HttpSender
 from .proactive import start_scheduler
+from .tasks import TaskService, start_task_worker
 from . import proactive_mute
 from .replay import start_replayer
 from .runtime import Runtime
@@ -439,6 +440,14 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     engine.guard = guard_mod.Guard(engine.store, settings)
+    if settings.tasks_enabled:
+        engine.task_service = TaskService(engine, settings)
+        start_task_worker(engine.task_service, stop_event)
+        log.info(
+            "任务 worker 已启用：每 %d 秒轮询，完成后每天最多通知 %d 次",
+            settings.task_poll_seconds,
+            settings.task_notify_daily_max,
+        )
     if settings.mood_enabled:
         engine.mood = Mood(engine.store, settings)
         log.info("情绪状态：%s", engine.mood.line())

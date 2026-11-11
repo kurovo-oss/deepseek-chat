@@ -314,6 +314,12 @@ class Settings:
     talkstate_enabled: bool = True
     # 后台维护（备份、前情摘要）多久跑一次
     background_interval_seconds: int = 20
+    # ---- 任务队列 ----
+    tasks_enabled: bool = True
+    task_poll_seconds: int = 20
+    task_promise_minutes: int = 15
+    task_notify_daily_max: int = 3
+    task_prompt_file: Path = Path("prompts/task_followup.md")
     # ---- 长期记忆（M2）----
     memory_enabled: bool = True
     extract_enabled: bool = True
@@ -578,6 +584,12 @@ class Settings:
             context_token_budget=_int(env, "CONTEXT_TOKEN_BUDGET", 9000, minimum=1500),
             talkstate_enabled=_bool(env, "TALKSTATE_ENABLED", True),
             background_interval_seconds=_int(env, "BACKGROUND_INTERVAL_SECONDS", 20, minimum=5),
+    tasks_enabled=_bool(env, "TASKS_ENABLED", True),
+    task_poll_seconds=_int(env, "TASK_POLL_SECONDS", 20, minimum=5),
+    task_promise_minutes=_int(env, "TASK_PROMISE_MINUTES", 15, minimum=1),
+    task_notify_daily_max=_int(env, "TASK_NOTIFY_DAILY_MAX", 3, minimum=1),
+    task_prompt_file=base_dir
+    / env.get("TASK_PROMPT_FILE", "prompts/task_followup.md").strip(),
             memory_enabled=_bool(env, "MEMORY_ENABLED", True),
             extract_enabled=_bool(env, "EXTRACT_ENABLED", True),
             memory_pending_inject=_bool(env, "MEMORY_PENDING_INJECT", False),

@@ -867,6 +867,46 @@ class WebUI:
         self._audit("cancel_goal_action", target=str(action_id))
         return {"ok": True, "action": action}
 
+    def api_tasks(self) -> dict:
+        store = self.engine.store
+        items = store.list_tasks(limit=100)
+        return {
+            "items": items,
+            "counts": {
+                status: sum(1 for item in items if item.get("status") == status)
+                for status in ("pending", "running", "done", "failed", "cancelled")
+            },
+        }
+
+    def api_task_create(self, body: dict) -> dict:
+        title = _as_text(body.get("title"), "任务内容", 300)
+        description = body.get("description") or ""
+        if not isinstance(description, str):
+            raise ValueError("任务备注必须是字符串")
+        try:
+            minutes = int(body.get("due_minutes") or 15)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("due_minutes 必须是整数") from exc
+        if not 1 <= minutes <= 10080:
+            raise ValueError("due_minutes 必须在 1~10080 之间")
+        now = int(time.time())
+        task = self.engine.store.add_task(
+            title=title,
+            description=description[:2000],
+            kind="manual",
+            due_at=now + minutes * 60,
+        )
+        self._audit("create_task", target=str(task))
+        return {"ok": True, "item": self.engine.store.get_task(task)}
+
+    def api_task_cancel(self, body: dict) -> dict:
+        task_id = _as_int(body.get("id"), "任务编号", 1, 10**9)
+        if self.engine.store.get_task(task_id) is None:
+            raise ValueError("这个任务已经不在了")
+        self.engine.store.update_task(task_id, status="cancelled", notify_status="cancelled")
+        self._audit("cancel_task", target=str(task_id))
+        return {"ok": True, "item": self.engine.store.get_task(task_id)}
+
     def api_style_suggestions(self) -> dict:
         return {
             "items": self.engine.store.list_style_suggestions(status="suggested", limit=20)
@@ -1189,6 +1229,8 @@ def make_handler(app: WebUI):
                     self._json(app.api_goals())
                 elif path == "/api/styles":
                     self._json(app.api_style_suggestions())
+                elif path == "/api/tasks":
+                    self._json(app.api_tasks())
                 elif path == "/api/goals/tools":
                     self._json(app.api_goal_tools())
                 elif path == "/health":
@@ -1234,6 +1276,10 @@ def make_handler(app: WebUI):
                     self._json(app.api_goal_cancel(body))
                 elif path == "/api/styles/review":
                     self._json(app.api_style_review(body))
+                elif path == "/api/tasks/create":
+                    self._json(app.api_task_create(body))
+                elif path == "/api/tasks/cancel":
+                    self._json(app.api_task_cancel(body))
                 elif path == "/api/styles/apply":
                     self._json(app.api_style_apply(body))
                 elif path == "/api/styles/dismiss":

@@ -127,7 +127,10 @@
       loadMemory();
       loadStyleSuggestions();
     }
-    if (page === 'goals') loadGoals();
+    if (page === 'goals') {
+      loadGoals();
+      loadTasks();
+    }
     if (page === 'persona') loadPersona();
     if (page === 'config') loadSettings();
     if (page === 'logs') loadLogs();
@@ -477,6 +480,78 @@
       items.forEach((item) => list.append(renderGoal(item, byGoal.get(String(item.id)))));
     } catch (err) {
       list.replaceChildren(el('p', 'muted', err.message));
+    }
+  }
+
+  const TASK_STATUS = {
+    pending: '等处理',
+    running: '处理中',
+    done: '已完成',
+    failed: '未完成',
+    cancelled: '已取消',
+  };
+
+  function renderTask(item) {
+    const node = el('div', 'task-item');
+    const head = el('div', 'task-item-head');
+    head.append(el('span', `goal-badge ${item.status || 'pending'}`, TASK_STATUS[item.status] || item.status));
+    head.append(el('b', 'task-title', item.title || '（空任务）'));
+    head.append(el('span', 'tag', `#${item.id}`));
+    node.append(head);
+    if (item.result) node.append(el('p', 'task-result', item.result));
+    if (item.error) node.append(el('p', 'task-error', item.error));
+    const meta = el('div', 'memory-meta');
+    meta.append(el('span', '', item.due_at ? `计划 ${fmtTime(item.due_at, true)}` : '无时间'));
+    meta.append(el('span', '', item.notify_status === 'sent' ? '已通知' : '未通知'));
+    node.append(meta);
+    if (item.status === 'pending' || item.status === 'running') {
+      const actions = el('div', 'memory-actions');
+      actions.append(goalActionButton('取消', 'danger', () => cancelTask(item)));
+      node.append(actions);
+    }
+    return node;
+  }
+
+  async function loadTasks() {
+    const list = $('#task-list');
+    if (!list) return;
+    try {
+      const data = await api('/api/tasks');
+      const items = data.items || [];
+      list.replaceChildren();
+      if (!items.length) {
+        list.append(el('p', 'muted small', '还没有任务。'));
+        return;
+      }
+      items.slice(0, 12).forEach((item) => list.append(renderTask(item)));
+    } catch (err) {
+      list.replaceChildren(el('p', 'muted small', err.message));
+    }
+  }
+
+  async function createTask() {
+    const title = window.prompt('要让她稍后处理什么？', '');
+    if (title === null || !title.trim()) return;
+    const minutes = Number(window.prompt('多少分钟后开始处理？（默认 15）', '15') || 15);
+    try {
+      await api('/api/tasks/create', {
+        method: 'POST',
+        body: { title: title.trim(), due_minutes: Number.isFinite(minutes) ? minutes : 15 },
+      });
+      toast('任务已排队');
+      await loadTasks();
+    } catch (err) {
+      toast(err.message, true);
+    }
+  }
+
+  async function cancelTask(item) {
+    try {
+      await api('/api/tasks/cancel', { method: 'POST', body: { id: item.id } });
+      toast('任务已取消');
+      await loadTasks();
+    } catch (err) {
+      toast(err.message, true);
     }
   }
 
@@ -1367,6 +1442,7 @@
     $('#style-review').addEventListener('click', reviewStyles);
     $('#reload-goals').addEventListener('click', loadGoals);
     $('#goal-review').addEventListener('click', reviewGoals);
+    $('#task-add').addEventListener('click', createTask);
     let memorySearchTimer = null;
     $('#memory-search').addEventListener('input', () => {
       clearTimeout(memorySearchTimer);

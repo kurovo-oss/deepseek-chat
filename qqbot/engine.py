@@ -110,6 +110,8 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
         self.proactive_scheduler = None
         # 做梦器同样由 main 注入：/dream 手动整理一次
         self.dreamer = None
+        # 任务队列由 main 注入：承诺识别和后台完成通知
+        self.task_service = None
         # 情绪/驱力状态由 main 注入：没配就当没有，clone 也能跑
         self.mood = None
         # 一条回复可能分好几段发送；主动消息线程和消息线程同时发时，
@@ -275,6 +277,11 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
             return
 
         reply = self._chat(session)
+        if self.task_service is not None:
+            try:
+                self.task_service.note_promise(text, reply, source_message_id=record_id)
+            except Exception:  # noqa: BLE001 - 任务登记不能拖垮回复
+                log.exception("登记任务承诺失败")
         self._send_reply(
             message.user_id,
             session,
