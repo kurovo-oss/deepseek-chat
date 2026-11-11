@@ -67,7 +67,10 @@
 AUTONOMY_ENABLED=false
 AUTONOMY_MODE=confirm
 AUTONOMY_MAX_ACTIONS_PER_DAY=1
+AUTONOMY_RETRY_HOURS=4
 ```
+
+失败或没有生成动作也会冷却 4 小时，避免后台每 20 秒调用一次模型。
 
 ## 安全边界
 

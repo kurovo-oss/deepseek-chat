@@ -310,6 +310,7 @@ class Settings:
     autonomy_enabled: bool = False
     autonomy_mode: str = "confirm"
     autonomy_max_actions_per_day: int = 1
+    autonomy_retry_hours: int = 4
     # 相处方式周复盘：默认关闭自动跑；手动入口始终可用。
     style_review_enabled: bool = False
     style_review_days: int = 7
@@ -556,6 +557,7 @@ class Settings:
             autonomy_max_actions_per_day=_int(
                 env, "AUTONOMY_MAX_ACTIONS_PER_DAY", 1, minimum=1
             ),
+            autonomy_retry_hours=_int(env, "AUTONOMY_RETRY_HOURS", 4, minimum=1),
             style_review_enabled=_bool(env, "STYLE_REVIEW_ENABLED", False),
             style_review_days=_int(env, "STYLE_REVIEW_DAYS", 7, minimum=1),
             style_review_prompt_file=base_dir

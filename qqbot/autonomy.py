@@ -29,16 +29,22 @@ def tick(engine, store, settings, now: int | None = None) -> list[dict]:
         return []
     service = GoalActionService(engine)
     prepared: list[dict] = []
+    retry = max(1, int(getattr(settings, "autonomy_retry_hours", 4))) * 3600
     for goal in store.list_goals(status="active", limit=40):
         if not goal.get("due_at") or int(goal["due_at"]) > stamp:
             continue
         if goal.get("autonomy") not in (None, "", "confirm"):
             continue
+        if goal.get("review_at") and stamp - int(goal["review_at"]) < retry:
+            continue
         try:
             action = service.prepare(int(goal["id"]), now=stamp)
             prepared.append(action)
+            store.update_goal(int(goal["id"]), review_at=stamp)
         except Exception as exc:  # noqa: BLE001 - 单条目标失败不影响其他目标
             log.info("目标动作进入队列失败：%s", exc)
+            # 失败也冷却，避免后台每 20 秒烧一次模型。
+            store.update_goal(int(goal["id"]), review_at=stamp)
         if prepared:
             break
     return prepared
