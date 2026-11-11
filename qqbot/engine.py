@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from . import draw as draw_mod
+from . import douyin as douyin_mod
 from . import abilities as abilities_mod
 from . import budget as budget_mod
 from . import life as life_mod
@@ -190,6 +191,18 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
                 extras.append(f"（他引用了这句：{quoted}）")
         # 引用在前、他的话在后：读起来是"接着这句说的"
         content = "\n".join(part for part in [*extras, text] if part).strip()
+        if text and not text.startswith("/") and douyin_mod.extract_link(text):
+            try:
+                video = douyin_mod.analyze_link(
+                    self.store, self.settings, self.llm, text
+                )
+            except Exception:  # noqa: BLE001 - 视频分析失败不能拖垮对话
+                log.exception("抖音链接分析异常")
+                video = None
+            if video:
+                content += f"\n（他发来一个抖音视频，你看到的画面：{video['summary']}）"
+            else:
+                content += "\n（他发来一个抖音视频，你只看到链接/标题，没真正点开看，别编视频内容）"
 
         record_id = self.store.save_message(
             session, "user", content or "[表情]", qq_msg_id=message.message_id or None

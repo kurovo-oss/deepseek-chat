@@ -306,6 +306,18 @@ def test_failed_like_is_audited_and_stops(tmp_path, monkeypatch):
     assert gate.recent(1)[0]["result"] == "failed"
 
 
+def test_extract_and_resolve_direct_douyin_link():
+    text = "你看这个 https://www.douyin.com/video/123456789 好笑"
+    link = douyin.extract_link(text)
+
+    assert link == "https://www.douyin.com/video/123456789"
+    assert douyin.resolve_aweme_id(link) == "123456789"
+
+
+def test_extract_short_douyin_link():
+    assert douyin.extract_link("https://v.douyin.com/AbCdEf_1/") == "https://v.douyin.com/AbCdEf_1/"
+
+
 def test_share_text_keeps_link():
     text = douyin.share_text("猫猫做饭", "999")
 

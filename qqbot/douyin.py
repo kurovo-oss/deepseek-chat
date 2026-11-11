@@ -17,6 +17,8 @@ import re
 import sqlite3
 import subprocess
 import time
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
 from . import cdp as cdp_mod
@@ -476,6 +478,75 @@ def comment_on(
         if cleaned:
             return cleaned
     return ""
+
+
+LINK_RE = re.compile(
+    r"https?://(?:v\.douyin\.com/[A-Za-z0-9_\-]+/?"
+    r"|(?:www\.)?douyin\.com/video/\d+)"
+)
+
+
+def extract_link(text: str) -> str:
+    match = LINK_RE.search(str(text or ""))
+    return match.group(0) if match else ""
+
+
+def resolve_aweme_id(url: str, timeout: float = 12.0) -> str:
+    """把短链/direct 链接解析成 aweme_id；只接受抖音域名。"""
+    match = re.search(r"/video/(\d+)", str(url or ""))
+    if match:
+        return match.group(1)
+    if not str(url or "").startswith("http"):
+        return ""
+    request = urllib.request.Request(
+        url,
+        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            final = response.geturl()
+    except Exception:  # noqa: BLE001 - 短链解析失败就降级
+        return ""
+    host = urllib.parse.urlsplit(final).netloc.lower()
+    if not (host == "douyin.com" or host.endswith(".douyin.com") or host.endswith(".iesdouyin.com")):
+        return ""
+    match = re.search(r"/video/(\d+)", final)
+    return match.group(1) if match else ""
+
+
+def analyze_link(store, settings, llm, text: str, now: int | None = None) -> dict | None:
+    """分析用户发来的抖音链接；失败返回 None，由调用方诚实降级。"""
+    if llm is None or not getattr(settings, "video_understanding_enabled", True):
+        return None
+    link = extract_link(text)
+    if not link:
+        return None
+    aweme_id = resolve_aweme_id(link)
+    if not aweme_id:
+        return None
+    browser = Browser(settings)
+    try:
+        page = browser.start()
+        video_url = getattr(settings, "douyin_video_url", VIDEO) or VIDEO
+        page.goto(video_url.format(aweme_id=aweme_id), timeout=40)
+        time.sleep(2.5)
+        state = login_probe(page)
+        if state.get("captcha"):
+            return None
+        desc = ""
+        try:
+            desc = str(page.evaluate("document.title") or "")[:200]
+        except Exception:  # noqa: BLE001
+            desc = ""
+        summary = video_understand.analyze_page(
+            store, llm, page, aweme_id, desc, now=now
+        )
+        if not summary:
+            return None
+        return {"aweme_id": aweme_id, "summary": summary, "url": link, "desc": desc}
+    except Exception as exc:  # noqa: BLE001 - 用户链接分析失败不影响回复
+        log.info("抖音链接分析失败：%s", exc)
+        return None
 
 
 def share_text(text: str, aweme_id: str, prefix: str = "", comment: str = "") -> str:
