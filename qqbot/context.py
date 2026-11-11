@@ -28,6 +28,7 @@ from . import samples as samples_mod
 from . import selfknow as selfknow_mod
 from . import talkstate as talkstate_mod
 from . import turnplan as turnplan_mod
+from . import video_understand
 from . import usage as usage_mod
 from .formatting import fix_address
 from .onebot import IncomingMessage
@@ -114,6 +115,15 @@ class ContextMixin:
         if goal_note:
             sections.append(
                 budget_mod.Section("目标", goal_note, priority=59, quota=260)
+            )
+
+        try:
+            video_note = video_understand.context_block(self.store)
+        except Exception:  # noqa: BLE001 - 视频摘要不能影响主回复
+            video_note = ""
+        if video_note:
+            sections.append(
+                budget_mod.Section("看过的视频", video_note, priority=58, quota=240)
             )
 
         recall = self._recall_section(selected)

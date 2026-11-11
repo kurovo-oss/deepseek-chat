@@ -12,6 +12,25 @@
 6. `douyin.comment_on` 有摘要时按画面写短评，没有时保持原来的“只读标题”提示词；
 7. 主人发来抖音链接时，`douyin.analyze_link` 先解析短链、打开视频页、截帧总结，再把摘要作为“他发来的视频”写进消息；失败则明确写“只看到链接/标题，别编视频内容”。
 
+## 内容驱动选片
+
+- 打开候选视频后先截 1 帧，让模型给 `score / tags / summary`；
+- 分数低于 `DOUYIN_CONTENT_PROBE_MIN_SCORE` 就不点赞、不分享，直接跳过；
+- 每轮最多预判 `DOUYIN_CONTENT_PROBE_MAX` 个候选，避免模型费用失控；
+- 预判失败（模型/截图不可用）不阻塞旧流程，仍按标题处理；
+- 分享前的完整 4 帧摘要优先；完整摘要失败时，才用预判摘要兜底。
+
+## 连续浏览
+
+`read_feed` 会按 `DOUYIN_FEED_SCROLL_ROUNDS` 向下滚动，按 `aweme_id` 去重，
+最多读 12 条候选；滚不动或没有新卡片就停止。
+
+## 观看记忆
+
+分享/链接分析得到摘要后写入 `video_notes`，最近 2 天的摘要会以
+`【最近看过的视频】` 进入上下文，最多 2 条 / 240 字。它只帮助接话，
+不会把视频内容写成事实卡。
+
 ## 降级
 
 - 找不到 `<video>`、视频未加载、验证码、截图失败 → 返回空摘要；
@@ -27,6 +46,10 @@
 
 ```dotenv
 VIDEO_UNDERSTANDING_ENABLED=true
+DOUYIN_CONTENT_PROBE_ENABLED=true
+DOUYIN_CONTENT_PROBE_MIN_SCORE=0.42
+DOUYIN_CONTENT_PROBE_MAX=3
+DOUYIN_FEED_SCROLL_ROUNDS=2
 ```
 
 关闭后抖音分享恢复只读文案。`VISION_ENABLED` 仍然是总开关。

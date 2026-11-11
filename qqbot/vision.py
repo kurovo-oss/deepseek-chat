@@ -6,6 +6,7 @@
 
 import base64
 import hashlib
+import json
 from pathlib import Path
 
 from .images import sniff_image
@@ -57,6 +58,61 @@ def _clean(text: str, max_chars: int = MAX_NOTE_CHARS) -> str:
     if len(note) > max_chars:
         note = note[: max_chars - 1] + "…"
     return note
+
+
+def classify_frame(
+    llm: LLMClient,
+    data: bytes,
+    context: str = "",
+) -> dict | None:
+    """用一帧做轻量预判：值不值得继续看/分享。失败返回 None。"""
+    if not data:
+        return None
+    encoded = base64.b64encode(data).decode("ascii")
+    prompt = (
+        "这是抖音视频的一帧。结合画面判断它大概在讲什么，以及是否值得继续看。"
+        "只输出 JSON：{\"score\":0到1,\"tags\":[\"最多3个\"],\"summary\":\"40字内\"}。"
+        "score 看画面信息量/趣味性，不要只看标题；看不清就给 0.4。"
+        + (f"\n标题/文案仅辅助：{context[:160]}" if context else "")
+    )
+    try:
+        result = llm.chat(
+            [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{_mime(data)};base64,{encoded}"},
+                        },
+                    ],
+                }
+            ],
+            temperature=0.2,
+            max_tokens=800,
+            purpose="vision_probe",
+        )
+    except Exception:  # noqa: BLE001 - 预判失败不阻塞原流程
+        return None
+    text = str(getattr(result, "text", "") or "").strip()
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    try:
+        data_obj = json.loads(text[start : end + 1])
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(data_obj, dict):
+        return None
+    try:
+        score = max(0.0, min(1.0, float(data_obj.get("score", 0.4))))
+    except (TypeError, ValueError):
+        score = 0.4
+    tags = data_obj.get("tags")
+    tags = [str(item)[:12] for item in tags if str(item).strip()][:3] if isinstance(tags, list) else []
+    summary = " ".join(str(data_obj.get("summary") or "").split())[:80]
+    return {"score": score, "tags": tags, "summary": summary}
 
 
 def describe_frames(

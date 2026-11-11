@@ -122,6 +122,34 @@ def capture_frames(page, fractions: tuple[float, ...] = FRACTIONS) -> list[bytes
     return frames
 
 
+def context_block(store, days: int = 2, limit: int = 2, max_chars: int = 240) -> str:
+    """最近看过的视频摘要；让正常聊天也能接上“刚刷到的那个视频”。"""
+    since = int(time.time()) - max(1, int(days)) * 86400
+    rows = store.recent_video_notes(since=since, limit=max(1, int(limit)))
+    lines = []
+    for row in rows:
+        summary = " ".join(str(row.get("summary") or "").split())[:120]
+        if summary:
+            lines.append(f"- {summary}")
+    if not lines:
+        return ""
+    return ("【最近看过的视频】\n" + "\n".join(lines))[:max_chars]
+
+
+def probe_page(page, llm, desc: str = "") -> dict | None:
+    """用一帧做内容预判；不值得继续时返回低分，失败返回 None 交给旧流程。"""
+    if page is None or llm is None:
+        return None
+    frames = capture_frames(page, fractions=(0.22,))
+    if not frames:
+        return None
+    result = vision.classify_frame(llm, frames[0], context=desc)
+    if result is None:
+        return None
+    result["frame"] = frames[0]
+    return result
+
+
 def analyze_page(
     store,
     llm,

@@ -271,6 +271,11 @@ class Settings:
     douyin_daily_max: int = 5
     douyin_share_enabled: bool = True
     douyin_share_daily_max: int = 2
+    # 内容驱动选片：先用一帧判断值不值得继续，再决定点赞/分享
+    douyin_content_probe_enabled: bool = True
+    douyin_content_probe_min_score: float = 0.42
+    douyin_content_probe_max: int = 3
+    douyin_feed_scroll_rounds: int = 2
     # 会拒绝（撒娇那种）：默认关，load_settings 打开
     refusal_enabled: bool = False
     refusal_chance: float = 0.0
@@ -530,6 +535,10 @@ class Settings:
     douyin_daily_max=_int(env, "DOUYIN_DAILY_MAX", 5, minimum=0),
     douyin_share_enabled=_bool(env, "DOUYIN_SHARE_ENABLED", True),
     douyin_share_daily_max=_int(env, "DOUYIN_SHARE_DAILY_MAX", 2, minimum=0),
+    douyin_content_probe_enabled=_bool(env, "DOUYIN_CONTENT_PROBE_ENABLED", True),
+    douyin_content_probe_min_score=_float(env, "DOUYIN_CONTENT_PROBE_MIN_SCORE", 0.42),
+    douyin_content_probe_max=_int(env, "DOUYIN_CONTENT_PROBE_MAX", 3, minimum=1),
+    douyin_feed_scroll_rounds=_int(env, "DOUYIN_FEED_SCROLL_ROUNDS", 2, minimum=0),
     refusal_enabled=_bool(env, "REFUSAL_ENABLED", True),
     refusal_chance=_float(env, "REFUSAL_CHANCE", 0.22),
     reflect_enabled=_bool(env, "REFLECT_ENABLED", True),

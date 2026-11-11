@@ -656,6 +656,15 @@ class Store:
             )
             self._conn.commit()
 
+    def recent_video_notes(self, since: int, limit: int = 3) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM video_notes WHERE updated_at >= ?"
+                " ORDER BY updated_at DESC LIMIT ?",
+                (int(since), max(1, int(limit))),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def list_failed_replies(self, since: int, limit: int = 10) -> list[dict]:
         """发送失败、还值得补发的回复。
 

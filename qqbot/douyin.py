@@ -216,10 +216,52 @@ def login_probe(page: cdp_mod.CDP) -> dict:
     return state
 
 
-def read_feed(page: cdp_mod.CDP, limit: int = 10) -> list[dict]:
+SCROLL_FEED_JS = """(() => {
+  const before = window.scrollY;
+  window.scrollBy(0, Math.max(window.innerHeight * 0.85, 600));
+  return {before, after: window.scrollY};
+})()"""
+
+
+def read_feed(
+    page: cdp_mod.CDP,
+    limit: int = 10,
+    scroll_rounds: int = 0,
+    delay: float = 1.0,
+) -> list[dict]:
+    """读当前可见卡片；需要时向下滚几屏，按 id 去重。"""
     page.call("Runtime.enable")
-    items = page.evaluate(FEED_JS) or []
-    return [item for item in items if item.get("id")][:limit]
+    items: list[dict] = []
+    seen: set[str] = set()
+
+    def collect() -> int:
+        found = page.evaluate(FEED_JS) or []
+        added = 0
+        for item in found:
+            aweme_id = str(item.get("id") or "")
+            if not aweme_id or aweme_id in seen:
+                continue
+            seen.add(aweme_id)
+            items.append(item)
+            added += 1
+            if len(items) >= limit:
+                break
+        return added
+
+    collect()
+    for _ in range(max(0, int(scroll_rounds))):
+        if len(items) >= limit:
+            break
+        before = len(items)
+        try:
+            moved = page.evaluate(SCROLL_FEED_JS) or {}
+        except Exception:  # noqa: BLE001 - 滚不动就用已读到的
+            break
+        time.sleep(max(0.0, float(delay)))
+        collect()
+        if len(items) == before and moved.get("before") == moved.get("after"):
+            break
+    return items[:limit]
 
 
 LIKE_RECT_JS = """(() => {
@@ -560,7 +602,16 @@ def run_once(store, settings, guard, sender, browser: Browser, now: int | None =
              notify=None, mood=None, llm=None) -> dict:
     """刷一轮：读推荐 → 点赞 → 挑有趣的分享。返回统计。"""
     stamp = int(now if now is not None else time.time())
-    result = {"liked": 0, "shared": 0, "skipped": 0, "dry_run": 0, "mood": "", "error": ""}
+    result = {
+        "liked": 0,
+        "shared": 0,
+        "skipped": 0,
+        "dry_run": 0,
+        "probed": 0,
+        "content_skipped": 0,
+        "mood": "",
+        "error": "",
+    }
     if not getattr(settings, "douyin_enabled", False):
         return result
     values = mood.snapshot(stamp) if mood is not None else {}
@@ -598,8 +649,16 @@ def run_once(store, settings, guard, sender, browser: Browser, now: int | None =
                 store.set_cursor("douyin:notified", str(stamp))
                 notify("抖音还没登录：发 /抖音 登录，在服务器上扫码，登录一次就好")
             return result
-        feed = read_feed(page, limit=12)
+        feed = read_feed(
+            page,
+            limit=12,
+            scroll_rounds=int(getattr(settings, "douyin_feed_scroll_rounds", 2) or 0),
+        )
         today = seen_today(store, stamp)
+        probe_count = 0
+        probe_limit = max(1, int(getattr(settings, "douyin_content_probe_max", 3)))
+        probe_on = bool(getattr(settings, "douyin_content_probe_enabled", True)) and llm is not None
+        probe_min = float(getattr(settings, "douyin_content_probe_min_score", 0.42))
         for item in feed:
             if item["id"] in today:
                 continue
@@ -618,6 +677,22 @@ def run_once(store, settings, guard, sender, browser: Browser, now: int | None =
                 continue
             page.goto(video_url.format(aweme_id=item["id"]), timeout=40)
             time.sleep(2)
+            probe = None
+            if probe_on and probe_count < probe_limit:
+                probe_count += 1
+                probe = video_understand.probe_page(page, llm, item.get("text", ""))
+                if probe is not None:
+                    result["probed"] += 1
+                    if float(probe.get("score") or 0) < probe_min:
+                        guard.record(
+                            "douyin", "like", target=item["id"],
+                            payload=item.get("text", ""), result="skipped",
+                            error="content_score", now=stamp,
+                        )
+                        remember(store, item["id"], item.get("text", ""), liked=False, now=stamp)
+                        result["content_skipped"] += 1
+                        result["skipped"] += 1
+                        continue
             wait_like_icon(page)
             outcome = like_current(page)
             if outcome.get("already"):
@@ -650,6 +725,8 @@ def run_once(store, settings, guard, sender, browser: Browser, now: int | None =
                         summary = video_understand.analyze_page(
                             store, llm, page, item["id"], item.get("text", ""), now=stamp
                         )
+                    if not summary and probe is not None:
+                        summary = str(probe.get("summary") or "")
                     comment = "" if share.dry_run else comment_on(
                         llm, item.get("text", ""), values=values, content=summary
                     )

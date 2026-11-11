@@ -41,15 +41,25 @@ class FakeLLM:
         return SimpleNamespace(text="视频里在演示怎么用 DeepSeek 接入 QQ，画面有配置界面。")
 
 
+class ProbeLLM(FakeLLM):
+    def chat(self, messages, **kwargs):
+        self.calls.append((messages, kwargs))
+        return SimpleNamespace(text='{"score":0.82,"tags":["编程","教程"],"summary":"屏幕在演示接入流程"}')
+
+
 class FakeStore:
     def __init__(self):
         self.notes = {}
+        self.recent = []
 
     def get_video_note(self, aweme_id, desc_hash=""):
         return self.notes.get(aweme_id, "")
 
     def save_video_note(self, aweme_id, summary, desc_hash="", frames=None, now=None):
         self.notes[aweme_id] = summary
+
+    def recent_video_notes(self, since, limit=3):
+        return self.recent[:limit]
 
 
 def test_capture_frames_uses_video_rect_and_seeks():
@@ -76,6 +86,29 @@ def test_analyze_page_summarizes_and_caches():
     assert page.shots == 4
     assert len(llm.calls) == 1
     assert len(llm.calls[0][0][0]["content"]) == 5  # 文本 + 4 帧
+
+
+def test_probe_page_scores_one_frame():
+    page = FakePage()
+    llm = ProbeLLM()
+
+    result = video_understand.probe_page(page, llm, "标题")
+
+    assert result["score"] == 0.82
+    assert result["tags"] == ["编程", "教程"]
+    assert result["summary"] == "屏幕在演示接入流程"
+    assert page.shots == 1
+    assert len(llm.calls[0][0][0]["content"]) == 2
+
+
+def test_context_block_uses_recent_summaries():
+    store = FakeStore()
+    store.recent = [{"summary": "视频在演示配置界面"}]
+
+    block = video_understand.context_block(store, days=2, limit=2)
+
+    assert "最近看过的视频" in block
+    assert "配置界面" in block
 
 
 def test_no_video_returns_empty():
