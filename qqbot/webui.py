@@ -810,8 +810,8 @@ class WebUI:
                 raise ValueError("进度必须是 0~1 的数字") from exc
         if "autonomy" in body:
             autonomy = str(body["autonomy"]).strip().lower()
-            if autonomy not in ("confirm", "auto"):
-                raise ValueError("自主级别只能是 confirm 或 auto")
+            if autonomy != "confirm":
+                raise ValueError("自动模式还没开放，目前只能选“需确认”")
             updates["autonomy"] = autonomy
         if "parent_id" in body:
             parent_id = body.get("parent_id")
