@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import logging
 import os
@@ -16,6 +17,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import urllib.request
 from pathlib import Path
 
@@ -24,6 +26,10 @@ log = logging.getLogger("qqbot")
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 MAX_DOWNLOAD_BYTES = 80 * 1024 * 1024
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+
+_recognizer = None
+_recognizer_key = ""
+_recognizer_lock = threading.Lock()
 
 
 class ASRError(RuntimeError):
@@ -85,7 +91,6 @@ def available(settings) -> tuple[bool, str]:
     if not getattr(settings, "asr_enabled", False):
         return False, "ASR 未启用"
     checks = (
-        ("sherpa-onnx", "asr_bin"),
         ("SenseVoice 模型", "asr_model"),
         ("tokens", "asr_tokens"),
         ("ffmpeg", "asr_ffmpeg"),
@@ -94,6 +99,9 @@ def available(settings) -> tuple[bool, str]:
         path = _path(settings, getattr(settings, attr, ""))
         if not path.is_file():
             return False, f"{label} 不存在：{path}"
+    binary = _path(settings, getattr(settings, "asr_bin", ""))
+    if not binary.is_file() and importlib.util.find_spec("sherpa_onnx") is None:
+        return False, f"sherpa-onnx 不存在：{binary}，也没装 Python 包"
     return True, ""
 
 
@@ -154,6 +162,54 @@ def extract_wav(video_path: Path | str, wav_path: Path | str, settings) -> bool:
     return True
 
 
+def _get_python_recognizer(settings):
+    global _recognizer, _recognizer_key
+    import sherpa_onnx
+
+    model = _path(settings, settings.asr_model)
+    tokens = _path(settings, settings.asr_tokens)
+    language = str(getattr(settings, "asr_language", "zh") or "zh")
+    key = f"{model}|{tokens}|{language}"
+    with _recognizer_lock:
+        if _recognizer is not None and _recognizer_key == key:
+            return _recognizer
+        _recognizer = sherpa_onnx.OfflineRecognizer.from_sense_voice(
+            model=str(model),
+            tokens=str(tokens),
+            num_threads=2,
+            use_itn=True,
+            debug=False,
+            language=language,
+        )
+        _recognizer_key = key
+        return _recognizer
+
+
+def _transcribe_python(wav_path: Path, settings) -> str:
+    import numpy as np
+    import wave
+
+    try:
+        with wave.open(str(wav_path), "rb") as wav:
+            sample_rate = wav.getframerate()
+            channels = wav.getnchannels()
+            width = wav.getsampwidth()
+            frames = wav.readframes(wav.getnframes())
+        if width != 2 or channels != 1:
+            log.info("ASR 不支持的 WAV 格式：channels=%s width=%s", channels, width)
+            return ""
+        samples = np.frombuffer(frames, dtype="<i2").astype(np.float32) / 32768.0
+        recognizer = _get_python_recognizer(settings)
+        stream = recognizer.create_stream()
+        stream.accept_waveform(sample_rate, samples)
+        recognizer.decode_stream(stream)
+        text = str(getattr(stream.result, "text", "") or "").strip()
+        return text[:4000]
+    except Exception as exc:  # noqa: BLE001 - 模型/音频异常只降级
+        log.info("ASR Python 识别失败：%s", exc)
+        return ""
+
+
 def transcribe_video(video_path: Path | str, settings) -> str:
     ok, reason = available(settings)
     if not ok:
@@ -164,8 +220,11 @@ def transcribe_video(video_path: Path | str, settings) -> str:
     try:
         if not extract_wav(video_path, wav, settings):
             return ""
+        binary = _path(settings, settings.asr_bin)
+        if not binary.is_file():
+            return _transcribe_python(wav, settings)
         command = [
-            str(_path(settings, settings.asr_bin)),
+            str(binary),
             f"--tokens={_path(settings, settings.asr_tokens)}",
             f"--sense-voice-model={_path(settings, settings.asr_model)}",
             "--use-itn=true",

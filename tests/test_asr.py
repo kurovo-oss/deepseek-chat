@@ -43,14 +43,17 @@ def test_available_reports_missing_files(tmp_path):
     settings = _settings(tmp_path, asr_enabled=True)
     enabled, reason = asr.available(settings)
     assert enabled is False
-    assert "sherpa" in reason
+    assert "模型" in reason or "sherpa" in reason
 
 
 def test_transcribe_video_runs_wrapper_without_real_model(monkeypatch):
     base = ROOT / "build" / ("asr-test-" + uuid.uuid4().hex)
     base.mkdir(parents=True)
     try:
-        settings = _settings(base, asr_enabled=True)
+        fake_bin = base / "tools" / "asr" / "bin" / "sherpa-onnx-offline.exe"
+        fake_bin.parent.mkdir(parents=True)
+        fake_bin.write_bytes(b"fake")
+        settings = _settings(base, asr_enabled=True, asr_bin=fake_bin)
         calls = []
 
         def fake_run(command, _settings, timeout):

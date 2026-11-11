@@ -22,10 +22,17 @@ tools/
 
 ## 安装
 
-1. 从 `sherpa-onnx` 官方 release 下载 Windows 版 `sherpa-onnx-offline` 和
-   SenseVoiceSmall 模型；确认版本后再看它的 `--help`，参数名以 release 为准。
-2. 把 `model.int8.onnx`、`tokens.txt` 放进 `tools/asr/sensevoice/`。
-3. 把 `ffmpeg.exe` 放进 `tools/ffmpeg/`。
+优先支持两种运行时：
+
+- **Python 包**：`tools\python\python.exe -m pip install sherpa-onnx`，本项目已安装时无需 CLI；
+- **CLI**：从 `sherpa-onnx` 官方 release 下载 Windows 版 `sherpa-onnx-offline`，放进 `tools/asr/bin/`。
+
+模型：从 `sherpa-onnx` 官方 release 或 Hugging Face 下载 SenseVoiceSmall，确认版本后把
+`model.int8.onnx`、`tokens.txt` 放进 `tools/asr/sensevoice/`。
+
+ffmpeg：放进 `tools/ffmpeg/ffmpeg.exe`。如果安装了 `imageio-ffmpeg`，也可以直接用它的
+`get_ffmpeg_exe()` 路径。
+
 4. 在 `.env` 中开启：
 
 ```dotenv
@@ -68,9 +75,12 @@ ASR_TMP_DIR=data/tmp/asr
 
 ASR 失败时只返回空 transcript，视频仍会按关键帧总结；不会阻塞聊天。
 
-## 命令行约定
+## 运行时选择
 
-当前包装器使用：
+包装器会优先使用存在的 `sherpa-onnx-offline.exe`；没有 CLI 时自动退回
+`sherpa_onnx` Python 包。两种方式共用同一套模型和临时目录约束。
+
+## 命令行约定
 
 ```text
 sherpa-onnx-offline.exe
