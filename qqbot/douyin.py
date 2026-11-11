@@ -22,6 +22,7 @@ from pathlib import Path
 from . import cdp as cdp_mod
 from . import guard as guard_mod
 from . import mood as mood_mod
+from . import video_understand
 
 log = logging.getLogger("qqbot")
 
@@ -401,12 +402,28 @@ COMMENT_USER = """你在抖音推荐流里刷到这条视频，只看见标题�
 - 不要链接、不要引号、不要 hashtag
 只输出这一句话，不要解释。"""
 
+COMMENT_USER_VIDEO = """你在抖音刷到这条视频，你看了几个关键画面，知道它大概在讲什么。
+标题：{title}
+作者：{author}
+你现在：{mood}
+你看到的画面：{content}
+
+写一句你看到这些内容后的真实反应（20~45 字），可以是吐槽、好奇、或者想发给他的理由。
+要求：
+- 只能根据上面的画面摘要，不要编没看到的剧情、结局或台词
+- 可以自然提到“视频里”的东西，但不要说自己完整看完了
+- 不要自称“大肥鱼”，不要约他一起看（你只是把链接发给他）
+- 不要每句都用“发给你看看”收尾，换着说
+- 一句话要完整，句尾不要是逗号
+- 不要链接、不要引号、不要 hashtag
+只输出这一句话，不要解释。"""
+
 # 她没点进去看，出现这些词就是在编视频内容
 _WATCH_CLAIMS = ("看完", "看了", "视频里", "视频中", "里面", "结局", "剧情", "画面", "开头", "结尾")
 _BAD_PHRASES = ("一起看", "大肥鱼")
 
 
-def _clean_comment(raw: str, title: str) -> str:
+def _clean_comment(raw: str, title: str, summary: str = "") -> str:
     line = next((part.strip() for part in (raw or "").splitlines() if part.strip()), "")
     line = line.strip(" \t\"'“”‘’`")
     line = re.sub(r"#\S+", "", line).strip()
@@ -420,20 +437,29 @@ def _clean_comment(raw: str, title: str) -> str:
         if word in line:
             return ""
     for word in _WATCH_CLAIMS:
-        if word in line and word not in title:
+        if word in line and word not in title and not summary:
             return ""
     return line
 
 
-def comment_on(llm, title: str, author: str = "", values: dict | None = None) -> str:
-    """让她只根据标题说一句自己的话；模型不可用就返回空，让调用方用模板。"""
+def comment_on(
+    llm, title: str, author: str = "", values: dict | None = None, content: str = ""
+) -> str:
+    """有画面摘要时按视频内容写短评；没有就只按标题，不假装看过。"""
     if llm is None:
         return ""
     title = (title or "").strip()
     if not title:
         return ""
     mood_text = mood_mod.mood_line(values or {})
-    prompt = COMMENT_USER.format(title=title[:80], author=(author or "不详")[:20], mood=mood_text)
+    content = " ".join(str(content or "").split())[:360]
+    template = COMMENT_USER_VIDEO if content else COMMENT_USER
+    prompt = template.format(
+        title=title[:80],
+        author=(author or "不详")[:20],
+        mood=mood_text,
+        content=content or "（没有画面摘要）",
+    )
     for _ in range(2):
         try:
             result = llm.chat(
@@ -446,7 +472,7 @@ def comment_on(llm, title: str, author: str = "", values: dict | None = None) ->
         except Exception:  # noqa: BLE001 - 评论失败不影响分享
             log.info("抖音分享短评生成失败", exc_info=True)
             return ""
-        cleaned = _clean_comment(getattr(result, "text", "") or "", title)
+        cleaned = _clean_comment(getattr(result, "text", "") or "", title, summary=content)
         if cleaned:
             return cleaned
     return ""
@@ -544,8 +570,17 @@ def run_once(store, settings, guard, sender, browser: Browser, now: int | None =
                                     user_id=settings.allow_user_id, now=stamp)
                 ok_send = False
                 if share.allowed:
+                    summary = ""
+                    if (
+                        not share.dry_run
+                        and llm is not None
+                        and getattr(settings, "video_understanding_enabled", True)
+                    ):
+                        summary = video_understand.analyze_page(
+                            store, llm, page, item["id"], item.get("text", ""), now=stamp
+                        )
                     comment = "" if share.dry_run else comment_on(
-                        llm, item.get("text", ""), values=values
+                        llm, item.get("text", ""), values=values, content=summary
                     )
                     text = share_text(
                         item.get("text", ""),

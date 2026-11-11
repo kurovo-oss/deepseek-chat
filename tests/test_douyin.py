@@ -333,6 +333,19 @@ def test_comment_rejects_claiming_she_watched_it():
     assert douyin.comment_on(llm, "猫猫在锅里睡觉") == ""
 
 
+def test_comment_can_use_visual_summary_without_overclaiming():
+    llm = FakeLLM("视频里那个配置界面也太眼熟了")
+
+    comment = douyin.comment_on(
+        llm, "猫猫在锅里睡觉", content="画面是 DeepSeek 配置界面，有人在演示接入 QQ"
+    )
+
+    assert comment == "视频里那个配置界面也太眼熟了"
+    prompt = "\n".join(message["content"] for message in llm.calls[0])
+    assert "画面是 DeepSeek" in prompt
+    assert "完整看完" in prompt
+
+
 def test_comment_retries_when_first_try_is_incomplete():
     llm = SeqLLM(["这个标题我笑死，", "这个标题我笑死，猫猫也太会了"])
 

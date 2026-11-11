@@ -12,6 +12,7 @@ from .images import sniff_image
 from .llm import LLMClient
 
 MAX_NOTE_CHARS = 120
+MAX_VIDEO_CHARS = 520
 
 PROMPT = (
     "用一到两句话说明这张图里是什么：谁、在做什么、有没有文字或界面。"
@@ -51,11 +52,53 @@ def describe(llm: LLMClient, data: bytes, sticker: bool = False) -> str:
     return _clean(result.text)
 
 
-def _clean(text: str) -> str:
+def _clean(text: str, max_chars: int = MAX_NOTE_CHARS) -> str:
     note = " ".join((text or "").split())
-    if len(note) > MAX_NOTE_CHARS:
-        note = note[: MAX_NOTE_CHARS - 1] + "…"
+    if len(note) > max_chars:
+        note = note[: max_chars - 1] + "…"
     return note
+
+
+def describe_frames(
+    llm: LLMClient,
+    frames: list[bytes],
+    context: str = "",
+) -> str:
+    """多帧视频理解：一次交给多模态模型，返回视频实际内容摘要。"""
+    frames = [data for data in frames if data][:6]
+    if not frames:
+        return ""
+    parts = [
+        {
+            "type": "text",
+            "text": (
+                "这是同一条抖音视频按时间顺序截取的关键帧。"
+                "请说明视频实际在讲什么、出现了哪些人物/物品/操作步骤，"
+                "以及画面上的文字、字幕或界面。"
+                "只根据画面判断，不确定就说不确定；不要复述标题，不要编造没看到的内容。"
+                "用三到五句话概括。"
+                + (f"\n标题/文案（仅作辅助，不要照抄）：{context[:300]}" if context else "")
+            ),
+        }
+    ]
+    for data in frames:
+        encoded = base64.b64encode(data).decode("ascii")
+        parts.append(
+            {
+                "type": "image_url",
+                "image_url": {"url": f"data:{_mime(data)};base64,{encoded}"},
+            }
+        )
+    try:
+        result = llm.chat(
+            [{"role": "user", "content": parts}],
+            temperature=0.2,
+            max_tokens=2000,
+            purpose="vision_video",
+        )
+    except Exception:  # noqa: BLE001 - 视频理解失败由调用方降级
+        return ""
+    return _clean(getattr(result, "text", "") or "", max_chars=MAX_VIDEO_CHARS)
 
 
 def note_for(store, llm: LLMClient, data: bytes, sticker: bool = False) -> str:

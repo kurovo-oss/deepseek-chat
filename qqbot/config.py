@@ -188,6 +188,8 @@ class Settings:
     tag_prompt_file: Path = Path("prompts/tag.md")
     # ---- 看图 / 画图 ----
     vision_enabled: bool = True
+    # 抖音分享前用关键帧做视频理解；关闭后退回只读文案
+    video_understanding_enabled: bool = True
     inbox_dir: Path = Path("data/inbox")
     inbox_max_files: int = 300
     draw_enabled: bool = True
@@ -459,6 +461,7 @@ class Settings:
             image_send_mode=_choice(env, "IMAGE_SEND_MODE", "path", {"path", "base64"}),
             image_max_bytes=_int(env, "IMAGE_MAX_BYTES", 5 * 1024 * 1024),
             vision_enabled=_bool(env, "VISION_ENABLED", True),
+    video_understanding_enabled=_bool(env, "VIDEO_UNDERSTANDING_ENABLED", True),
             inbox_dir=base_dir / env.get("INBOX_DIR", "data/inbox").strip(),
             inbox_max_files=_int(env, "INBOX_MAX_FILES", 300, minimum=10),
             draw_enabled=_bool(env, "DRAW_ENABLED", True),

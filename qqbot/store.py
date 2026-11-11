@@ -138,6 +138,15 @@ CREATE TABLE IF NOT EXISTS notes (
 );
 CREATE INDEX IF NOT EXISTS idx_notes_goal ON notes(goal_id);
 
+CREATE TABLE IF NOT EXISTS video_notes (
+  aweme_id   TEXT PRIMARY KEY,
+  desc_hash  TEXT NOT NULL DEFAULT '',
+  summary    TEXT NOT NULL,
+  frames     TEXT NOT NULL DEFAULT '[]',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS proactive_events (
   id          INTEGER PRIMARY KEY,
   kind        TEXT NOT NULL,
@@ -609,6 +618,41 @@ class Store:
                 "INSERT OR REPLACE INTO image_notes (sha256, note, created_at)"
                 " VALUES (?, ?, ?)",
                 (sha256, note, int(now if now is not None else time.time())),
+            )
+            self._conn.commit()
+
+    def get_video_note(self, aweme_id: str, desc_hash: str = "") -> str:
+        row = self._conn.execute(
+            "SELECT summary, desc_hash FROM video_notes WHERE aweme_id = ?", (str(aweme_id),)
+        ).fetchone()
+        if row is None:
+            return ""
+        if desc_hash and row["desc_hash"] and row["desc_hash"] != desc_hash:
+            return ""
+        return str(row["summary"] or "")
+
+    def save_video_note(
+        self,
+        aweme_id: str,
+        summary: str,
+        desc_hash: str = "",
+        frames: list[str] | None = None,
+        now: int | None = None,
+    ) -> None:
+        stamp = int(now if now is not None else time.time())
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO video_notes"
+                " (aweme_id, desc_hash, summary, frames, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    str(aweme_id),
+                    desc_hash,
+                    summary,
+                    json.dumps(frames or [], ensure_ascii=False),
+                    stamp,
+                    stamp,
+                ),
             )
             self._conn.commit()
 

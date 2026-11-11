@@ -178,6 +178,26 @@ class CDP:
     def goto(self, url: str, timeout: float = 30.0) -> None:
         self.call("Page.navigate", {"url": url}, timeout=timeout)
 
+    def screenshot(
+        self,
+        clip: dict | None = None,
+        quality: int = 72,
+        timeout: float = 20.0,
+    ) -> bytes:
+        """截当前页面，或只截 clip={x,y,width,height,scale} 区域。"""
+        params = {
+            "format": "jpeg",
+            "quality": max(1, min(100, int(quality))),
+            "fromSurface": True,
+        }
+        if clip:
+            params["clip"] = clip
+        result = self.call("Page.captureScreenshot", params, timeout=timeout)
+        raw = result.get("data")
+        if not raw:
+            raise CDPError("截图没有返回数据")
+        return base64.b64decode(raw)
+
     def close(self) -> None:
         self.ws.close()
 
