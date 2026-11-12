@@ -30,7 +30,7 @@ from . import talkstate as talkstate_mod
 from . import turnplan as turnplan_mod
 from . import video_understand
 from . import usage as usage_mod
-from .formatting import fix_address
+from .formatting import extract_voice_tags, fix_address
 from .onebot import IncomingMessage
 from .sayings import RECALL_TITLE
 
@@ -278,6 +278,9 @@ class ContextMixin:
             content = item["content"]
             # 她自己说过的旧话里可能还带"爸爸"，改掉再喂回去，否则模型会学着叫
             if item["role"] != "user":
+                cleaned, spoken = extract_voice_tags(content)
+                if spoken:
+                    content = cleaned or " ".join(spoken)
                 content = fix_address(content)
             messages.append({"role": item["role"], "content": content})
         return messages
