@@ -1,4 +1,4 @@
-﻿import time
+import time
 import types
 from pathlib import Path
 
@@ -1411,6 +1411,41 @@ def test_no_emoji_when_the_switch_is_off(tmp_path):
 
 
 # ------------------------------------------------ 语音
+def test_voice_reply_replaces_text_instead_of_duplicating(tmp_path, monkeypatch):
+    from qqbot import voice as voice_mod
+
+    env = build_env(
+        tmp_path,
+        voice_enabled=True,
+        voice_chance=1.0,
+        voice_max_chars=32,
+    )
+    monkeypatch.setattr(
+        voice_mod, "synthesize", lambda text, settings, out_dir=None: tmp_path / "a.mp3"
+    )
+
+    env.engine._send_reply(100, "100", "晚安呀", origin="chat")
+
+    assert env.sender.records == [(100, str(tmp_path / "a.mp3"))]
+    assert env.sender.sent == []
+    rows = env.store.recent_messages("100", 5)
+    assert [(row["content"], row["origin"]) for row in rows] == [("晚安呀", "voice")]
+
+
+def test_voice_failure_falls_back_to_text_once(tmp_path, monkeypatch):
+    from qqbot import voice as voice_mod
+
+    env = build_env(tmp_path, voice_enabled=True, voice_chance=1.0)
+    monkeypatch.setattr(voice_mod, "synthesize", lambda *args, **kwargs: None)
+
+    env.engine._send_reply(100, "100", "晚安呀", origin="chat")
+
+    assert env.sender.records == []
+    assert [text for _, text in env.sender.sent] == ["晚安呀"]
+    rows = env.store.recent_messages("100", 5)
+    assert [(row["content"], row["origin"]) for row in rows] == [("晚安呀", "voice")]
+
+
 def test_voice_command_says_off(tmp_path):
     env = build_env(tmp_path, voice_enabled=False)
 

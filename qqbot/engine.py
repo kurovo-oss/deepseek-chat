@@ -530,6 +530,16 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
             )
             parts = [fallback_reply()]
 
+        if self._try_voice_reply(
+            user_id,
+            session,
+            parts,
+            origin=origin,
+            is_fallback=cleaned in FALLBACK_REPLIES,
+            has_visual=bool(image_path or drawings or tags or sticker_buckets),
+        ):
+            return True
+
         content = cleaned if cleaned else ("[图片]" if image_path else " ".join(parts) or "[画的图]")
         record_id = self.store.save_message(
             session,
@@ -570,9 +580,6 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
             elif all_ok and not tags:
                 # 她有时候会随手甩个表情包，不需要理由
                 self._send_random_sticker(user_id, session, cleaned)
-
-        if origin in ("chat", "proactive"):
-            self._maybe_speak(user_id, session, part_texts=parts)
 
         if record_id is not None:
             self.store.update_send_state(record_id, "sent" if all_ok else "failed")
