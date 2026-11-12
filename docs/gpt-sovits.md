@@ -25,6 +25,28 @@ $env:TORCH_HOME="H:\deepseek-chat\tools\gpt-sovits\cache\torch"
 $env:MODELSCOPE_CACHE="H:\deepseek-chat\tools\gpt-sovits\cache\modelscope"
 ```
 
+## 国内镜像
+
+已确认可用：
+
+- **模型（推荐）**：ModelScope
+  - `https://www.modelscope.cn/models/XXXXRT/GPT-SoVITS-Pretrained`
+  - `pretrained_models.zip` 约 4.56GB
+  - `G2PWModel.zip` 约 589MB
+- **源码**：GitCode 镜像
+  - `https://gitcode.com/gh_mirrors/gp/GPT-SoVITS`
+  - 或 `https://gitcode.com/gh_mirrors/gpt/GPT-SoVITS`
+- **整合包**：`hf-mirror.com` 的 `lj1995/GPT-SoVITS-windows-package`，约 6.7GB
+- **PyPI**：清华 `https://pypi.tuna.tsinghua.edu.cn/simple` 或阿里云
+- **PyTorch**：NJU 镜像 `https://mirrors.nju.edu.cn/pytorch/whl/cu118`
+
+实测这些国内源当前约 **0.4～0.5MB/s**，4.56GB 仍要数小时；支持断点续传：
+
+```powershell
+curl.exe -L -C - -o pretrained_models.zip `
+  https://www.modelscope.cn/models/XXXXRT/GPT-SoVITS-Pretrained/resolve/master/pretrained_models.zip
+```
+
 ## 参考音频
 
 - 3～10 秒，单人，无音乐，普通话；
