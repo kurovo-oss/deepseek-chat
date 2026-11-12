@@ -10,10 +10,27 @@
 - 语音消息在数据库里只落一条，`origin='voice'`，不会出现文字 + 语音两条；
 - `/语音` 命令仍然可以单独发一条测试语音。
 
-## 配置
+## GPT-SoVITS（可选）
 
 ```dotenv
 VOICE_ENABLED=true
+VOICE_PROVIDER=gpt_sovits
+GPT_SOVITS_URL=http://127.0.0.1:9880
+GPT_SOVITS_REF_AUDIO=tools/gpt-sovits/refs/ref.wav
+GPT_SOVITS_PROMPT_TEXT=参考音频的逐字稿
+GPT_SOVITS_TEXT_LANG=zh
+GPT_SOVITS_PROMPT_LANG=zh
+GPT_SOVITS_TIMEOUT=12
+```
+
+API 只监听 `127.0.0.1`；超时/失败会降级为文字。GPT-SoVITS 返回 WAV 时，
+如果项目里没有 ffmpeg，会直接发 WAV；有 ffmpeg 会转成 MP3。
+
+## Edge 配置
+
+```dotenv
+VOICE_ENABLED=true
+VOICE_PROVIDER=edge
 VOICE_NAME=xiaoyi
 VOICE_CHANCE=0.3
 VOICE_MAX_CHARS=32
