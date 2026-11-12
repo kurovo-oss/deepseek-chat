@@ -10,21 +10,18 @@
 - 语音消息在数据库里只落一条，`origin='voice'`，不会出现文字 + 语音两条；
 - `/语音` 命令仍然可以单独发一条测试语音。
 
-## GPT-SoVITS（可选）
+## CosyVoice 2
+
+本地 sidecar，安装、参考音频和配置见 [cosyvoice.md](cosyvoice.md)。
 
 ```dotenv
-VOICE_ENABLED=true
-VOICE_PROVIDER=gpt_sovits
-GPT_SOVITS_URL=http://127.0.0.1:9880
-GPT_SOVITS_REF_AUDIO=tools/gpt-sovits/refs/ref.wav
-GPT_SOVITS_PROMPT_TEXT=参考音频的逐字稿
-GPT_SOVITS_TEXT_LANG=zh
-GPT_SOVITS_PROMPT_LANG=zh
-GPT_SOVITS_TIMEOUT=12
+VOICE_PROVIDER=cosyvoice
+COSYVOICE_URL=http://127.0.0.1:50000
+COSYVOICE_REF_AUDIO=tools/cosyvoice/refs/ref.wav
+COSYVOICE_PROMPT_TEXT=参考音频逐字稿
+COSYVOICE_INSTRUCT=用轻柔、害羞、18岁女生的语气说这句话。<|endofprompt|>
+COSYVOICE_TIMEOUT=60
 ```
-
-API 只监听 `127.0.0.1`；超时/失败会降级为文字。GPT-SoVITS 返回 WAV 时，
-如果项目里没有 ffmpeg，会直接发 WAV；有 ffmpeg 会转成 MP3。
 
 ## Edge 配置
 

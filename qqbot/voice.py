@@ -61,73 +61,6 @@ def should_speak(parts: list[str], values: dict, rng, settings) -> bool:
     return rng.random() < chance
 
 
-def _gpt_sovits(text: str, settings, folder: Path) -> Path | None:
-    ref = Path(getattr(settings, "gpt_sovits_ref_audio", ""))
-    if not ref.is_absolute():
-        ref = Path(settings.base_dir) / ref
-    if not ref.is_file():
-        log.info("GPT-SoVITS 参考音频不存在：%s", ref)
-        return None
-    payload = {
-        "text": text,
-        "text_lang": str(getattr(settings, "gpt_sovits_text_lang", "zh")),
-        "ref_audio_path": str(ref),
-        "prompt_text": str(getattr(settings, "gpt_sovits_prompt_text", "") or ""),
-        "prompt_lang": str(getattr(settings, "gpt_sovits_prompt_lang", "zh")),
-        "top_k": int(getattr(settings, "gpt_sovits_top_k", 15)),
-        "top_p": 1.0,
-        "temperature": float(getattr(settings, "gpt_sovits_temperature", 1.0)),
-        "text_split_method": str(getattr(settings, "gpt_sovits_text_split_method", "cut5")),
-        "batch_size": 1,
-        "media_type": "wav",
-        "streaming_mode": False,
-    }
-    url = str(getattr(settings, "gpt_sovits_url", "http://127.0.0.1:9880")).rstrip("/")
-    endpoint = url if url.endswith("/tts") else url + "/tts"
-    request = urllib.request.Request(
-        endpoint,
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(
-            request, timeout=int(getattr(settings, "gpt_sovits_timeout", 12))
-        ) as response:
-            data = response.read()
-            content_type = str(response.headers.get("Content-Type") or "")
-    except Exception as exc:  # noqa: BLE001 - 外部服务失败只降级
-        log.warning("GPT-SoVITS 请求失败：%s", exc)
-        return None
-    if not data or "audio" not in content_type.lower():
-        log.warning("GPT-SoVITS 返回异常：%s %s", content_type, data[:120])
-        return None
-    target = folder / f"{int(time.time() * 1000)}.wav"
-    target.write_bytes(data)
-    ffmpeg = Path(getattr(settings, "asr_ffmpeg", "tools/ffmpeg/ffmpeg.exe"))
-    if not ffmpeg.is_absolute():
-        ffmpeg = Path(settings.base_dir) / ffmpeg
-    if ffmpeg.is_file():
-        mp3 = target.with_suffix(".mp3")
-        try:
-            result = subprocess.run(
-                [
-                    str(ffmpeg), "-y", "-i", str(target), "-vn",
-                    "-codec:a", "libmp3lame", "-q:a", "5", str(mp3),
-                ],
-                cwd=str(settings.base_dir),
-                env={**os.environ, "TMP": str(folder), "TEMP": str(folder), "TMPDIR": str(folder)},
-                capture_output=True,
-                timeout=30,
-            )
-            if result.returncode == 0 and mp3.is_file():
-                target.unlink(missing_ok=True)
-                return mp3
-        except (OSError, subprocess.SubprocessError):
-            log.warning("GPT-SoVITS WAV 转 MP3 失败", exc_info=True)
-    return target
-
-
 def _cosyvoice(text: str, settings, folder: Path) -> Path | None:
     ref = Path(getattr(settings, "cosyvoice_ref_audio", ""))
     if not ref.is_absolute():
@@ -193,11 +126,6 @@ def synthesize(text: str, settings, out_dir: Path | None = None) -> Path | None:
     folder = Path(out_dir or getattr(settings, "voice_dir", "data/voice"))
     folder.mkdir(parents=True, exist_ok=True)
     provider = str(getattr(settings, "voice_provider", "edge") or "edge").lower()
-    if provider == "gpt_sovits":
-        path = _gpt_sovits(text, settings, folder)
-        if path is not None:
-            prune(folder)
-        return path
     if provider == "cosyvoice":
         path = _cosyvoice(text, settings, folder)
         if path is not None:

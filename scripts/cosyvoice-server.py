@@ -24,7 +24,6 @@ sys.path.insert(0, str(COSY_ROOT))
 sys.path.insert(0, str(COSY_ROOT / "third_party" / "Matcha-TTS"))
 
 from cosyvoice.cli.cosyvoice import AutoModel  # noqa: E402
-from cosyvoice.utils.file_utils import load_wav  # noqa: E402
 
 
 class TTSRequest(BaseModel):
@@ -51,14 +50,13 @@ def tts(req: TTSRequest):
     ref = Path(req.ref_audio)
     if not text or not ref.is_file():
         return JSONResponse({"error": "text/ref_audio missing"}, status_code=400)
-    prompt = load_wav(str(ref), 16000)
     if req.instruct.strip():
         instruction = req.instruct.strip()
         if "<|endofprompt|>" not in instruction:
             instruction += "<|endofprompt|>"
-        pieces = model.inference_instruct2(text, instruction, prompt)
+        pieces = model.inference_instruct2(text, instruction, str(ref))
     else:
-        pieces = model.inference_zero_shot(text, str(req.prompt_text or ""), prompt)
+        pieces = model.inference_zero_shot(text, str(req.prompt_text or ""), str(ref))
     chunks = []
     for item in pieces:
         speech = item["tts_speech"]

@@ -251,23 +251,13 @@ class Settings:
     browse_dir: Path = Path("data/browse")
     # 语音：只在情绪重的时候发，默认关（load_settings 按 env 打开）
     voice_enabled: bool = False
-    voice_provider: str = "edge"  # edge | gpt_sovits
+    voice_provider: str = "edge"  # edge | cosyvoice
     voice_name: str = "xiaoyi"
     voice_chance: float = 0.0
     voice_max_chars: int = 32
     voice_rate: str = "+8%"
     voice_pitch: str = "+12Hz"
     voice_dir: Path = Path("data/voice")
-    # GPT-SoVITS 本地 API（可选）
-    gpt_sovits_url: str = "http://127.0.0.1:9880"
-    gpt_sovits_ref_audio: Path = Path("tools/gpt-sovits/refs/ref.wav")
-    gpt_sovits_prompt_text: str = ""
-    gpt_sovits_text_lang: str = "zh"
-    gpt_sovits_prompt_lang: str = "zh"
-    gpt_sovits_timeout: int = 12
-    gpt_sovits_top_k: int = 15
-    gpt_sovits_temperature: float = 1.0
-    gpt_sovits_text_split_method: str = "cut5"
     # CosyVoice 2 本地 sidecar（可选）
     cosyvoice_url: str = "http://127.0.0.1:50000"
     cosyvoice_ref_audio: Path = Path("tools/cosyvoice/refs/ref.wav")
@@ -561,18 +551,6 @@ class Settings:
     voice_rate=env.get("VOICE_RATE", "+8%").strip() or "+8%",
     voice_pitch=env.get("VOICE_PITCH", "+12Hz").strip() or "+12Hz",
     voice_dir=base_dir / env.get("VOICE_DIR", "data/voice").strip(),
-    gpt_sovits_url=env.get("GPT_SOVITS_URL", "http://127.0.0.1:9880").strip()
-    or "http://127.0.0.1:9880",
-    gpt_sovits_ref_audio=base_dir
-    / env.get("GPT_SOVITS_REF_AUDIO", "tools/gpt-sovits/refs/ref.wav").strip(),
-    gpt_sovits_prompt_text=env.get("GPT_SOVITS_PROMPT_TEXT", "").strip(),
-    gpt_sovits_text_lang=env.get("GPT_SOVITS_TEXT_LANG", "zh").strip() or "zh",
-    gpt_sovits_prompt_lang=env.get("GPT_SOVITS_PROMPT_LANG", "zh").strip() or "zh",
-    gpt_sovits_timeout=_int(env, "GPT_SOVITS_TIMEOUT", 12, minimum=2),
-    gpt_sovits_top_k=_int(env, "GPT_SOVITS_TOP_K", 15, minimum=1),
-    gpt_sovits_temperature=_float(env, "GPT_SOVITS_TEMPERATURE", 1.0),
-    gpt_sovits_text_split_method=env.get("GPT_SOVITS_TEXT_SPLIT_METHOD", "cut5").strip()
-    or "cut5",
     cosyvoice_url=env.get("COSYVOICE_URL", "http://127.0.0.1:50000").strip()
     or "http://127.0.0.1:50000",
     cosyvoice_ref_audio=base_dir
