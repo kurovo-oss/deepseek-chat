@@ -128,6 +128,63 @@ def _gpt_sovits(text: str, settings, folder: Path) -> Path | None:
     return target
 
 
+def _cosyvoice(text: str, settings, folder: Path) -> Path | None:
+    ref = Path(getattr(settings, "cosyvoice_ref_audio", ""))
+    if not ref.is_absolute():
+        ref = Path(settings.base_dir) / ref
+    if not ref.is_file():
+        log.info("CosyVoice 参考音频不存在：%s", ref)
+        return None
+    payload = {
+        "text": text,
+        "ref_audio": str(ref),
+        "prompt_text": str(getattr(settings, "cosyvoice_prompt_text", "") or ""),
+        "instruct": str(getattr(settings, "cosyvoice_instruct", "") or ""),
+    }
+    url = str(getattr(settings, "cosyvoice_url", "http://127.0.0.1:50000")).rstrip("/")
+    endpoint = url if url.endswith("/tts") else url + "/tts"
+    request = urllib.request.Request(
+        endpoint,
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(
+            request, timeout=int(getattr(settings, "cosyvoice_timeout", 60))
+        ) as response:
+            data = response.read()
+            content_type = str(response.headers.get("Content-Type") or "")
+    except Exception as exc:  # noqa: BLE001 - 外部服务失败只降级
+        log.warning("CosyVoice 请求失败：%s", exc)
+        return None
+    if not data or "audio" not in content_type.lower():
+        log.warning("CosyVoice 返回异常：%s %s", content_type, data[:120])
+        return None
+    target = folder / f"{int(time.time() * 1000)}.wav"
+    target.write_bytes(data)
+    ffmpeg = Path(getattr(settings, "asr_ffmpeg", "tools/ffmpeg/ffmpeg.exe"))
+    if not ffmpeg.is_absolute():
+        ffmpeg = Path(settings.base_dir) / ffmpeg
+    if ffmpeg.is_file():
+        mp3 = target.with_suffix(".mp3")
+        try:
+            result = subprocess.run(
+                [str(ffmpeg), "-y", "-i", str(target), "-vn",
+                 "-codec:a", "libmp3lame", "-q:a", "5", str(mp3)],
+                cwd=str(settings.base_dir),
+                env={**os.environ, "TMP": str(folder), "TEMP": str(folder), "TMPDIR": str(folder)},
+                capture_output=True,
+                timeout=30,
+            )
+            if result.returncode == 0 and mp3.is_file():
+                target.unlink(missing_ok=True)
+                return mp3
+        except (OSError, subprocess.SubprocessError):
+            log.warning("CosyVoice WAV 转 MP3 失败", exc_info=True)
+    return target
+
+
 def synthesize(text: str, settings, out_dir: Path | None = None) -> Path | None:
     """合成一条音频；失败返回 None（没装、没网、被限流都算失败）。"""
     text = (text or "").strip()
@@ -138,6 +195,11 @@ def synthesize(text: str, settings, out_dir: Path | None = None) -> Path | None:
     provider = str(getattr(settings, "voice_provider", "edge") or "edge").lower()
     if provider == "gpt_sovits":
         path = _gpt_sovits(text, settings, folder)
+        if path is not None:
+            prune(folder)
+        return path
+    if provider == "cosyvoice":
+        path = _cosyvoice(text, settings, folder)
         if path is not None:
             prune(folder)
         return path

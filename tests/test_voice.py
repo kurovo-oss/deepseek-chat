@@ -114,6 +114,69 @@ def test_gpt_sovits_uses_configured_reference(tmp_path, monkeypatch):
     assert captured["timeout"] == 9
 
 
+def test_cosyvoice_posts_reference_and_instruct(tmp_path, monkeypatch):
+    ref = tmp_path / "ref.wav"
+    ref.write_bytes(b"RIFF")
+    captured = {}
+
+    class Response:
+        headers = {"Content-Type": "audio/wav"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return b"RIFF" + b"\x00" * 100
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        captured["body"] = json.loads(request.data.decode("utf-8"))
+        captured["timeout"] = timeout
+        return Response()
+
+    monkeypatch.setattr(voice.urllib.request, "urlopen", fake_urlopen)
+    settings = SimpleNamespace(
+        voice_enabled=True,
+        voice_provider="cosyvoice",
+        voice_dir=tmp_path,
+        base_dir=tmp_path,
+        cosyvoice_url="http://127.0.0.1:50000",
+        cosyvoice_ref_audio=ref,
+        cosyvoice_prompt_text="希望你能改变心意",
+        cosyvoice_instruct="用轻柔、害羞的语气说这句话<|endofprompt|>",
+        cosyvoice_timeout=45,
+        asr_ffmpeg=tmp_path / "missing-ffmpeg.exe",
+        voice_name="xiaoyi",
+        voice_rate="+5%",
+        voice_pitch="+15Hz",
+    )
+
+    path = voice.synthesize("晚安呀", settings)
+
+    assert path is not None and path.suffix == ".wav"
+    assert captured["url"] == "http://127.0.0.1:50000/tts"
+    assert captured["body"]["ref_audio"] == str(ref)
+    assert captured["body"]["prompt_text"] == "希望你能改变心意"
+    assert "<|endofprompt|>" in captured["body"]["instruct"]
+    assert captured["timeout"] == 45
+
+
+def test_cosyvoice_requires_reference(tmp_path):
+    settings = SimpleNamespace(
+        voice_enabled=True,
+        voice_provider="cosyvoice",
+        voice_dir=tmp_path,
+        base_dir=tmp_path,
+        cosyvoice_ref_audio=tmp_path / "missing.wav",
+        cosyvoice_url="http://127.0.0.1:50000",
+    )
+
+    assert voice.synthesize("晚安呀", settings) is None
+
+
 def test_gpt_sovits_requires_reference(tmp_path):
     settings = SimpleNamespace(
         voice_enabled=True,
