@@ -48,7 +48,7 @@ COSYVOICE_SPEED=1.0
 COSYVOICE_TIMEOUT=60
 ```
 
-`COSYVOICE_INSTRUCT` 留空时走零样本，语气由参考音频和 `COSYVOICE_SPEED` 决定；当前 CosyVoice2 对中文 instruct 可能把指令本身读进音频，启用前先小样验证。
+`COSYVOICE_INSTRUCT` 越长越容易被读进音频；当前使用很短的指令，并已用小样验证不读出。
 
 ## 注意
 
