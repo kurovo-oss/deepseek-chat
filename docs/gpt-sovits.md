@@ -50,15 +50,40 @@ curl.exe -L -C - -o pretrained_models.zip `
 ## 参考音频
 
 - 3～10 秒，单人，无音乐，普通话；
+- **当前 `refs/ref.wav` 只是用于跑通链路的测试音频，不是大肥鱼音色；正式使用前必须替换；**
 - 逐字稿必须和音频一致；
 - 放在 `tools/gpt-sovits/refs/ref.wav`；
 - 不要用未经授权的真人/主播/明星声音。
 
+## 当前运行时
+
+本项目实际使用：
+
+```text
+H:\deepseek-chat\tools\gpt-sovits\venv39\
+```
+
+它复用了已有的 `F:\anacoder\envs\pytorch`（Python 3.9 + torch 2.8 cu126），
+没有把 PyTorch 再装一遍。
+
+Python 3.9 下：
+
+- `pyopenjtalk-prebuilt==0.3.0` 替代源码编译版；
+- `jieba_fast` 用纯 Python `jieba` 兼容 shim 代替（只是速度略慢）；
+- `x_transformers<2.0`，否则 2.x 使用了 Python 3.10 的 `int | tuple` 语法。
+
 ## 启动 API
 
 ```powershell
+powershell -ExecutionPolicy Bypass -File scripts\start-gpt-sovits.ps1
+```
+
+或手动：
+
+```powershell
 cd H:\deepseek-chat\tools\gpt-sovits\GPT-SoVITS
-python api_v2.py -a 127.0.0.1 -p 9880 -c GPT_SoVITS/configs/tts_infer.yaml
+H:\deepseek-chat\tools\gpt-sovits\venv39\Scripts\python.exe api_v2.py `
+  -a 127.0.0.1 -p 9880 -c GPT_SoVITS/configs/tts_infer.yaml
 ```
 
 确认：
