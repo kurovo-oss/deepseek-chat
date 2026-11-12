@@ -105,7 +105,7 @@ def _cosyvoice(text: str, settings, folder: Path) -> Path | None:
         try:
             result = subprocess.run(
                 [str(ffmpeg), "-y", "-i", str(target), "-vn",
-                 "-codec:a", "libmp3lame", "-q:a", "5", str(mp3)],
+                 "-codec:a", "libmp3lame", "-q:a", "2", str(mp3)],
                 cwd=str(settings.base_dir),
                 env={**os.environ, "TMP": str(folder), "TEMP": str(folder), "TMPDIR": str(folder)},
                 capture_output=True,
