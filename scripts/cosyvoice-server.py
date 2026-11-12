@@ -31,6 +31,7 @@ class TTSRequest(BaseModel):
     ref_audio: str
     prompt_text: str = ""
     instruct: str = ""
+    speed: float = 1.0
 
 
 app = FastAPI()
@@ -54,9 +55,11 @@ def tts(req: TTSRequest):
         instruction = req.instruct.strip()
         if "<|endofprompt|>" not in instruction:
             instruction += "<|endofprompt|>"
-        pieces = model.inference_instruct2(text, instruction, str(ref))
+        pieces = model.inference_instruct2(text, instruction, str(ref), speed=float(req.speed))
     else:
-        pieces = model.inference_zero_shot(text, str(req.prompt_text or ""), str(ref))
+        pieces = model.inference_zero_shot(
+            text, str(req.prompt_text or ""), str(ref), speed=float(req.speed)
+        )
     chunks = []
     for item in pieces:
         speech = item["tts_speech"]

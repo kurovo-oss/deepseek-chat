@@ -43,7 +43,8 @@ VOICE_PROVIDER=cosyvoice
 COSYVOICE_URL=http://127.0.0.1:50000
 COSYVOICE_REF_AUDIO=tools/cosyvoice/refs/ref.wav
 COSYVOICE_PROMPT_TEXT=参考音频逐字稿
-COSYVOICE_INSTRUCT=用轻柔、害羞、18岁女生的语气说这句话。<|endofprompt|>
+COSYVOICE_INSTRUCT=声音要更软、更糯，像贴着耳朵说悄悄话，尾音轻轻收，语速慢一点。<|endofprompt|>
+COSYVOICE_SPEED=0.8
 COSYVOICE_TIMEOUT=60
 ```
 

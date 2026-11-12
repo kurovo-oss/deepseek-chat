@@ -263,6 +263,7 @@ class Settings:
     cosyvoice_ref_audio: Path = Path("tools/cosyvoice/refs/ref.wav")
     cosyvoice_prompt_text: str = ""
     cosyvoice_instruct: str = ""
+    cosyvoice_speed: float = 0.9
     cosyvoice_timeout: int = 60
     # 表情出现的概率：提示词管不住（实测 0%），这里兜一层
     # 默认关，由 load_settings 打开——测试里构造 Settings() 不该随机插表情
@@ -557,6 +558,7 @@ class Settings:
     / env.get("COSYVOICE_REF_AUDIO", "tools/cosyvoice/refs/ref.wav").strip(),
     cosyvoice_prompt_text=env.get("COSYVOICE_PROMPT_TEXT", "").strip(),
     cosyvoice_instruct=env.get("COSYVOICE_INSTRUCT", "").strip(),
+    cosyvoice_speed=_float(env, "COSYVOICE_SPEED", 0.9),
     cosyvoice_timeout=_int(env, "COSYVOICE_TIMEOUT", 60, minimum=5),
     search_enabled=_bool(env, "SEARCH_ENABLED", True),
     growth_enabled=_bool(env, "GROWTH_ENABLED", True),

@@ -73,6 +73,7 @@ def _cosyvoice(text: str, settings, folder: Path) -> Path | None:
         "ref_audio": str(ref),
         "prompt_text": str(getattr(settings, "cosyvoice_prompt_text", "") or ""),
         "instruct": str(getattr(settings, "cosyvoice_instruct", "") or ""),
+        "speed": float(getattr(settings, "cosyvoice_speed", 0.9)),
     }
     url = str(getattr(settings, "cosyvoice_url", "http://127.0.0.1:50000")).rstrip("/")
     endpoint = url if url.endswith("/tts") else url + "/tts"
