@@ -45,6 +45,7 @@ class SpeakingMixin:
         origin: str = "chat",
         is_fallback: bool = False,
         has_visual: bool = False,
+        force: bool = False,
     ) -> bool:
         """决定这条回复是否只发语音；返回 True 表示已经处理完。"""
         if origin not in ("chat", "proactive") or is_fallback or has_visual:
@@ -53,7 +54,7 @@ class SpeakingMixin:
         if not text:
             return False
         values = self.mood.snapshot() if self.mood is not None else {}
-        if not voice_mod.should_speak(parts, values, self._rng, self.settings):
+        if not force and not voice_mod.should_speak(parts, values, self._rng, self.settings):
             return False
         record_id = self.store.save_message(
             session,

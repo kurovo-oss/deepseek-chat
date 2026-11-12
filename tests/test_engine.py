@@ -1411,6 +1411,28 @@ def test_no_emoji_when_the_switch_is_off(tmp_path):
 
 
 # ------------------------------------------------ 语音
+def test_voice_tag_forces_voice_and_never_leaks_marker(tmp_path, monkeypatch):
+    from qqbot import voice as voice_mod
+
+    env = build_env(tmp_path, voice_enabled=True, voice_chance=0.0)
+    monkeypatch.setattr(
+        voice_mod, "synthesize", lambda text, settings, out_dir=None: tmp_path / "a.mp3"
+    )
+
+    env.engine._send_reply(
+        100,
+        "100",
+        "那我小声说\n{{语音：喂，能听到吗？}}\n这次呢",
+        origin="chat",
+    )
+
+    assert env.sender.records == [(100, str(tmp_path / "a.mp3"))]
+    assert all("{{" not in text for _, text in env.sender.sent)
+    rows = env.store.recent_messages("100", 5)
+    assert rows[0]["content"] == "喂，能听到吗？"
+    assert rows[0]["origin"] == "voice"
+
+
 def test_voice_reply_replaces_text_instead_of_duplicating(tmp_path, monkeypatch):
     from qqbot import voice as voice_mod
 

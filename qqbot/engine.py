@@ -46,6 +46,7 @@ from .context import ContextMixin
 from .export import export_all
 from .formatting import (
     extract_draw_tags,
+    extract_voice_tags,
     fix_address,
     extract_image_tags,
     reshape_bubbles,
@@ -502,9 +503,13 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
         else:
             # 指令回复：只去首尾空白，编号和格式原样保留
             cleaned = (raw_text or "").strip()
+        cleaned, voice_texts = extract_voice_tags(cleaned)
+        force_voice = " ".join(voice_texts).strip()
         cleaned, tags = extract_image_tags(cleaned)
         cleaned, drawings = extract_draw_tags(cleaned)
         cleaned, sticker_buckets = stickers_mod.extract_tags(cleaned)
+        if force_voice and not cleaned:
+            cleaned = force_voice
 
         image_path = self._pick_image(session, tags, force=force_image)
         parts = split_bubbles(
@@ -529,6 +534,18 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
                 "回复内容为空（原文 %r，图片标记 %s），改用兜底话术", raw_text[:80], tags
             )
             parts = [fallback_reply()]
+
+        if force_voice and not (image_path or drawings or tags or sticker_buckets):
+            if self._try_voice_reply(
+                user_id,
+                session,
+                [force_voice],
+                origin=origin,
+                is_fallback=cleaned in FALLBACK_REPLIES,
+                has_visual=False,
+                force=True,
+            ):
+                return True
 
         if self._try_voice_reply(
             user_id,

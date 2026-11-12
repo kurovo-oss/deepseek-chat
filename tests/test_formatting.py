@@ -1,5 +1,6 @@
 from qqbot.formatting import (
     extract_image_tags,
+    extract_voice_tags,
     sanitize_tag,
     split_bubbles,
     split_message,
@@ -67,6 +68,18 @@ def test_sanitize_tag():
     assert sanitize_tag("../etc/passwd") is None
     assert sanitize_tag("a b") is None
     assert sanitize_tag("") is None
+
+
+def test_extract_voice_tags_removes_marker_and_keeps_content():
+    cleaned, parts = extract_voice_tags("我小声说\n{{语音：喂，能听到吗？}}\n这次呢")
+    assert cleaned == "我小声说\n\n这次呢"
+    assert parts == ["喂，能听到吗？"]
+
+
+def test_extract_voice_tags_accepts_english_and_caps():
+    cleaned, parts = extract_voice_tags("{{VOICE: 晚安呀}}")
+    assert cleaned == ""
+    assert parts == ["晚安呀"]
 
 
 def test_extract_image_tag_valid():

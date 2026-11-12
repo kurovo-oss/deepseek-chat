@@ -86,6 +86,26 @@ def extract_draw_tags(text: str) -> tuple[str, list[str]]:
     return cleaned.strip(), prompts
 
 
+_VOICE_TAG_RE = re.compile(r"\{\{\s*(?:语音|voice)\s*[：:]\s*([^{}]{1,200})\}\}", re.IGNORECASE)
+
+
+def extract_voice_tags(text: str) -> tuple[str, list[str]]:
+    """取出 `{{语音：...}}`，返回 (清理后的文本, 要朗读的内容列表)。
+
+    兼容模型偶尔写出的英文 `{{voice:...}}`；标记本身绝不能发给用户。
+    """
+    parts: list[str] = []
+
+    def _take(match: "re.Match[str]") -> str:
+        content = " ".join(match.group(1).split())
+        if content:
+            parts.append(content[:120])
+        return ""
+
+    cleaned = _VOICE_TAG_RE.sub(_take, text or "")
+    return cleaned.strip(), parts
+
+
 def split_message(text: str, limit: int = 300) -> list[str]:
     """按长度切分，优先在句末标点断开。
 
