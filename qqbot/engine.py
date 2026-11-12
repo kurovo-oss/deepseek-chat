@@ -508,8 +508,7 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
         cleaned, tags = extract_image_tags(cleaned)
         cleaned, drawings = extract_draw_tags(cleaned)
         cleaned, sticker_buckets = stickers_mod.extract_tags(cleaned)
-        if force_voice and not cleaned:
-            cleaned = force_voice
+        cleaned = cleaned or force_voice
 
         image_path = self._pick_image(session, tags, force=force_image)
         parts = split_bubbles(
@@ -535,26 +534,9 @@ class Engine(ContextMixin, CommandsMixin, MediaMixin, SpeakingMixin, ReadingMixi
             )
             parts = [fallback_reply()]
 
-        if force_voice and not (image_path or drawings or tags or sticker_buckets):
-            if self._try_voice_reply(
-                user_id,
-                session,
-                [force_voice],
-                origin=origin,
-                is_fallback=cleaned in FALLBACK_REPLIES,
-                has_visual=False,
-                force=True,
-            ):
-                return True
-
-        if self._try_voice_reply(
-            user_id,
-            session,
-            parts,
-            origin=origin,
-            is_fallback=cleaned in FALLBACK_REPLIES,
-            has_visual=bool(image_path or drawings or tags or sticker_buckets),
-        ):
+        if self._voice_reply_if_needed(user_id, session, parts, origin=origin,
+                force_text=force_voice, is_fallback=cleaned in FALLBACK_REPLIES,
+                has_visual=bool(image_path or drawings or tags or sticker_buckets)):
             return True
 
         content = cleaned if cleaned else ("[图片]" if image_path else " ".join(parts) or "[画的图]")

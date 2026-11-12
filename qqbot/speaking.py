@@ -37,6 +37,36 @@ class SpeakingMixin:
             return
         self.store.save_message(session, "assistant", f"[语音] {text}", origin="voice")
 
+    def _voice_reply_if_needed(
+        self,
+        user_id: int,
+        session: str,
+        parts: list[str],
+        origin: str = "chat",
+        force_text: str = "",
+        is_fallback: bool = False,
+        has_visual: bool = False,
+    ) -> bool:
+        if force_text and not has_visual:
+            if self._try_voice_reply(
+                user_id,
+                session,
+                [force_text],
+                origin=origin,
+                is_fallback=is_fallback,
+                has_visual=False,
+                force=True,
+            ):
+                return True
+        return self._try_voice_reply(
+            user_id,
+            session,
+            parts,
+            origin=origin,
+            is_fallback=is_fallback,
+            has_visual=has_visual,
+        )
+
     def _try_voice_reply(
         self,
         user_id: int,
