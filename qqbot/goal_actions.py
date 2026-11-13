@@ -94,6 +94,10 @@ class GoalActionService:
             return None
         return first[:MAX_TEXT]
 
+    def compose_candidate(self, goal: dict) -> str | None:
+        """只生成候选话术，不落库、不发送；供 shadow/bounded_auto 评分。"""
+        return self._compose(goal)
+
     def prepare(self, goal_id: int, now: int | None = None) -> dict:
         goal = self.store.get_goal(int(goal_id))
         if goal is None:

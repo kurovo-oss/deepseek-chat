@@ -249,6 +249,10 @@ def record_feedback(store, rating: str, now: int | None = None) -> dict | None:
     if any(row.get("signal") == signal for row in store.list_outcomes(action["id"], limit=10)):
         return None
     store.add_outcome(int(action["id"]), signal, created_at=stamp)
+    if rating == "bad":
+        from . import autonomy
+
+        autonomy.trip(store, "feedback_bad", now=stamp, goal_id=action.get("goal_id"))
     return store.goal_progress_delta(
         int(action.get("goal_id") or 0), 0.1 if rating == "good" else -0.1, now=stamp
     )

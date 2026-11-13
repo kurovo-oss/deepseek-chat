@@ -15,8 +15,9 @@
 > 不是一下子放开“自由行动”，而是先让她在**你确认过的目标**上，
 > 自己判断“现在要不要说、说什么”，每天最多一次，而且只在聊天里。
 >
-> **当前状态：设计完成，代码尚未实现。** 现有 `AUTONOMY_MODE=confirm`，
-> 还没有影子评分、自动执行和熔断表。
+> **当前状态：已实现，默认关闭。** 支持 `shadow` 和 `bounded_auto`；
+> 影子只写 `goal_actions`，不发送；自动执行只走 `send_message`，
+> 每天最多 1 次，并有熔断、暂停和手动解除。
 
 ### 6.0 子阶段
 
@@ -110,7 +111,28 @@ AUTONOMY_MAX_ACTIONS_PER_DAY=1
 阶段 6 只处理**已确认目标上的有限自动动作**。  
 “月目标 → 周意图 → 日动作”的长期目标树不在阶段 6 里强行做，交给阶段 7。
 
-### 6.6 验收标准
+### 6.6 配置
+
+```dotenv
+AUTONOMY_ENABLED=false
+# 先 shadow，至少 7 天后再切 bounded_auto
+AUTONOMY_MODE=confirm
+AUTONOMY_SHADOW_DAYS=7
+AUTONOMY_SHADOW_MAX_PER_DAY=1
+AUTONOMY_POLICY_MIN_SCORE=0.65
+AUTONOMY_MAX_ACTIONS_PER_DAY=1
+AUTONOMY_IGNORE_HOURS=24
+AUTONOMY_RETRY_HOURS=4
+```
+
+计划页可以：
+
+- 给目标标记「允许自动 / 改回需确认」；
+- 查看影子/自动动作的分数、硬规则和结果；
+- 一键暂停全部自动动作；
+- 手动解除熔断。
+
+### 6.7 验收标准
 
 - 影子运行至少 7 天；
 - 自动执行每天不超过 1 次；
@@ -119,6 +141,20 @@ AUTONOMY_MAX_ACTIONS_PER_DAY=1
 - 你可以在 2 次点击内暂停全部自动动作；
 - 所有动作有目标、理由、证据、结果；
 - 任何外部动作仍然为 0。
+
+### 6.8 验收记录
+
+已覆盖：
+
+- 影子连续 7 天只记录、不发送；
+- 7 天后 `bounded_auto` 可以发一次；
+- 连续 14 天每天最多 1 次，用户回复后进度推进；
+- 目标未标 `auto`、影子未满、主动闸门阻断时不发送；
+- 负面反馈、连续 2 次被忽略、危险话术触发熔断；
+- 暂停全部自动动作、手动解除熔断；
+- 所有自动动作只允许 `send_message`，外部动作仍为 0。
+
+对应测试：`tests/test_autonomy_stage6.py`。
 
 ---
 

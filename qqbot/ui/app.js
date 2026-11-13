@@ -356,7 +356,7 @@
     return button;
   }
 
-  function renderGoal(item, pendingAction) {
+  function renderGoal(item, pendingAction, autonomy) {
     const card = el('article', `goal-card ${item.status || 'candidate'}`);
     const head = el('div', 'goal-card-head');
     head.append(el('span', 'memory-kind', goalKind(item.kind)));
@@ -399,6 +399,13 @@
     } else if (item.status === 'active') {
       actions.append(goalActionButton('准备主动', 'primary-btn', () => prepareGoalAction(item)));
       actions.append(goalActionButton('记笔记', '', () => saveGoalNote(item)));
+      if (autonomy && autonomy.enabled) {
+        actions.append(goalActionButton(
+          item.autonomy === 'auto' ? '改回需确认' : '允许自动',
+          '',
+          () => setGoalAutonomy(item, item.autonomy === 'auto' ? 'confirm' : 'auto'),
+        ));
+      }
       actions.append(goalActionButton('暂停', '', () => setGoalStatus(item, 'paused')));
       actions.append(goalActionButton('完成', '', () => setGoalStatus(item, 'done')));
     } else if (item.status === 'paused') {
@@ -450,6 +457,16 @@
     }
   }
 
+  async function setGoalAutonomy(item, autonomy) {
+    try {
+      await api('/api/goals/update', { method: 'POST', body: { id: item.id, autonomy } });
+      toast(autonomy === 'auto' ? '已允许自动，但仍受熔断和每日上限约束' : '已改回需确认');
+      await loadGoals();
+    } catch (err) {
+      toast(err.message, true);
+    }
+  }
+
   async function setGoalStatus(item, status, confirm = false) {
     if (confirm && !window.confirm(`删掉「${item.title}」这个目标？`)) return;
     try {
@@ -470,14 +487,47 @@
       const items = (data.items || []).filter((item) => item.status !== 'dropped');
       const counts = data.counts || {};
       const byGoal = new Map((data.actions || []).map((action) => [String(action.goal_id), action]));
-      const mode = data.autonomy_enabled ? '自动排队' : '手动确认';
-      $('#goal-count').textContent = `${items.length} 个 / 候选 ${counts.candidate ?? 0} · ${mode}`;
+      const autonomy = data.autonomy || {};
+      const pauseButton = $('#autonomy-pause');
+      if (pauseButton) pauseButton.textContent = autonomy.paused ? '恢复自动' : '暂停自动';
+      const modeText = autonomy.paused
+        ? '已暂停'
+        : autonomy.breaker && autonomy.breaker.tripped_at
+        ? `已熔断：${autonomy.breaker.reason || '需要确认'}`
+        : autonomy.mode === 'shadow'
+          ? '影子运行'
+          : autonomy.mode === 'bounded_auto'
+            ? '自动执行中'
+            : '手动确认';
+      $('#goal-count').textContent = `${items.length} 个 / 候选 ${counts.candidate ?? 0} · ${modeText}`;
+      const note = $('#autonomy-note');
+      if (note) {
+        const ready = autonomy.shadow_ready ? '影子已满' : '影子未满';
+        note.textContent = autonomy.enabled === false
+          ? '现在只负责“想”和“判断”；自动执行需要显式打开。'
+          : `自主模式：${modeText}；${ready}；每日最多一次聊天消息，外部动作仍为 0。`;
+      }
+      if (autonomy.breaker && autonomy.breaker.tripped_at) {
+        list.append(el('div', 'goal-note', `熔断原因：${autonomy.breaker.reason || '需要确认'}。解除后才能继续自动。`));
+      }
+      const autoActions = autonomy.auto_actions || [];
+      if (autoActions.length) {
+        const box = el('div', 'goal-note');
+        box.append(el('b', '', '最近自主动作：'));
+        autoActions.slice(0, 5).forEach((action) => {
+          box.append(el('div', '', `#${action.id} ${action.status} · ${(action.payload || {}).score ?? '-'} · ${(action.payload || {}).text || ''}`));
+        });
+        list.append(box);
+      }
       list.replaceChildren();
       if (!items.length) {
         list.append(el('p', 'muted', '她还没有想做的事。可以点右上角「让她想一次」，或者在记忆页写几条偏好。'));
         return;
       }
-      items.forEach((item) => list.append(renderGoal(item, byGoal.get(String(item.id)))));
+      items.forEach((item) => list.append(renderGoal(item, byGoal.get(String(item.id)), {
+        enabled: !!data.autonomy_enabled,
+        mode: autonomy.mode,
+      })));
     } catch (err) {
       list.replaceChildren(el('p', 'muted', err.message));
     }
@@ -1442,6 +1492,25 @@
     $('#style-review').addEventListener('click', reviewStyles);
     $('#reload-goals').addEventListener('click', loadGoals);
     $('#goal-review').addEventListener('click', reviewGoals);
+    $('#autonomy-reset').addEventListener('click', async () => {
+      try {
+        await api('/api/goals/autonomy/reset', { method: 'POST', body: {} });
+        toast('已解除熔断');
+        await loadGoals();
+      } catch (err) {
+        toast(err.message, true);
+      }
+    });
+    $('#autonomy-pause').addEventListener('click', async () => {
+      const current = $('#autonomy-pause').textContent.includes('恢复');
+      try {
+        await api('/api/goals/autonomy/pause', { method: 'POST', body: { paused: !current } });
+        toast(!current ? '已暂停全部自动动作' : '已恢复自动');
+        await loadGoals();
+      } catch (err) {
+        toast(err.message, true);
+      }
+    });
     $('#task-add').addEventListener('click', createTask);
     let memorySearchTimer = null;
     $('#memory-search').addEventListener('input', () => {

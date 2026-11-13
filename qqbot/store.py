@@ -1336,6 +1336,17 @@ class Store:
             ).fetchone()
         return int(row["n"] or 0)
 
+    def count_auto_actions_since(self, since: int) -> int:
+        """真正尝试过的自动动作；影子/待确认不算每日自动额度。"""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COUNT(*) AS n FROM goal_actions"
+                " WHERE created_at >= ? AND action = 'send_message'"
+                " AND approval = 'auto' AND status IN ('sending', 'done', 'failed')",
+                (int(since),),
+            ).fetchone()
+        return int(row["n"] or 0)
+
     def get_goal_action(self, action_id: int) -> dict | None:
         with self._lock:
             row = self._conn.execute(

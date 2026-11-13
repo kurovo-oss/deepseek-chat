@@ -783,13 +783,49 @@ class WebUI:
             "dropped": store.count_goals(status="dropped"),
         }
         actions = store.list_goal_actions(status="waiting_approval", limit=50)
+        from . import autonomy as autonomy_mod
+
+        breaker = autonomy_mod.breaker(store)
+        recent_auto = [
+            item
+            for item in store.list_goal_actions(limit=200)
+            if item.get("approval") in ("auto", "shadow")
+            and item.get("status") in ("shadow", "blocked", "sending", "done", "failed")
+        ][:20]
         return {
             "items": items,
             "actions": actions,
             "counts": counts,
             "autonomy_enabled": bool(getattr(self.settings, "autonomy_enabled", False)),
             "autonomy_mode": getattr(self.settings, "autonomy_mode", "confirm"),
+            "autonomy": {
+                "enabled": bool(getattr(self.settings, "autonomy_enabled", False)),
+                "mode": getattr(self.settings, "autonomy_mode", "confirm"),
+                "breaker": breaker,
+                "paused": autonomy_mod.paused(store),
+                "shadow_started": autonomy_mod.shadow_started(store),
+                "shadow_ready": autonomy_mod.shadow_ready(store, self.settings, int(time.time())),
+                "auto_actions": recent_auto,
+                "policy_min_score": float(
+                    getattr(self.settings, "autonomy_policy_min_score", 0.65)
+                ),
+            },
         }
+
+    def api_autonomy_reset(self, body: dict) -> dict:
+        from . import autonomy as autonomy_mod
+
+        autonomy_mod.clear_breaker(self.engine.store)
+        self._audit("reset_autonomy_breaker")
+        return {"ok": True, "autonomy": {"breaker": {}}}
+
+    def api_autonomy_pause(self, body: dict) -> dict:
+        from . import autonomy as autonomy_mod
+
+        value = bool(body.get("paused", True))
+        autonomy_mod.set_paused(self.engine.store, value)
+        self._audit("pause_autonomy" if value else "resume_autonomy")
+        return {"ok": True, "paused": value}
 
     def api_goal_update(self, body: dict) -> dict:
         goal_id = _as_int(body.get("id"), "目标编号", 1, 10**9)
@@ -798,9 +834,9 @@ class WebUI:
             raise ValueError("这个目标已经不在了")
         status = str(body.get("status") or "").strip().lower()
         allowed = {"candidate", "active", "paused", "done", "dropped"}
-        if status not in allowed:
+        if status and status not in allowed:
             raise ValueError("目标状态不正确")
-        updates = {"status": status}
+        updates = {"status": status} if status else {}
         if status == "done":
             updates["progress"] = 1.0
         if "progress" in body:
@@ -810,8 +846,10 @@ class WebUI:
                 raise ValueError("进度必须是 0~1 的数字") from exc
         if "autonomy" in body:
             autonomy = str(body["autonomy"]).strip().lower()
-            if autonomy != "confirm":
-                raise ValueError("自动模式还没开放，目前只能选“需确认”")
+            if autonomy not in ("confirm", "auto"):
+                raise ValueError("目标自主模式只能是“需确认”或“自动”")
+            if autonomy == "auto" and not getattr(self.settings, "autonomy_enabled", False):
+                raise ValueError("先打开 AUTONOMY_ENABLED，才能允许目标自动执行")
             updates["autonomy"] = autonomy
         if "parent_id" in body:
             parent_id = body.get("parent_id")
@@ -830,7 +868,7 @@ class WebUI:
             except (TypeError, ValueError) as exc:
                 raise ValueError("到期时间必须是时间戳") from exc
         self.engine.store.update_goal(goal_id, **updates)
-        self._audit("update_goal", target=str(goal_id), result=status)
+        self._audit("update_goal", target=str(goal_id), result=status or "autonomy")
         return {"ok": True, "item": self.engine.store.get_goal(goal_id)}
 
     def _action_service(self):
@@ -1264,6 +1302,10 @@ def make_handler(app: WebUI):
                     self._json(app.api_feedback(body))
                 elif path == "/api/goals/update":
                     self._json(app.api_goal_update(body))
+                elif path == "/api/goals/autonomy/reset":
+                    self._json(app.api_autonomy_reset(body))
+                elif path == "/api/goals/autonomy/pause":
+                    self._json(app.api_autonomy_pause(body))
                 elif path == "/api/goals/review":
                     self._json(app.api_goal_review(body))
                 elif path == "/api/goals/action/prepare":

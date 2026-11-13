@@ -299,9 +299,9 @@ class Settings:
     refusal_enabled: bool = False
     refusal_chance: float = 0.0
     # 睡前反省：一天一次，默认关
-    reflect_enabled: bool = False
+    reflect_enabled: bool = True
     # 真查一下（Bing 的 RSS，只读标题摘要）
-    search_enabled: bool = False
+    search_enabled: bool = True
     # 真做了才打开：打开之前她只能说"做不到"，不许编
     douyin_enabled: bool = False
     web_enabled: bool = False
@@ -340,11 +340,15 @@ class Settings:
     goals_prompt_file: Path = Path("prompts/goals.md")
     # 目标调度：默认关闭；开启后也只把到期目标放进“待确认”，不自动发送。
     autonomy_enabled: bool = False
-    autonomy_mode: str = "confirm"
+    autonomy_mode: str = "confirm"  # confirm | shadow | bounded_auto
     autonomy_max_actions_per_day: int = 1
     autonomy_retry_hours: int = 4
+    autonomy_shadow_days: int = 7
+    autonomy_shadow_max_per_day: int = 1
+    autonomy_policy_min_score: float = 0.65
+    autonomy_ignore_hours: int = 24
     # 相处方式周复盘：默认关闭自动跑；手动入口始终可用。
-    style_review_enabled: bool = False
+    style_review_enabled: bool = True
     style_review_days: int = 7
     style_review_prompt_file: Path = Path("prompts/style_review.md")
     decay_half_life_days: float = 30.0
@@ -616,11 +620,19 @@ class Settings:
             goals_prompt_file=base_dir
             / env.get("GOALS_PROMPT_FILE", "prompts/goals.md").strip(),
             autonomy_enabled=_bool(env, "AUTONOMY_ENABLED", False),
-            autonomy_mode=env.get("AUTONOMY_MODE", "confirm").strip() or "confirm",
+            autonomy_mode=(
+                env.get("AUTONOMY_MODE", "confirm").strip().lower() or "confirm"
+            ),
             autonomy_max_actions_per_day=_int(
                 env, "AUTONOMY_MAX_ACTIONS_PER_DAY", 1, minimum=1
             ),
             autonomy_retry_hours=_int(env, "AUTONOMY_RETRY_HOURS", 4, minimum=1),
+            autonomy_shadow_days=_int(env, "AUTONOMY_SHADOW_DAYS", 7, minimum=0),
+            autonomy_shadow_max_per_day=_int(
+                env, "AUTONOMY_SHADOW_MAX_PER_DAY", 1, minimum=1
+            ),
+            autonomy_policy_min_score=_float(env, "AUTONOMY_POLICY_MIN_SCORE", 0.65),
+            autonomy_ignore_hours=_int(env, "AUTONOMY_IGNORE_HOURS", 24, minimum=1),
             style_review_enabled=_bool(env, "STYLE_REVIEW_ENABLED", False),
             style_review_days=_int(env, "STYLE_REVIEW_DAYS", 7, minimum=1),
             style_review_prompt_file=base_dir

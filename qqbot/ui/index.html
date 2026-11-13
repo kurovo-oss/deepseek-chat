@@ -195,10 +195,12 @@
       <div class="head-actions">
         <span class="pill" id="goal-count">— 个</span>
         <button class="ghost-btn" id="goal-review" type="button">让她想一次</button>
+        <button class="ghost-btn" id="autonomy-pause" type="button">暂停自动</button>
+        <button class="ghost-btn" id="autonomy-reset" type="button">解除熔断</button>
         <button class="ghost-btn" id="reload-goals" type="button">刷新</button>
       </div>
     </div>
-    <div class="goal-note">目标只能来自已确认的记忆或最近的对话；没有证据的“我想去……”不会出现在这里。</div>
+    <div class="goal-note" id="autonomy-note">目标只能来自已确认的记忆或最近的对话；没有证据的“我想去……”不会出现在这里。</div>
     <div id="goal-list" class="goal-list"><p class="muted">加载中……</p></div>
     <article class="card glass task-card">
       <div class="card-head">
