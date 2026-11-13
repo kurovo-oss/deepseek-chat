@@ -117,6 +117,7 @@ AUTONOMY_MAX_ACTIONS_PER_DAY=1
 AUTONOMY_ENABLED=false
 # 先 shadow，至少 7 天后再切 bounded_auto
 AUTONOMY_MODE=confirm
+# 必须累计 7 个“有影子动作”的本地日期；关机不算天数
 AUTONOMY_SHADOW_DAYS=7
 AUTONOMY_SHADOW_MAX_PER_DAY=1
 AUTONOMY_POLICY_MIN_SCORE=0.65
@@ -146,7 +147,7 @@ AUTONOMY_RETRY_HOURS=4
 
 已覆盖：
 
-- 影子连续 7 天只记录、不发送；
+- 影子累计 7 个有记录的自然日只记录、不发送；关机期间不计入；
 - 7 天后 `bounded_auto` 可以发一次；
 - 连续 14 天每天最多 1 次，用户回复后进度推进；
 - 目标未标 `auto`、影子未满、主动闸门阻断时不发送；

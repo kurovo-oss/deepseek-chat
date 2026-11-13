@@ -804,6 +804,10 @@ class WebUI:
                 "breaker": breaker,
                 "paused": autonomy_mod.paused(store),
                 "shadow_started": autonomy_mod.shadow_started(store),
+                "shadow_days": autonomy_mod.shadow_days(store),
+                "shadow_required_days": int(
+                    getattr(self.settings, "autonomy_shadow_days", 7)
+                ),
                 "shadow_ready": autonomy_mod.shadow_ready(store, self.settings, int(time.time())),
                 "auto_actions": recent_auto,
                 "policy_min_score": float(

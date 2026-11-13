@@ -303,6 +303,36 @@ def test_api_pause_and_reset_are_visible_and_take_effect(tmp_path):
     assert autonomy.breaker(store) == {}
 
 
+def test_shadow_ready_counts_active_days_not_wall_clock(tmp_path):
+    settings, store, _engine = _env(tmp_path, "shadow", shadow_days=7)
+    base = 1_700_000_000
+    store.set_cursor("autonomy:shadow_started", str(base))
+    store.add_goal_action(
+        1,
+        "send_message",
+        payload={"text": "晚安"},
+        run_at=base,
+        status="shadow",
+        approval="shadow",
+        created_at=base,
+    )
+
+    # 关机 8 天：墙上过了 8 天，但只有 1 个影子日，不算满
+    assert autonomy.shadow_ready(store, settings, base + 8 * 86400) is False
+
+    for day in range(1, 7):
+        store.add_goal_action(
+            1,
+            "send_message",
+            payload={"text": "晚安"},
+            run_at=base + day * 86400,
+            status="shadow",
+            approval="shadow",
+            created_at=base + day * 86400,
+        )
+    assert autonomy.shadow_ready(store, settings, base + 7 * 86400) is True
+
+
 def test_stage6_ui_surface_exists():
     html = (ROOT / "qqbot" / "ui" / "index.html").read_text(encoding="utf-8")
     js = (ROOT / "qqbot" / "ui" / "app.js").read_text(encoding="utf-8")

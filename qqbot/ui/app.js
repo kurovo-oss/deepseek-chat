@@ -502,7 +502,9 @@
       $('#goal-count').textContent = `${items.length} 个 / 候选 ${counts.candidate ?? 0} · ${modeText}`;
       const note = $('#autonomy-note');
       if (note) {
-        const ready = autonomy.shadow_ready ? '影子已满' : '影子未满';
+        const ready = autonomy.shadow_ready
+          ? '影子已满'
+          : `影子 ${autonomy.shadow_days || 0}/${autonomy.shadow_required_days || 7} 天`;
         note.textContent = autonomy.enabled === false
           ? '现在只负责“想”和“判断”；自动执行需要显式打开。'
           : `自主模式：${modeText}；${ready}；每日最多一次聊天消息，外部动作仍为 0。`;

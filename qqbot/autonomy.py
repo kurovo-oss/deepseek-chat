@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from datetime import datetime
 
 from . import autonomy_policy
 from .goal_actions import GoalActionService
@@ -77,10 +78,24 @@ def _ensure_shadow_started(store, now: int) -> int:
     return started
 
 
+def shadow_days(store) -> int:
+    """真正产生过影子动作的本地日期数；关机不算验收天数。"""
+    seen = set()
+    for row in store.list_goal_actions(limit=500):
+        if row.get("status") != "shadow":
+            continue
+        try:
+            seen.add(datetime.fromtimestamp(int(row.get("created_at") or 0)).date())
+        except (TypeError, ValueError, OSError):
+            continue
+    return len(seen)
+
+
 def shadow_ready(store, settings, now: int) -> bool:
-    started = shadow_started(store)
     days = max(0, int(getattr(settings, "autonomy_shadow_days", 7)))
-    return bool(started) and now - started >= days * 86400
+    if days <= 0:
+        return True
+    return bool(shadow_started(store)) and shadow_days(store) >= days
 
 
 def _audit(engine, action: str, target: str, result: str, error: str = "") -> None:
