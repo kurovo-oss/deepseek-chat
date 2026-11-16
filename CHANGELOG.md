@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+### 安全
+
+- 去掉仓库里的真实 QQ 号：代码、设计稿、测试共 11 处换成示例号 `10001`；
+  历史提交一并重写，提交作者/邮箱改为 GitHub noreply 地址
+- 截图与设计稿改用示例数据（虚构对话、`%LOCALAPPDATA%\Dafeiyu` 代替个人路径）；
+  删掉两张带真实配置的真实运行截图，改由脱敏后的设计稿重新渲染
+- 安装包模板默认关闭 NapCat 的 CORS：原先 `enableCors: true` 且 token 为空，
+  任意网页都能跨域读写本机协议端 API
+
 ### 变更
 
 - 仓库结构整理：新增 `pyproject.toml`、`.editorconfig`，pytest 配置并入 `pyproject.toml`
