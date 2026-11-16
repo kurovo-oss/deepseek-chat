@@ -40,10 +40,26 @@ def test_docs_index_lists_every_doc():
     assert not missing, f"docs/README.md 没有登记这些文档：{missing}"
 
 
-def test_all_relative_links_in_docs_resolve():
-    """文档里的相对链接必须真能点开——搬目录最容易漏掉的就是这步。"""
+def test_all_relative_links_resolve():
+    """文档里的相对链接必须真能点开——搬目录最容易漏掉的就是这步。
+
+    根目录那几份（README / CONTRIBUTING / SECURITY / CHANGELOG）一起查，
+    它们最常被外链引用，坏了最丢人。
+    """
+    roots = [
+        ROOT / "README.md",
+        ROOT / "CONTRIBUTING.md",
+        ROOT / "SECURITY.md",
+        ROOT / "CHANGELOG.md",
+        ROOT / "AGENTS.md",
+        ROOT / "SAFETY.md",
+        ROOT / "THIRD-PARTY-NOTICES.md",
+    ]
+    paths = [p for p in roots if p.exists()]
+    paths += list(DOCS.rglob("*.md")) + list(DOCS.rglob("*.html"))
+
     broken = []
-    for path in list(DOCS.rglob("*.md")) + list(DOCS.rglob("*.html")):
+    for path in paths:
         text = path.read_text(encoding="utf-8")
         targets = set(REL_LINK.findall(text))
         if path.suffix == ".html":
@@ -73,6 +89,14 @@ def test_repo_root_has_standard_project_files():
         ".env.example",
     ):
         assert (ROOT / name).exists(), f"根目录缺少 {name}"
+
+    for name in (
+        ".github/PULL_REQUEST_TEMPLATE.md",
+        ".github/ISSUE_TEMPLATE/bug_report.md",
+        ".github/ISSUE_TEMPLATE/feature_request.md",
+        ".github/workflows/ci.yml",
+    ):
+        assert (ROOT / name).exists(), f"缺少 {name}"
 
 
 def test_m2_design_doc_exists_and_is_linked():
