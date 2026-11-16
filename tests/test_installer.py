@@ -135,6 +135,10 @@ def test_installer_ships_clean_napcat_profile():
     assert network["httpClients"][0]["url"] == "http://127.0.0.1:8080/event"
     assert network["httpServers"][0]["token"] == ""
     assert network["httpClients"][0]["token"] == ""
+    # 协议端只服务本机，不需要浏览器跨域：开着 CORS 等于让任意网页都能
+    # 读你的聊天记录、代发消息（端口没 token）。
+    assert network["httpServers"][0]["host"] == "127.0.0.1"
+    assert network["httpServers"][0]["enableCors"] is False
 
     napcat = json.loads(
         (ROOT / "installer" / "napcat" / "napcat.json").read_text(encoding="utf-8")
