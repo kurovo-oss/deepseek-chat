@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEMO = ROOT / "demo" / "index.html"
+DEMO = ROOT / "docs" / "design" / "chat-demo.html"
 
 
 class DemoSelfContainedTest(unittest.TestCase):
@@ -31,7 +31,7 @@ class DemoSelfContainedTest(unittest.TestCase):
         self.assertIn('id="inp"', self.html)
 
     def test_referenced_images_exist(self):
-        refs = set(re.findall(r"\.\./assets/seed-images/[A-Za-z0-9_.-]+", self.html))
+        refs = set(re.findall(r"\.\./\.\./assets/seed-images/[A-Za-z0-9_.-]+", self.html))
         self.assertTrue(refs, "演示页未引用任何图库资源")
         for ref in refs:
             path = (DEMO.parent / ref).resolve()

@@ -23,7 +23,8 @@
 | [native-ui.md](design/native-ui.md) | 原生控制台（WinForms + WebView2）设计 |
 | [ui-design.md](design/ui-design.md) | 控制台 WebUI 的设计方案与截图 |
 | [tasks.md](design/tasks.md) | 任务队列与完成通知 |
-| [ui-mockup.html](design/ui-mockup.html) | 可点原型（无后端，直接浏览器打开） |
+| [ui-mockup.html](design/ui-mockup.html) | 可点原型：控制台九个页面（无后端，直接浏览器打开） |
+| [chat-demo.html](design/chat-demo.html) | 可点原型：手机上的聊天体验（无后端，直接浏览器打开） |
 
 ## 使用指南
 

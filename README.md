@@ -9,7 +9,7 @@
 - 下一版设计（记忆 v2 / 表情梗库 / 空间·B站·抖音 / 可靠性）：[docs/design/companion-v2.md](docs/design/companion-v2.md)
 - 人格卡：[docs/persona/dafeiyu.md](docs/persona/dafeiyu.md)
 - 原生控制台设计：[docs/design/native-ui.md](docs/design/native-ui.md)
-- 交互演示（无后端）：[demo/index.html](demo/index.html)
+- 交互演示（无后端）：[docs/design/chat-demo.html](docs/design/chat-demo.html)
 - 全部文档索引：[docs/README.md](docs/README.md)
 - 使用前必读：[SAFETY.md](SAFETY.md)
 - 第三方组件与素材：[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)
