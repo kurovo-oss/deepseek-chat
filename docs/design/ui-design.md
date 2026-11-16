@@ -434,5 +434,5 @@ QQ 与连接
 
 尚未落地：SSE 实时推送（当前 20 秒轮询）、记忆语义事实页（当前管理卡片）、审核队列、手机访问。验收清单中的“一键重启失败回滚”暂不承诺。
 
-实现截图：[`docs/assets/ui-live.png`](../assets/ui-live.png)。
+对话页渲染（设计稿，示例数据）：[`docs/assets/ui-chat.png`](../assets/ui-chat.png)。
 
