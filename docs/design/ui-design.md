@@ -3,9 +3,9 @@
 版本 0.1 · 2026-11-08
 配套可点原型：[`docs/ui-mockup.html`](ui-mockup.html)（直接双击用浏览器打开，支持 `#persona` 等 hash 直达）
 
-![控制台总览](ui-mockup.png)
+![控制台总览](../assets/ui-mockup.png)
 
-![人格工坊](ui-persona.png)
+![人格工坊](../assets/ui-persona.png)
 
 ---
 
@@ -161,7 +161,7 @@ QQ 与连接
 
 - 品牌吉祥物是网上二创的「大肥鱼」：界面用浅樱花粉 `#FFC9D9`、玫瑰粉 `#C2466C`、奶油白 `#FFF7FA`、梅子墨 `#4A2334`，但角色保留原作者的深蓝女仆装原图，不重绘、不改色；欢迎图和安装器侧栏图由 `scripts/make-brand-assets.py` 从 `qqbot/ui/assets/dafeiyu.png` 裁切、排版；安装包与 exe 图标也直接裁切这张图，保留原作者署名，不另画角色。
 
-![大肥鱼形象](ui-mascot.png)
+![大肥鱼形象](../assets/ui-mascot.png)
 
 - 状态表情四档：`平静 / 暖 / 想你 / 困`，由 `mood` 自动切换（眼睛、腮红、气泡、尾巴动作）。
 - 动效：呼吸 4s、气泡上浮 8s、状态点 pulse；`prefers-reduced-motion` 时全部关掉。
@@ -402,7 +402,7 @@ QQ 与连接
 
 ## 10. 素材署名
 
-- 大肥鱼形象：作者 **YunYueSama**，仓库 <https://github.com/YunYueSama/codex-deepseek-pet>，素材 `assets/whale/portrait.png`；适用《大肥鱼项目署名许可 1.0》，允许修改与分享，须保留作者与仓库地址。完整许可与修改说明见 [`docs/assets/dafeiyu-LICENSE.md`](assets/dafeiyu-LICENSE.md)、[`docs/assets/NOTICE.md`](assets/NOTICE.md)。
+- 大肥鱼形象：作者 **YunYueSama**，仓库 <https://github.com/YunYueSama/codex-deepseek-pet>，素材 `assets/whale/portrait.png`；适用《大肥鱼项目署名许可 1.0》，允许修改与分享，须保留作者与仓库地址。完整许可与修改说明见 [`docs/assets/dafeiyu-LICENSE.md`](../assets/dafeiyu-LICENSE.md)、[`docs/assets/NOTICE.md`](../assets/NOTICE.md)。
 - 本项目的修改：只裁掉透明边距、按 UI 尺寸缩放；角色衣着、发色和轮廓均保持原图，不重画、不改色。
 - 上游参考：上善无形（鲸鱼娘原始形象）、ZipZipPipe（DeepSeek 女仆鲸鱼娘二次设计）；本项目不声称 DeepSeek 官方授权。
 - 署名会同时放在控制台「设置 → 关于」里，不只写在文档。
@@ -434,5 +434,5 @@ QQ 与连接
 
 尚未落地：SSE 实时推送（当前 20 秒轮询）、记忆语义事实页（当前管理卡片）、审核队列、手机访问。验收清单中的“一键重启失败回滚”暂不承诺。
 
-实现截图：[`docs/ui-live.png`](ui-live.png)。
+实现截图：[`docs/assets/ui-live.png`](../assets/ui-live.png)。
 

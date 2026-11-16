@@ -2,14 +2,15 @@
 
 把 DeepSeek 接进 QQ 私聊，做成一个**有长期记忆、有固定人格**的女友（设定见人格卡）。
 
-- 产品方向：[docs/PRD.md](docs/PRD.md)
-- 工程规格：[docs/MVP.md](docs/MVP.md)
-- 记忆设计：[docs/M2-memory.md](docs/M2-memory.md)
-- 语义记忆（事实/证据/更正）：`/记忆` 指令，见 [docs/companion-v2.md](docs/companion-v2.md)
-- 下一版设计（记忆 v2 / 表情梗库 / 空间·B站·抖音 / 可靠性）：[docs/companion-v2.md](docs/companion-v2.md)
+- 产品方向：[docs/design/PRD.md](docs/design/PRD.md)
+- 工程规格：[docs/design/MVP.md](docs/design/MVP.md)
+- 记忆设计：[docs/design/M2-memory.md](docs/design/M2-memory.md)
+- 语义记忆（事实/证据/更正）：`/记忆` 指令，见 [docs/design/companion-v2.md](docs/design/companion-v2.md)
+- 下一版设计（记忆 v2 / 表情梗库 / 空间·B站·抖音 / 可靠性）：[docs/design/companion-v2.md](docs/design/companion-v2.md)
 - 人格卡：[docs/persona/dafeiyu.md](docs/persona/dafeiyu.md)
-- 原生控制台设计：[docs/native-ui.md](docs/native-ui.md)
+- 原生控制台设计：[docs/design/native-ui.md](docs/design/native-ui.md)
 - 交互演示（无后端）：[demo/index.html](demo/index.html)
+- 全部文档索引：[docs/README.md](docs/README.md)
 - 使用前必读：[SAFETY.md](SAFETY.md)
 - 第三方组件与素材：[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)
 
@@ -32,7 +33,7 @@
 **注意**：记忆以"卡片"形式注入 system prompt（权重阈值 0.15），不是全量对话检索——
 所以它能自然提起旧事，但不会逐字复述几周前的对话。
 
-**每个功能的具体实现方法**见 [docs/PROGRESS.md](docs/PROGRESS.md)。
+**每个功能的具体实现方法**见 [docs/ops/PROGRESS.md](docs/ops/PROGRESS.md)。
 
 ## 设计取舍
 
@@ -75,7 +76,7 @@ powershell -ExecutionPolicy Bypass -File scripts\stop-bot.ps1              # 停
 
 ## 一键启动（大肥鱼.exe）
 
-![原生控制台](docs/native-ui.png)
+![原生控制台](docs/assets/native-ui.png)
 
 双击项目根目录的 **`大肥鱼.exe`**，打开的是**独立的 Windows 窗口**，不会打开浏览器标签页，也没有地址栏：
 

@@ -47,7 +47,7 @@ def test_webview2_runtime_files_are_bundled():
 
 def test_launcher_icon_and_screenshot_exist():
     assert (ROOT / "qqbot" / "ui" / "assets" / "dafeiyu.ico").stat().st_size > 10_000
-    shot = (ROOT / "docs" / "native-ui.png").read_bytes()
+    shot = (ROOT / "docs" / "assets" / "native-ui.png").read_bytes()
     assert len(shot) > 20_000
     assert shot[:8] == b"\x89PNG\r\n\x1a\n"
     width, height = struct.unpack(">II", shot[16:24])

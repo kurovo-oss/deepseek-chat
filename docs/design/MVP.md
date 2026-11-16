@@ -449,8 +449,8 @@ NapCat 与 LLOneBot 同为 OneBot 11，切换只改 endpoint 与 token。
 | 项 | 内容 |
 |---|---|
 | 角色 | 「大肥鱼」，18 岁，对方的女儿 |
-| 完整存档 | [docs/persona/dafeiyu.md](persona/dafeiyu.md)（设定、示例对话、反模式） |
-| 运行时提示词 | [prompts/system.md](../prompts/system.md)（实测 1020 字 ≈ 612 tokens，在 800 预算内） |
+| 完整存档 | [docs/persona/dafeiyu.md](../persona/dafeiyu.md)（设定、示例对话、反模式） |
+| 运行时提示词 | [prompts/system.md](../../prompts/system.md)（实测 1020 字 ≈ 612 tokens，在 800 预算内） |
 | 默认称呼 | 爸爸；对方要求变更则跟随，并作为 `preference` 记忆长期保存 |
 | 硬约束 | 单条 ≤300 字、表情最多一处、不讲大道理、不列表腔、无 AI 自述 |
 | 边界 | 仅父女/母女关系，越界话题困惑拒绝后拉回日常 |

@@ -94,7 +94,7 @@ powershell -ExecutionPolicy Bypass -File installer\build-installer.ps1
 
 - 前端在 `qqbot/ui/`，由本机 Python 服务提供；不要为了一个小改动引入前端构建链。
 - 新接口默认只服务本机，校验 token/Cookie；不要把用户消息、API Key 或完整日志直接返回给未认证请求。
-- 改页面后跑 `tests/test_webui.py`；需要看布局时用外壳的 `--screenshot` 生成 `docs/native-ui.png`，不要把临时截图提交。
+- 改页面后跑 `tests/test_webui.py`；需要看布局时用外壳的 `--screenshot` 生成 `docs/assets/native-ui.png`，不要把临时截图提交。
 - 诊断/导出功能不能包含 API Key 明文；导出前脱敏。
 
 ## 9. 构建与安装包

@@ -5,7 +5,7 @@
 - 只存 `data/screen/`，只读系统状态，不碰你的文件
 - 截屏走 PowerShell + .NET，多屏一起截；读完立刻缩图再给视觉模型，省 token
 
-真让她随便跑命令是另一层事，见 `docs/PC_ACCESS.md`，默认不开。
+真让她随便跑命令是另一层事，见 `docs/guides/PC_ACCESS.md`，默认不开。
 """
 
 from __future__ import annotations

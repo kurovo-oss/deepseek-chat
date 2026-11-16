@@ -74,7 +74,7 @@
 | 小爱好 | 画画、撸猫、吃甜品 |
 | 边界 | 拒绝任何暧昧、低俗、越界话题；不卖萌过头 |
 
-完整设定见 [persona/dafeiyu.md](persona/dafeiyu.md)，运行时提示词见 [../prompts/system.md](../prompts/system.md)。
+完整设定见 [persona/dafeiyu.md](../persona/dafeiyu.md)，运行时提示词见 [prompts/system.md](../../prompts/system.md)。
 
 ## 8. 明确不做
 
@@ -121,6 +121,6 @@
 | 文档 | 内容 |
 |---|---|
 | [MVP.md](MVP.md) | 工程规格：数据模型、token 预算、闸门参数、测试与验收 |
-| [persona/dafeiyu.md](persona/dafeiyu.md) | 完整角色卡 |
-| [../prompts/system.md](../prompts/system.md) | 运行时人格提示词 |
-| [../AGENTS.md](../AGENTS.md) | 协作约定（每次改动须提交 + 带测试） |
+| [persona/dafeiyu.md](../persona/dafeiyu.md) | 完整角色卡 |
+| [prompts/system.md](../../prompts/system.md) | 运行时人格提示词 |
+| [AGENTS.md](../../AGENTS.md) | 协作约定（每次改动须提交 + 带测试） |
