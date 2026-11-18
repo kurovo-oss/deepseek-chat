@@ -108,6 +108,23 @@ def _fake_result(case, ok):
     return CaseResult(case=case, turns=[], failures=[] if ok else ["没过"])
 
 
+def _stub_settings(monkeypatch, run):
+    """评测入口不该读开发者本机的 `.env`。
+
+    CI 上没有这个文件，`load_settings(ROOT)` 会直接抛 ConfigError——
+    测试要验的是「三局两胜」的判定逻辑，不是配置加载。
+    """
+    from types import SimpleNamespace
+
+    fake = SimpleNamespace(
+        model_base_url="http://example.invalid/v1",
+        model_api_key="sk-test",
+        model_id="deepseek-flash",
+        request_timeout=1,
+    )
+    monkeypatch.setattr(run, "load_settings", lambda _root: fake)
+
+
 def test_majority_vote_lets_one_bad_draw_slide(monkeypatch, capsys):
     """模型偶尔抽风不该判死刑：三局两胜。"""
     from evals import run
@@ -116,6 +133,7 @@ def test_majority_vote_lets_one_bad_draw_slide(monkeypatch, capsys):
     case = CASES[0]
     sequence = [_fake_result(case, False), _fake_result(case, True), _fake_result(case, True)]
     monkeypatch.setattr(run, "run_case", lambda *a, **k: sequence.pop(0))
+    _stub_settings(monkeypatch, run)
 
     code = run.main(["--only", case.name[:2]])
 
@@ -130,6 +148,7 @@ def test_two_bad_draws_still_fail(monkeypatch, capsys):
     case = CASES[0]
     sequence = [_fake_result(case, True), _fake_result(case, False), _fake_result(case, False)]
     monkeypatch.setattr(run, "run_case", lambda *a, **k: sequence.pop(0))
+    _stub_settings(monkeypatch, run)
 
     run.main(["--only", case.name[:2]])
 
