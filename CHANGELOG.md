@@ -45,5 +45,5 @@
 - 本版本未做代码签名，SmartScreen 会提示未知发布者
 - 第三方组件的许可与归属见 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)
 
-[Unreleased]: https://github.com/luowenjie/dafeiyu/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/luowenjie/dafeiyu/releases/tag/v0.1.0
+[Unreleased]: https://github.com/kurovo-oss/deepseek-chat/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/kurovo-oss/deepseek-chat/releases/tag/v0.1.0

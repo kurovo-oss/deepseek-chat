@@ -31,8 +31,8 @@ dev = ["pytest>=8", "pillow>=10"]
 dafeiyu = "qqbot.main:main"
 
 [project.urls]
-Documentation = "https://github.com/luowenjie/dafeiyu#readme"
-Issues = "https://github.com/luowenjie/dafeiyu/issues"
+Documentation = "https://github.com/kurovo-oss/deepseek-chat#readme"
+Issues = "https://github.com/kurovo-oss/deepseek-chat/issues"
 
 [tool.setuptools.packages.find]
 include = ["qqbot*"]
